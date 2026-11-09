@@ -320,6 +320,7 @@ const Map<String, (String, String)> _s = {
   'recurring_pay_amount': ('दरमहा रक्कम', 'Monthly amount'),
   'recurring_pay_help': ('दर महिन्याच्या 1 तारखेला मुख्यपृष्ठावर आठवण येईल. "पैसे दिले" दाबले की रोख/फोनपेतून खर्च नोंदतो.', 'On the 1st of every month the home screen reminds you. Tap Paid and the payment is entered from cash / PhonePe.'),
   'recurring_pay_btn': ('पैसे दिले', 'Paid'),
+  'report_filter_hint': ('शोधा / गाळा: नाव, पान नं., फोन, रक्कम… (शीर्षक दाबून क्रम लावा)', 'Filter: name, page no., phone, amount… (tap a heading to sort)'),
   'reg_simple': ('सोपे', 'Simple'),
   'reg_grid': ('रजिस्टर', 'Register'),
   'reg_movement': ('मालाचा हिशोब', 'Stock movement'),

@@ -225,19 +225,20 @@ class Reports {
       buckets[bucket] += b;
       total += b;
       if (days > 60) hl.add(rows.length);
+      // balance right after the name, so it shows on a phone without scrolling
       rows.add([
         l.pageNo ?? '',
         l.name,
-        l.phone ?? '',
+        Money.fmt(b),
         lastDate == null ? '—' : shortDate(lastDate),
         days >= 999 ? '—' : '$days',
-        Money.fmt(b),
+        l.phone ?? '',
       ]);
       refs.add(l.id);
     }
     // sort by amount desc
     final idx = List.generate(rows.length, (i) => i)
-      ..sort((a, b) => Money.parse(rows[b][5])!.compareTo(Money.parse(rows[a][5])!));
+      ..sort((a, b) => Money.parse(rows[b][2])!.compareTo(Money.parse(rows[a][2])!));
     return ReportTable(
       title: group == LedgerGroup.customer ? tr('r_receivable') : tr('r_payable'),
       subtitle: '0-30: ${Money.fmt(buckets[0])} · 31-60: ${Money.fmt(buckets[1])} · '
@@ -245,15 +246,15 @@ class Reports {
       columns: [
         ReportColumn(tr('page_no'), flex: 1),
         ReportColumn(tr('name'), flex: 4),
-        ReportColumn(tr('phone'), flex: 3),
+        ReportColumn.num(tr('balance'), flex: 3),
         ReportColumn(tr('last_payment'), flex: 2),
         ReportColumn.num(tr('days'), flex: 1),
-        ReportColumn.num(tr('balance')),
+        ReportColumn(tr('phone'), flex: 3),
       ],
       rows: [for (final i in idx) rows[i]],
       rowRefs: [for (final i in idx) refs[i]],
       highlight: {for (var j = 0; j < idx.length; j++) if (hl.contains(idx[j])) j},
-      totals: ['', tr('total'), '', '', '', Money.fmt(total)],
+      totals: ['', tr('total'), Money.fmt(total), '', '', ''],
     );
   }
 
@@ -679,4 +680,83 @@ class Reports {
       rowRefs: [null, for (final m in mv) m.voucherId],
     );
   }
+}
+
+/// Sort / filter for any report (on screen and in its PDF / Excel).
+///
+/// [query]: rows with any cell containing it (case-insensitive, Marathi digits
+/// allowed). [sortCol]: sort by that column – numbers, dates (d/m/yy) and page
+/// numbers by value, the rest alphabetically; empty cells last. While filtered,
+/// number totals are re-added for the rows shown.
+ReportTable shapeReport(ReportTable t, {String query = '', int? sortCol, bool ascending = true}) {
+  final q = normalizeDigits(query.trim()).toLowerCase();
+  var idx = [for (var i = 0; i < t.rows.length; i++) i];
+  if (q.isNotEmpty) {
+    idx = idx.where((i) => t.rows[i].any((c) => normalizeDigits(c).toLowerCase().contains(q))).toList();
+  }
+  if (sortCol != null && sortCol >= 0 && sortCol < t.columns.length) {
+    String cell(int r) => sortCol < t.rows[r].length ? t.rows[r][sortCol].trim() : '';
+    final values = idx.map(cell).where((c) => c.isNotEmpty && c != '—' && c != '–').toList();
+    final kind = values.isNotEmpty && values.every((c) => _dateKey(c) != null)
+        ? 'date'
+        : values.isNotEmpty && values.every((c) => _numKey(c) != null)
+            ? 'num'
+            : 'text';
+    Comparable? key(int r) {
+      final c = cell(r);
+      if (c.isEmpty || c == '—' || c == '–') return null;
+      return switch (kind) { 'date' => _dateKey(c), 'num' => _numKey(c), _ => c.toLowerCase() };
+    }
+
+    idx.sort((a, b) {
+      final ka = key(a), kb = key(b);
+      if (ka == null && kb == null) return a.compareTo(b);
+      if (ka == null) return 1; // empty cells last either way
+      if (kb == null) return -1;
+      final c = ka.compareTo(kb);
+      return c == 0 ? a.compareTo(b) : (ascending ? c : -c);
+    });
+  }
+  final filtered = q.isNotEmpty;
+  List<String>? totals = t.totals;
+  if (filtered && totals != null) {
+    totals = [
+      for (var i = 0; i < totals.length; i++)
+        if (RegExp(r'^-?[\d,]+(\.\d+)?$').hasMatch(totals[i].trim()))
+          Money.fmt((idx.fold<double>(0, (s, r) => s + (i < t.rows[r].length ? (_numKey(t.rows[r][i]) ?? 0) : 0)) * 100).round())
+        else if (i == 0 || totals[i].trim().isEmpty || _numKey(totals[i]) == null)
+          totals[i]
+        else
+          '',
+    ];
+  }
+  final old = {for (var n = 0; n < idx.length; n++) idx[n]: n};
+  return ReportTable(
+    title: t.title,
+    subtitle: filtered ? '${t.subtitle}${t.subtitle.isEmpty ? '' : ' · '}${idx.length} / ${t.rows.length}' : t.subtitle,
+    columns: t.columns,
+    rows: [for (final i in idx) t.rows[i]],
+    totals: totals,
+    rowRefs: [for (final i in idx) t.rowRefs[i]],
+    highlight: {for (final h in t.highlight) if (old[h] != null) old[h]!},
+  );
+}
+
+/// "1,04,594", "₹532 येणे", "-12.5", "20,532 Dr" → number; null if no number.
+double? _numKey(String s) {
+  final m = RegExp(r'-?[\d,]*\d(\.\d+)?').firstMatch(normalizeDigits(s));
+  if (m == null) return null;
+  final v = double.tryParse(m[0]!.replaceAll(',', ''));
+  if (v == null) return null;
+  // advance / payable shown with a word instead of a minus
+  final neg = RegExp(r'(\bCr\b|जमा|देणे|आगाऊ)').hasMatch(s) && !s.contains('-');
+  return neg ? -v : v;
+}
+
+/// "9/11/26", "31/08/2026" → sortable "2026-11-09".
+String? _dateKey(String s) {
+  final m = RegExp(r'^(\d{1,2})/(\d{1,2})/(\d{2}|\d{4})$').firstMatch(normalizeDigits(s.trim()));
+  if (m == null) return null;
+  final y = m[3]!.length == 2 ? '20${m[3]}' : m[3]!;
+  return '$y-${m[2]!.padLeft(2, '0')}-${m[1]!.padLeft(2, '0')}';
 }
