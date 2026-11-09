@@ -315,6 +315,7 @@ class _UsersScreenState extends State<UsersScreen> {
   final devicePin = TextEditingController();
   final email = TextEditingController();
   List<Map<String, dynamic>> members = [];
+  String inviteRole = 'staff';
 
   @override
   void initState() {
@@ -362,18 +363,33 @@ class _UsersScreenState extends State<UsersScreen> {
             child: Text(t('save')),
           ),
         ] else ...[
-          Text(t('invite_staff'), style: Theme.of(context).textTheme.titleMedium),
+          Text(t('invite_member'), style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
           TextField(controller: staffName, decoration: d(t('name'))),
           const SizedBox(height: 8),
           TextField(controller: email, keyboardType: TextInputType.emailAddress, decoration: d(t('email'))),
           const SizedBox(height: 8),
+          // several owners are allowed (e.g. father and son); everyone else is staff
+          SegmentedButton<String>(
+            segments: [
+              ButtonSegment(value: 'staff', label: Text(t('role_staff')), icon: const Icon(Icons.person_outline)),
+              ButtonSegment(value: 'owner', label: Text(t('role_owner')), icon: const Icon(Icons.star_outline)),
+            ],
+            selected: {inviteRole},
+            onSelectionChanged: (s) => setState(() => inviteRole = s.first),
+          ),
+          const SizedBox(height: 4),
+          Text(t(inviteRole == 'owner' ? 'role_owner_help' : 'role_staff_help'), style: Theme.of(context).textTheme.bodySmall),
+          const SizedBox(height: 8),
           FilledButton(
             onPressed: () async {
+              if (!email.text.contains('@')) return toast(context, t('err_email'), error: true);
+              if (inviteRole == 'owner' && !await confirm(context, t('role_owner_q').replaceAll('{name}', staffName.text.trim()))) return;
               try {
-                await app.inviteStaff(email.text, staffName.text);
+                await app.inviteMember(email.text, staffName.text, role: inviteRole);
                 email.clear();
                 staffName.clear();
+                setState(() => inviteRole = 'staff');
                 await _loadMembers();
               } catch (e) {
                 if (context.mounted) toast(context, errText(context, e), error: true);
@@ -386,15 +402,31 @@ class _UsersScreenState extends State<UsersScreen> {
             ListTile(
               leading: Icon(m['role'] == 'owner' ? Icons.star : Icons.person),
               title: Text('${m['name'] ?? ''} (${m['role'] == 'owner' ? t('role_owner') : t('role_staff')})'),
-              subtitle: Text('${m['email'] ?? ''}${m['user_id'] == null ? ' · pending' : ''}'),
-              trailing: m['role'] == 'owner'
+              subtitle: Text('${m['email'] ?? ''}${m['user_id'] == null ? ' · ${t('member_pending')}' : ''}'),
+              trailing: !app.actor.isOwner
                   ? null
-                  : IconButton(
-                      icon: const Icon(Icons.delete_outline),
-                      onPressed: () async {
-                        await app.removeMember(m['id'] as String);
+                  : PopupMenuButton<String>(
+                      onSelected: (v) async {
+                        try {
+                          if (v == 'remove') {
+                            if (!await confirm(context, t('member_remove_q'))) return;
+                            await app.removeMember(m['id'] as String);
+                          } else {
+                            await app.setMemberRole(m['id'] as String, v);
+                          }
+                        } catch (e) {
+                          if (context.mounted) toast(context, errText(context, e), error: true);
+                        }
                         await _loadMembers();
                       },
+                      itemBuilder: (_) => [
+                        if (m['role'] == 'owner')
+                          PopupMenuItem(value: 'staff', child: Text(t('make_staff')))
+                        else ...[
+                          PopupMenuItem(value: 'owner', child: Text(t('make_owner'))),
+                          PopupMenuItem(value: 'remove', child: Text(t('delete'))),
+                        ],
+                      ],
                     ),
             ),
           const Divider(height: 32),

@@ -117,6 +117,7 @@ class AppController extends ChangeNotifier {
         await _connectSync();
         stage = _prefs.getString('device_pin') == null ? Stage.ready : Stage.locked;
         if (stage == Stage.ready) _setActorFromPrefs(owner: _prefs.getString('role') == 'owner');
+        _watchRole();
       }
     } else if (businessId == null && demoMode) {
       await setupLocal(
@@ -159,6 +160,26 @@ class AppController extends ChangeNotifier {
   }
 
   StreamSubscription<void>? _booksSub;
+  StreamSubscription<void>? _roleSub;
+
+  /// Cloud: follow this user's role in the synced member list, so making
+  /// someone owner (or staff) takes effect on their phone without signing out.
+  void _watchRole() {
+    if (!cloud || businessId == null) return;
+    final uid = _prefs.getString('user_id');
+    if (uid == null) return;
+    _roleSub?.cancel();
+    _roleSub = db
+        .watch('SELECT role FROM members WHERE business_id = ? AND user_id = ?', parameters: [businessId, uid])
+        .listen((rows) async {
+      if (rows.isEmpty) return;
+      final role = rows.first['role'] as String?;
+      if (role == null || role == _prefs.getString('role')) return;
+      await _prefs.setString('role', role);
+      if (actor.userId == uid) actor = Actor(userId: uid, name: actor.name, isOwner: role == 'owner');
+      notifyListeners();
+    });
+  }
 
   // ---------------- shop details & book settings ----------------
   String shopAddress = '';
@@ -347,6 +368,7 @@ class AppController extends ChangeNotifier {
         m['role'] as String, (m['name'] as String?) ?? _sb.auth.currentUser!.email ?? '');
     await _connectSync();
     _buildServices();
+    _watchRole();
     stage = Stage.ready;
     notifyListeners();
   }
@@ -377,14 +399,27 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> inviteStaff(String email, String name) async {
+  /// Invites someone by email as owner (मालक) or staff; they get access on
+  /// first sign-in with that email. A shop may have several owners.
+  Future<void> inviteMember(String email, String name, {String role = 'staff'}) async {
     await _sb.from('members').insert({
       'id': newId(),
       'business_id': businessId,
       'email': email.trim().toLowerCase(),
       'name': name,
-      'role': 'staff',
+      'role': role == 'owner' ? 'owner' : 'staff',
     });
+  }
+
+  Future<void> inviteStaff(String email, String name) => inviteMember(email, name);
+
+  /// Owner ⇄ staff. The last owner can't be made staff (someone must stay owner).
+  Future<void> setMemberRole(String id, String role) async {
+    if (role != 'owner') {
+      final owners = await _sb.from('members').select('id').eq('business_id', businessId!).eq('role', 'owner');
+      if ((owners as List).length <= 1 && owners.any((o) => o['id'] == id)) throw PermissionDenied('err_last_owner');
+    }
+    await _sb.from('members').update({'role': role}).eq('id', id);
   }
 
   Future<List<Map<String, dynamic>>> listMembers() async =>
