@@ -1,5 +1,6 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../core/money.dart';
 import '../shared/widgets.dart';
@@ -129,13 +130,37 @@ class _PinScreenState extends State<PinScreen> {
     });
   }
 
+  /// Laptop keyboard: digit keys (top row or numpad), Backspace, Esc to clear.
+  KeyEventResult _key(FocusNode _, KeyEvent e) {
+    if (e is! KeyDownEvent && e is! KeyRepeatEvent) return KeyEventResult.ignored;
+    final k = e.logicalKey;
+    if (k == LogicalKeyboardKey.backspace || k == LogicalKeyboardKey.delete) {
+      _tap('del');
+      return KeyEventResult.handled;
+    }
+    if (k == LogicalKeyboardKey.escape) {
+      setState(() => pin = '');
+      return KeyEventResult.handled;
+    }
+    final ch = normalizeDigits(e.character ?? '');
+    if (ch.length == 1 && RegExp(r'[0-9]').hasMatch(ch)) {
+      _tap(ch);
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
   @override
   Widget build(BuildContext context) {
     final app = App.of(context);
     final t = app.t;
     return Scaffold(
       appBar: AppBar(title: Text(app.businessName), actions: [_langToggle(app)]),
-      body: Center(
+      // the keypad also works from a laptop keyboard
+      body: Focus(
+        autofocus: true,
+        onKeyEvent: _key,
+        child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 360),
           child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -182,6 +207,7 @@ class _PinScreenState extends State<PinScreen> {
               ]),
           ]),
         ),
+      ),
       ),
     );
   }
