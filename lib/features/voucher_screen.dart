@@ -161,11 +161,13 @@ class _VoucherScreenState extends State<VoucherScreen> {
         VoucherType.salesReturn,
         VoucherType.purchaseReturn,
         VoucherType.stockAdjust,
+        VoucherType.goodsOut,
+        VoucherType.goodsIn,
       }.contains(type);
-  bool get hasPay => type != VoucherType.stockAdjust && type != VoucherType.journal && !isHistory;
+  bool get hasPay => type != VoucherType.stockAdjust && type != VoucherType.journal && !isHistory && !type.isGoodsLoan;
   bool get creditAllowed =>
       const {VoucherType.sale, VoucherType.purchase, VoucherType.salesReturn, VoucherType.purchaseReturn}.contains(type);
-  bool get stockOnly => type == VoucherType.stockAdjust;
+  bool get stockOnly => type == VoucherType.stockAdjust || type.isGoodsLoan; // quantities only, no money
 
   int get itemsTotal => lines.fold(0, (s, l) => s + l.amount);
   bool get isSale => type == VoucherType.sale;
@@ -211,7 +213,7 @@ class _VoucherScreenState extends State<VoucherScreen> {
               LedgerGroup.otherLiability,
             ],
     VoucherType.contra => [LedgerGroup.cash, LedgerGroup.upi, LedgerGroup.bank],
-    VoucherType.history => [LedgerGroup.customer, LedgerGroup.supplier, LedgerGroup.transporter],
+    VoucherType.history || VoucherType.goodsOut || VoucherType.goodsIn => [LedgerGroup.customer, LedgerGroup.supplier, LedgerGroup.transporter],
     _ => [],
   };
 
@@ -220,6 +222,7 @@ class _VoucherScreenState extends State<VoucherScreen> {
     VoucherType.purchase || VoucherType.purchaseReturn => LedgerGroup.supplier,
     VoucherType.payment => widget.expenseMode ? LedgerGroup.expense : LedgerGroup.supplier,
     VoucherType.history => hKind == 'purchase' ? LedgerGroup.supplier : LedgerGroup.customer,
+    VoucherType.goodsOut || VoucherType.goodsIn => LedgerGroup.customer,
     _ => null,
   };
 
@@ -373,7 +376,7 @@ class _VoucherScreenState extends State<VoucherScreen> {
     if (hasItems && lines.isEmpty && !amountOnly) return toast(context, t('err_items'), error: true);
     if (amountOnly && (Money.parse(amount.text) ?? 0) <= 0) return toast(context, t('err_amount'), error: true);
     if (!hasItems && total <= 0) return toast(context, t('err_amount'), error: true);
-    final needsParty = const {VoucherType.receipt, VoucherType.payment, VoucherType.contra, VoucherType.history}.contains(type);
+    final needsParty = const {VoucherType.receipt, VoucherType.payment, VoucherType.contra, VoucherType.history, VoucherType.goodsOut, VoucherType.goodsIn}.contains(type);
     if (needsParty && party == null) return toast(context, t('err_party'), error: true);
     if (creditAllowed && party == null && payId == null) {
       return toast(context, t('err_party'), error: true);
@@ -533,6 +536,12 @@ class _VoucherScreenState extends State<VoucherScreen> {
             ),
             const SizedBox(height: 8),
             if (partyGroups.isNotEmpty) _partyCard(app),
+            if (type.isGoodsLoan)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(4, 8, 4, 0),
+                child: Text(t(type == VoucherType.goodsOut ? 'goods_out_help' : 'goods_in_help'),
+                    style: Theme.of(context).textTheme.bodySmall),
+              ),
             if (hasItems) ...[
               const SizedBox(height: 12),
               _quickEntry(app),
@@ -666,7 +675,8 @@ class _VoucherScreenState extends State<VoucherScreen> {
                   ),
                 ),
                 const SizedBox(width: 8),
-                FilterChip(label: Text(t('gst_bill_needed')), selected: gstBill, onSelected: (v) => setState(() => gstBill = v)),
+                if (!stockOnly)
+                  FilterChip(label: Text(t('gst_bill_needed')), selected: gstBill, onSelected: (v) => setState(() => gstBill = v)),
               ],
             ),
             const SizedBox(height: 80),

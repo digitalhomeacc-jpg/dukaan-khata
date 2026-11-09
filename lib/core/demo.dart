@@ -28,7 +28,7 @@ Future<void> loadDemoData(VoucherService vs, LedgerRepo lr, StockRepo sr) async 
   String ago(int n) => isoDate(d.subtract(Duration(days: n)));
 
   final suresh = await lr.create(name: 'सुरेश जाधव', nameEn: 'Suresh Jadhav', group: LedgerGroup.customer, pageNo: '29', phone: '9800000029', openingBalance: rs(31250), creditLimit: rs(60000));
-  await lr.create(name: 'अजय शिंदे', nameEn: 'Ajay Shinde', group: LedgerGroup.customer, pageNo: '25', openingBalance: rs(12500));
+  final ajay = await lr.create(name: 'अजय शिंदे', nameEn: 'Ajay Shinde', group: LedgerGroup.customer, pageNo: '25', openingBalance: rs(12500));
   await lr.create(name: 'विजय कदम', nameEn: 'Vijay Kadam', group: LedgerGroup.customer, pageNo: '37', openingBalance: rs(8400));
   final mukesh = await lr.create(name: 'संजय माने', nameEn: 'Sanjay Mane', group: LedgerGroup.customer, pageNo: '69', phone: '9800000069');
   await lr.create(name: 'प्रकाश गायकवाड', nameEn: 'Prakash Gaikwad', group: LedgerGroup.customer, pageNo: '135', openingBalance: rs(4200));
@@ -88,6 +88,8 @@ Future<void> loadDemoData(VoucherService vs, LedgerRepo lr, StockRepo sr) async 
           hamali: rs(200), transport: rs(800), transporterId: ganesh, transporterFare: rs(700)),
       owner);
   await vs.save(VoucherInput(type: VoucherType.payment, date: today, partyId: vs.sys('hamali'), payLedgerId: vs.sys('cash'), amount: rs(400), narration: 'अनलोडिंग'), owner);
+  // उसना माल: 30 bags lent to Ajay, to come back as bags
+  await vs.save(VoucherInput(type: VoucherType.goodsOut, date: today, partyId: ajay, items: [ItemLine(items['W']!.id, 30, 0)], haste: 'मुलगा'), owner);
   // वराई handed over by the company's truck driver
   await vs.save(VoucherInput(type: VoucherType.receipt, date: today, partyId: vs.sys('varhai'), payLedgerId: vs.sys('cash'), amount: rs(300), narration: 'लक्ष्मी सिमेंट गाडी'), owner);
   await vs.save(VoucherInput(type: VoucherType.payment, date: today, partyId: vs.sys('tea'), payLedgerId: vs.sys('cash'), amount: rs(80)), owner);

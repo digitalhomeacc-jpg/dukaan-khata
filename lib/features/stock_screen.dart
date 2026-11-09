@@ -33,6 +33,10 @@ class StockScreen extends StatelessWidget {
                     VoucherScreen.open(context, VoucherType.purchase);
                   case 'adjust':
                     VoucherScreen.open(context, VoucherType.stockAdjust);
+                  case 'goods_out':
+                    VoucherScreen.open(context, VoucherType.goodsOut);
+                  case 'goods_in':
+                    VoucherScreen.open(context, VoucherType.goodsIn);
                   case 'sret':
                     VoucherScreen.open(context, VoucherType.salesReturn);
                   case 'pret':
@@ -44,6 +48,8 @@ class StockScreen extends StatelessWidget {
                 PopupMenuItem(value: 'sret', child: Text(t('sales_return'))),
                 PopupMenuItem(value: 'pret', child: Text(t('purchase_return'))),
                 PopupMenuItem(value: 'adjust', child: Text(t('stock_adjust'))),
+                PopupMenuItem(value: 'goods_out', child: Text(t('goods_out'))),
+                PopupMenuItem(value: 'goods_in', child: Text(t('goods_in'))),
               ],
             ),
           ],

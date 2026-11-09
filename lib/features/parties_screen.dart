@@ -6,6 +6,8 @@ import 'package:flutter/rendering.dart';
 import '../accounting/ledger_repo.dart';
 import '../accounting/models.dart';
 import '../core/money.dart';
+import '../core/theme.dart';
+import '../inventory/stock_repo.dart';
 import '../shared/export.dart';
 import '../shared/widgets.dart';
 import '../state/app_controller.dart';
@@ -68,9 +70,14 @@ class _PartiesScreenState extends State<PartiesScreen> {
           ),
         ),
         Expanded(
-          child: LiveBuilder<List<Ledger>>(
+          child: LiveBuilder<(List<Ledger>, Map<String, List<GoodsOwed>>)>(
             reloadKey: '${_q.text}|$sort',
             load: () async {
+              // उसना माल per party, shown under the name
+              final goods = <String, List<GoodsOwed>>{};
+              for (final g in await app.stock.goodsOwed()) {
+                (goods[g.partyId] ??= []).add(g);
+              }
               final list = _q.text.trim().isEmpty
                   ? await app.ledgers.parties(widget.group)
                   : await app.ledgers.search(_q.text, groups: const [LedgerGroup.customer, LedgerGroup.supplier], limit: 500);
@@ -82,9 +89,10 @@ class _PartiesScreenState extends State<PartiesScreen> {
                 case _Sort.due:
                   list.sort((a, b) => isCust ? b.balance.compareTo(a.balance) : a.balance.compareTo(b.balance));
               }
-              return list;
+              return (list, goods);
             },
-            builder: (context, list) {
+            builder: (context, data) {
+              final (list, goods) = data;
               final total = list.fold<int>(0, (s, l) => s + l.balance);
               return Column(children: [
                 Container(
@@ -109,11 +117,21 @@ class _PartiesScreenState extends State<PartiesScreen> {
                             return ListTile(
                               leading: CircleAvatar(child: Text(l.pageNo ?? l.name.characters.first, style: const TextStyle(fontSize: 13))),
                               title: Text(l.name, style: const TextStyle(fontSize: 17)),
-                              subtitle: Text([
-                                if (l.dual || l.group != widget.group) t('dual_party'),
-                                if (l.nameEn != null) l.nameEn!,
-                                if (l.phone != null) l.phone!,
-                              ].join(' · ')),
+                              subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                Text([
+                                  if (l.dual || l.group != widget.group) t('dual_party'),
+                                  if (l.nameEn != null) l.nameEn!,
+                                  if (l.phone != null) l.phone!,
+                                ].join(' · ')),
+                                if (goods[l.id] case final g?)
+                                  Text(
+                                    g
+                                        .map((x) => '${t(x.qty > 0 ? 'goods_they_owe' : 'goods_we_owe')}: '
+                                            '${x.item.display(app.english)} ${fmtQty(x.qty.abs())} ${t('unit_${x.item.unit}')}')
+                                        .join(' · '),
+                                    style: const TextStyle(color: AppColors.haldi, fontWeight: FontWeight.w600, fontSize: 13),
+                                  ),
+                              ]),
                               trailing: BalanceText(l.balance, supplier: !isCust),
                               onTap: () => KhataScreen.open(context, l.id),
                             );
@@ -407,6 +425,10 @@ class _KhataScreenState extends State<KhataScreen> {
                       if (context.mounted) await VoucherScreen.open(context, VoucherType.payment, partyId: l.id);
                     case 'old':
                       if (context.mounted) await VoucherScreen.open(context, VoucherType.history, partyId: l.id);
+                    case 'goods_out':
+                      if (context.mounted) await VoucherScreen.open(context, VoucherType.goodsOut, partyId: l.id);
+                    case 'goods_in':
+                      if (context.mounted) await VoucherScreen.open(context, VoucherType.goodsIn, partyId: l.id);
                     case 'range':
                       if (!context.mounted) return;
                       final r = await showDateRangePicker(
@@ -429,6 +451,10 @@ class _KhataScreenState extends State<KhataScreen> {
                   if (l.group == LedgerGroup.supplier) ...[
                     PopupMenuItem(value: 'v_sale', child: Text(t('sale'))),
                     PopupMenuItem(value: 'v_receipt', child: Text(t('receipt'))),
+                  ],
+                  if (l.group.isParty || l.group == LedgerGroup.transporter) ...[
+                    PopupMenuItem(value: 'goods_out', child: Text(t('goods_out'))),
+                    PopupMenuItem(value: 'goods_in', child: Text(t('goods_in'))),
                   ],
                   if (app.actor.isOwner && l.group.isParty) PopupMenuItem(value: 'old', child: Text(t('old_entry_add'))),
                   PopupMenuItem(value: 'range', child: Text('${t('from')} – ${t('to')}')),
@@ -467,6 +493,7 @@ class _KhataScreenState extends State<KhataScreen> {
               ]),
             ),
             _OpenPromises(partyId: l.id),
+            _GoodsOwedCard(party: l),
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.only(bottom: 90),
@@ -674,6 +701,100 @@ class _OpenPromises extends StatelessWidget {
                 ),
               ),
             ),
+    );
+  }
+}
+
+/// उसना माल: bags lent to (or borrowed from) this party, counted in bags,
+/// apart from the money balance. Tap for the full list of entries.
+class _GoodsOwedCard extends StatelessWidget {
+  final Ledger party;
+  const _GoodsOwedCard({required this.party});
+
+  @override
+  Widget build(BuildContext context) {
+    final app = App.of(context);
+    final t = app.t;
+    return LiveBuilder<List<GoodsOwed>>(
+      reloadKey: party.id,
+      load: () => app.stock.goodsOwed(partyId: party.id),
+      builder: (context, list) {
+        if (list.isEmpty) return const SizedBox.shrink();
+        final they = list.where((g) => g.qty > 0).toList();
+        final we = list.where((g) => g.qty < 0).toList();
+        String fmt(List<GoodsOwed> l) =>
+            l.map((g) => '${g.item.display(app.english)} ${fmtQty(g.qty.abs())} ${t('unit_${g.item.unit}')}').join(', ');
+        return Material(
+          color: AppColors.haldi.withValues(alpha: 0.12),
+          child: InkWell(
+            onTap: () => _history(context),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 4, 4),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Row(children: [
+                  const Icon(Icons.inventory_2_outlined, size: 18, color: AppColors.haldi),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      if (they.isNotEmpty)
+                        Text('${t('goods_they_owe')}: ${fmt(they)}', style: const TextStyle(fontWeight: FontWeight.w700)),
+                      if (we.isNotEmpty)
+                        Text('${t('goods_we_owe')}: ${fmt(we)}', style: const TextStyle(fontWeight: FontWeight.w700)),
+                    ]),
+                  ),
+                  const Icon(Icons.chevron_right, size: 18),
+                ]),
+                Wrap(spacing: 4, children: [
+                  TextButton.icon(
+                    icon: const Icon(Icons.south_west, size: 16),
+                    label: Text(t('goods_in_short')),
+                    onPressed: () => VoucherScreen.open(context, VoucherType.goodsIn, partyId: party.id),
+                  ),
+                  TextButton.icon(
+                    icon: const Icon(Icons.north_east, size: 16),
+                    label: Text(t('goods_out_short')),
+                    onPressed: () => VoucherScreen.open(context, VoucherType.goodsOut, partyId: party.id),
+                  ),
+                ]),
+              ]),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _history(BuildContext context) async {
+    final app = App.read(context);
+    final t = app.t;
+    final moves = await app.stock.goodsMoves(party.id);
+    if (!context.mounted) return;
+    await showModalBottomSheet(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (ctx) => SafeArea(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.7),
+          child: ListView(shrinkWrap: true, children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Text('${t('r_goods_owed')} · ${party.name}', style: Theme.of(ctx).textTheme.titleMedium),
+            ),
+            for (final (id, date, type, what) in moves)
+              ListTile(
+                leading: Icon(type == VoucherType.goodsOut ? Icons.north_east : Icons.south_west,
+                    color: type == VoucherType.goodsOut ? AppColors.due : AppColors.paid),
+                title: Text(what),
+                subtitle: Text('${shortDate(date)} · ${t('vt_${type.code}')}'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  VoucherScreen.edit(context, id);
+                },
+              ),
+          ]),
+        ),
+      ),
     );
   }
 }

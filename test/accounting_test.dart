@@ -207,6 +207,48 @@ void main() {
     expect((await lr.search('२९')).single.pageNo, '29');
   });
 
+  test('उसना माल: bags lent and returned move stock, show as bags owed, never money', () async {
+    final cust = await lr.create(name: 'Prakash', group: LedgerGroup.customer);
+    final shop = await lr.create(name: 'Neighbour Shop', group: LedgerGroup.supplier);
+    final w = items['W']!;
+    const day = '2026-11-07';
+    final stock0 = await sr.stockAt(w.id, day);
+    final bal0 = await lr.balanceAt(cust);
+    final cash0 = await lr.balanceAt(vs.sys('cash'));
+
+    // 30 bags given on loan
+    final out = await vs.save(VoucherInput(type: VoucherType.goodsOut, date: day, partyId: cust, items: [ItemLine(w.id, 30, rs(280))]), owner);
+    expect(await sr.stockAt(w.id, day), stock0 - 30);
+    expect(await lr.balanceAt(cust), bal0); // money untouched
+    expect(await lr.balanceAt(vs.sys('cash')), cash0);
+    var owed = await sr.goodsOwed(partyId: cust);
+    expect(owed.single.item.id, w.id);
+    expect(owed.single.qty, 30);
+    // still ours for valuation: in-shop + lent stays the same
+    expect(await sr.stockAt(w.id, day) + await sr.lentAt(w.id, day), stock0);
+    final (ov, ol) = await vs.load(out);
+    expect(ov.amount, 0);
+    expect(ol.single.rate, 0);
+
+    // 20 come back, then 10 more → nothing owed
+    await vs.save(VoucherInput(type: VoucherType.goodsIn, date: day, partyId: cust, items: [ItemLine(w.id, 20, 0)]), owner);
+    expect((await sr.goodsOwed(partyId: cust)).single.qty, 10);
+    await vs.save(VoucherInput(type: VoucherType.goodsIn, date: day, partyId: cust, items: [ItemLine(w.id, 10, 0)]), owner);
+    expect(await sr.goodsOwed(partyId: cust), isEmpty);
+    expect(await sr.stockAt(w.id, day), stock0);
+    expect((await sr.goodsMoves(cust)).length, 3);
+
+    // we borrow 5 bags from the neighbour → we owe them
+    await vs.save(VoucherInput(type: VoucherType.goodsIn, date: day, partyId: shop, items: [ItemLine(w.id, 5, 0)]), owner);
+    owed = await sr.goodsOwed();
+    expect(owed.single.partyId, shop);
+    expect(owed.single.qty, -5);
+    expect(await sr.lentAt(w.id, day), -5); // not ours
+
+    expect(await lr.unbalanced(), isEmpty);
+    expect(() => vs.save(VoucherInput(type: VoucherType.goodsOut, date: day, items: [ItemLine(w.id, 1, 0)]), owner), throwsArgumentError);
+  });
+
   test('रोख मोजणी: short and extra cash go to रोख फरक, books then match the count', () async {
     const day = '2026-11-07';
     final cash = vs.sys('cash');

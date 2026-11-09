@@ -55,6 +55,17 @@ class DailyRegister {
   bool moved(String itemId) => rows.any((r) => r.qty.containsKey(itemId));
 }
 
+/// Bags lent to / borrowed from one party (उसना माल), net per item.
+/// [qty] > 0: the party owes us bags; < 0: we owe them.
+class GoodsOwed {
+  final String partyId;
+  final String partyName;
+  final String? pageNo;
+  final Item item;
+  final double qty;
+  GoodsOwed(this.partyId, this.partyName, this.pageNo, this.item, this.qty);
+}
+
 class StockRepo {
   final SqliteConnection db;
   final String businessId;
@@ -183,6 +194,56 @@ class StockRepo {
       row.rate[item] = r['rate'] as int;
     }
     return DailyRegister(date, items, opening, byVoucher.values.toList());
+  }
+
+  /// Net उसना माल per party and item (only non-zero), optionally for one party.
+  Future<List<GoodsOwed>> goodsOwed({String? partyId}) async {
+    final items = {for (final i in await list()) i.id: i};
+    final rows = await db.getAll(
+      'SELECT v.party_id, p.name AS party_name, p.page_no, il.item_id, SUM(-il.qty * il.direction) AS q '
+      'FROM inventory_lines il JOIN vouchers v ON v.id = il.voucher_id LEFT JOIN ledgers p ON p.id = v.party_id '
+      "WHERE il.business_id = ? AND il.deleted = 0 AND v.deleted = 0 AND v.vtype IN ('goods_out', 'goods_in') "
+      '${partyId != null ? 'AND v.party_id = ? ' : ''}'
+      'GROUP BY v.party_id, il.item_id HAVING ABS(SUM(-il.qty * il.direction)) > 0.0001 ORDER BY p.name',
+      [businessId, if (partyId != null) partyId],
+    );
+    return [
+      for (final r in rows)
+        if (items[r['item_id']] case final it?)
+          GoodsOwed(r['party_id'] as String, (r['party_name'] as String?) ?? '?', r['page_no'] as String?, it,
+              (r['q'] as num).toDouble()),
+    ];
+  }
+
+  /// Every उसना माल entry with one party, newest first: (voucher id, date, type, "W सिमेंट 30, …").
+  Future<List<(String, String, VoucherType, String)>> goodsMoves(String partyId) async {
+    final rows = await db.getAll(
+      "SELECT v.id, v.vdate, v.vtype, GROUP_CONCAT(i.name || ' ' || il.qty, ', ') AS what FROM vouchers v "
+      'JOIN inventory_lines il ON il.voucher_id = v.id AND il.deleted = 0 JOIN items i ON i.id = il.item_id '
+      "WHERE v.party_id = ? AND v.deleted = 0 AND v.vtype IN ('goods_out', 'goods_in') "
+      'GROUP BY v.id ORDER BY v.vdate DESC, v.created_at DESC',
+      [partyId],
+    );
+    return [
+      for (final r in rows)
+        (
+          r['id'] as String,
+          r['vdate'] as String,
+          VoucherType.fromCode(r['vtype'] as String),
+          ((r['what'] as String?) ?? '').replaceAllMapped(RegExp(r'(\d+)\.0\b'), (m) => m[1]!),
+        ),
+    ];
+  }
+
+  /// Net bags out on loan for an item up to [date] (lent − borrowed); they are
+  /// still ours, so they count in the stock value.
+  Future<double> lentAt(String itemId, String date, {bool before = false}) async {
+    final r = await db.get(
+      'SELECT COALESCE(SUM(-il.qty * il.direction), 0) AS q FROM inventory_lines il JOIN vouchers v ON v.id = il.voucher_id '
+      "WHERE il.item_id = ? AND il.deleted = 0 AND v.vtype IN ('goods_out', 'goods_in') AND il.vdate ${before ? '<' : '<='} ?",
+      [itemId, date],
+    );
+    return (r['q'] as num).toDouble();
   }
 
   /// Weighted-average purchase cost per unit (paise) up to [date].

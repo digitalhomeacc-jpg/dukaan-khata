@@ -165,6 +165,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
       (Icons.account_balance, t('r_upibook'), () => moneyBook([LedgerGroup.upi, LedgerGroup.bank], t('r_upibook')), false),
       (Icons.people, t('r_receivable'), () => open(() => r.outstanding(LedgerGroup.customer), ledgers: true), false),
       (Icons.local_shipping, t('r_payable'), () => open(() => r.outstanding(LedgerGroup.supplier), ledgers: true), false),
+      (Icons.inventory_2_outlined, t('r_goods_owed'), () => open(() => r.goodsOwed(), ledgers: true), false),
       (Icons.menu_book, t('r_ledger'), () async {
         final l = await pickLedger(context, groups: LedgerGroup.values);
         if (l != null) open(() => r.ledgerStatement(l.id, from: from, to: to));

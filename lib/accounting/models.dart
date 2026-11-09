@@ -55,6 +55,8 @@ enum VoucherType {
   stockAdjust('stock_adjust'),
   history('history'), // old khata entry before the books start: reference only, posts nothing
   promise('promise'), // customer's promised payment date (वायदा): reminder only, posts nothing
+  goodsOut('goods_out'), // माल उसना दिला: bags lent to a party, to come back as bags – stock only, no money
+  goodsIn('goods_in'), // उसना माल परत आला / उसना घेतला: bags back from (or borrowed from) a party
   opening('opening'); // reserved – opening balances live on the ledger/item rows
 
   final String code;
@@ -63,10 +65,13 @@ enum VoucherType {
 
   /// Stock direction for item lines on this voucher type.
   int get stockDirection => switch (this) {
-        sale || purchaseReturn => -1,
-        purchase || salesReturn => 1,
+        sale || purchaseReturn || goodsOut => -1,
+        purchase || salesReturn || goodsIn => 1,
         _ => 0,
       };
+
+  /// Goods lent / borrowed by quantity (उसना माल) – moves stock, never money.
+  bool get isGoodsLoan => this == goodsOut || this == goodsIn;
 }
 
 class Ledger {

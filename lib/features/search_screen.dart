@@ -192,6 +192,7 @@ class VoucherTile extends StatelessWidget {
         VoucherType.payment => Icons.north_east,
         VoucherType.contra => Icons.swap_horiz,
         VoucherType.history => Icons.history_edu,
+        VoucherType.goodsOut || VoucherType.goodsIn => Icons.inventory_2_outlined,
         _ => Icons.receipt_long,
       };
 
@@ -217,7 +218,10 @@ class VoucherTile extends StatelessWidget {
           if (v.type == VoucherType.sale && v.due > 0) '${t('due')} ₹${Money.fmt(v.due)}',
         ].join(' · '),
       ),
-      trailing: Text('₹${Money.fmt(v.amount)}',
+      // उसना माल has no money value – the bags show on the khata
+      trailing: v.type.isGoodsLoan
+          ? null
+          : Text('₹${Money.fmt(v.amount)}',
           style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15, fontFeatures: const [FontFeature.tabularFigures()])),
       onTap: () => VoucherScreen.edit(context, v.id),
     );

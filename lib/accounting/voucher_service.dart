@@ -221,6 +221,10 @@ class VoucherService {
       case VoucherType.promise:
         // promised payment date: a reminder, posts nothing
         _require(v.partyId, 'party');
+      case VoucherType.goodsOut:
+      case VoucherType.goodsIn:
+        // bags lent / returned: counted in bags on the party's khata, no money
+        _require(v.partyId, 'party');
       case VoucherType.stockAdjust:
       case VoucherType.opening:
         break;
@@ -240,7 +244,9 @@ class VoucherService {
   /// Creates or (if [existingId] is given) edits a voucher. Returns its id.
   Future<String> save(VoucherInput v, Actor actor, {String? existingId}) async {
     final lines = buildLines(v);
-    final total = v.total;
+    final goodsLoan = v.type.isGoodsLoan;
+    final total = goodsLoan ? 0 : v.total; // उसना माल has no money value
+    if (goodsLoan && !v.items.any((i) => i.qty != 0)) throw ArgumentError('err_items');
     final today = todayIso();
     if (!actor.isOwner && v.date.compareTo(today) < 0) {
       throw PermissionDenied('err_staff_today');
@@ -315,10 +321,11 @@ class VoucherService {
         final d = v.type == VoucherType.stockAdjust ? (it.qty >= 0 ? 1 : -1) : dir;
         // old bills keep their item lines for the record, with no stock effect
         if (d == 0 && v.type != VoucherType.history) continue;
+        if (it.qty == 0) continue;
         await tx.execute(
           'INSERT INTO inventory_lines (id, business_id, voucher_id, item_id, qty, rate, amount, direction, vdate, deleted) '
           'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)',
-          ['$id:I${n++}', businessId, id, it.itemId, it.qty.abs(), it.rate, it.amount.abs(), d, v.date],
+          ['$id:I${n++}', businessId, id, it.itemId, it.qty.abs(), goodsLoan ? 0 : it.rate, goodsLoan ? 0 : it.amount.abs(), d, v.date],
         );
       }
       return id;

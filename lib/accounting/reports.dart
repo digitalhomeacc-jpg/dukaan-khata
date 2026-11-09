@@ -122,6 +122,33 @@ class Reports {
   /// "12,000 Dr" style balance using simple words.
   String _bal(int b) => b == 0 ? '0' : '${Money.fmt(b, abs: true)} ${b > 0 ? tr('dr_short') : tr('cr_short')}';
 
+  /// उसना माल: bags lent to / borrowed from each party.
+  Future<ReportTable> goodsOwed() async {
+    final list = await stock.goodsOwed();
+    return ReportTable(
+      title: tr('r_goods_owed'),
+      subtitle: tr('goods_owed_sub'),
+      columns: [
+        ReportColumn(tr('page_no'), flex: 1),
+        ReportColumn(tr('name'), flex: 4),
+        ReportColumn(tr('item'), flex: 3),
+        ReportColumn.num(tr('goods_they_owe')),
+        ReportColumn.num(tr('goods_we_owe')),
+      ],
+      rows: [
+        for (final g in list)
+          [
+            g.pageNo ?? '',
+            g.partyName,
+            g.item.name,
+            g.qty > 0 ? '${fmtQty(g.qty)} ${tr('unit_${g.item.unit}')}' : '',
+            g.qty < 0 ? '${fmtQty(-g.qty)} ${tr('unit_${g.item.unit}')}' : '',
+          ],
+      ],
+      rowRefs: [for (final g in list) g.partyId],
+    );
+  }
+
   Future<ReportTable> outstanding(LedgerGroup group) async {
     // a person can be both customer and supplier – the net balance decides
     // whether they appear under receivable or payable
@@ -398,6 +425,9 @@ class Reports {
     var v = 0.0;
     for (final i in items) {
       final q = before != null ? await stock.stockAt(i.id, before, before: true) : await stock.stockAt(i.id, upto!);
+      // bags lent out (उसना) are still ours; bags borrowed are not
+      final lent = before != null ? await stock.lentAt(i.id, before, before: true) : await stock.lentAt(i.id, upto!);
+      v += lent * (avg[i.id] ?? 0);
       v += q * (avg[i.id] ?? 0);
     }
     return v.round();
