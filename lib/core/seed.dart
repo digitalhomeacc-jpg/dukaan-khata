@@ -41,6 +41,8 @@ const seedLedgers = <SeedLedger>[
   SeedLedger('discount_given', 'सूट दिली', 'Discount Allowed', LedgerGroup.expense),
   SeedLedger('discount_recd', 'सूट मिळाली', 'Discount Received', LedgerGroup.income),
   SeedLedger('round_off', 'राउंड ऑफ', 'Round off', LedgerGroup.expense),
+  SeedLedger('service_income', 'सेवा उत्पन्न', 'Service income', LedgerGroup.income),
+  SeedLedger('service_cost', 'सेवा खर्च / मजुरी', 'Service cost / labour', LedgerGroup.directExpense),
   SeedLedger('interest_income', 'व्याज मिळाले', 'Interest received', LedgerGroup.income),
   SeedLedger('other_income', 'इतर उत्पन्न', 'Other Income', LedgerGroup.income),
   // रोख मोजणी: counted cash vs books (short = loss, extra = income)

@@ -15,6 +15,7 @@ import 'audit_screen.dart';
 import 'booking_screen.dart';
 import 'books_screens.dart';
 import 'parties_screen.dart';
+import 'stock_screen.dart' show itemUnits;
 
 /// One screen for every kind of entry. Shows only the fields the type needs.
 class VoucherScreen extends StatefulWidget {
@@ -381,7 +382,7 @@ class _VoucherScreenState extends State<VoucherScreen> {
                     ListTile(
                       dense: true,
                       title: Text(i.display(app.english)),
-                      subtitle: Text('${t('cat_${i.category}')} · ${t('stock')} ${fmtQty(i.stock)} ${t('unit_${i.unit}')}'),
+                      subtitle: Text(i.isService ? '${t('cat_service')} · ${t('unit_${i.unit}')}' : '${t('cat_${i.category}')} · ${t('stock')} ${fmtQty(i.stock)} ${t('unit_${i.unit}')}'),
                       trailing: Text('₹${Money.fmt(_buying ? i.purchaseRate : i.saleRate)}'),
                       onTap: () => Navigator.pop(ctx, i),
                     ),
@@ -438,7 +439,7 @@ class _VoucherScreenState extends State<VoucherScreen> {
                   child: DropdownButtonFormField<String>(
                     initialValue: unit,
                     decoration: InputDecoration(labelText: t('unit')),
-                    items: [for (final u in const ['nos', 'ft', 'kg', 'bag', 'ltr', 'ton', 'brass']) DropdownMenuItem(value: u, child: Text(t('unit_$u')))],
+                    items: [for (final u in itemUnits) DropdownMenuItem(value: u, child: Text(t('unit_$u')))],
                     onChanged: (v) => setD(() => unit = v!),
                   ),
                 ),
@@ -449,10 +450,13 @@ class _VoucherScreenState extends State<VoucherScreen> {
                     isExpanded: true,
                     decoration: InputDecoration(labelText: t('category')),
                     items: [
-                      for (final c in const ['plumbing', 'cement', 'steel', 'blocks', 'sand', 'other'])
+                      for (final c in const ['plumbing', 'cement', 'steel', 'blocks', 'sand', 'other', serviceCategory])
                         DropdownMenuItem(value: c, child: Text(t('cat_$c'))),
                     ],
-                    onChanged: (v) => setD(() => category = v!),
+                    onChanged: (v) => setD(() {
+                      category = v!;
+                      if (v == serviceCategory && const ['nos', 'bag', 'kg'].contains(unit)) unit = 'job';
+                    }),
                   ),
                 ),
               ]),
@@ -1415,7 +1419,7 @@ class _VoucherScreenState extends State<VoucherScreen> {
               avatar: it.shortCode == null
                   ? null
                   : CircleAvatar(child: Text(it.shortCode!, style: const TextStyle(fontSize: 10))),
-              label: Text('${it.display(app.english)} (${fmtQty(it.stock)})'),
+              label: Text(it.isService ? it.display(app.english) : '${it.display(app.english)} (${fmtQty(it.stock)})'),
               onPressed: () => _addItem(it),
             ),
           ),
@@ -1443,8 +1447,9 @@ class _VoucherScreenState extends State<VoucherScreen> {
                             style: const TextStyle(fontWeight: FontWeight.w600),
                           ),
                           TextSpan(
-                            text:
-                                '   ${app.t('stock_qty')}: ${fmtQty(lines[i].item.stock)} ${app.t('unit_${lines[i].item.unit}')}',
+                            text: lines[i].item.isService
+                                ? '   ${app.t('cat_service')} · ${app.t('unit_${lines[i].item.unit}')}'
+                                : '   ${app.t('stock_qty')}: ${fmtQty(lines[i].item.stock)} ${app.t('unit_${lines[i].item.unit}')}',
                             style: Theme.of(context).textTheme.bodySmall,
                           ),
                         ],

@@ -125,7 +125,10 @@ class VoucherService {
   String sys(String key) => systemLedgerId(businessId, key);
 
   /// Builds the debit/credit lines for an input. Pure – unit-testable.
-  List<MoneyLine> buildLines(VoucherInput v) {
+  /// [services]: item ids that are services (सेवा) – their value goes to
+  /// service income / cost instead of sales / purchase.
+  List<MoneyLine> buildLines(VoucherInput v, {Set<String> services = const {}}) {
+    final serviceValue = v.items.where((l) => services.contains(l.itemId)).fold<int>(0, (s, l) => s + l.amount);
     final total = v.total;
     final lines = <MoneyLine>[];
     void dr(String id, int amt) {
@@ -141,7 +144,8 @@ class VoucherService {
       case VoucherType.sale:
         final party = v.partyId ?? pay; // walk-in cash sale
         dr(party, total);
-        cr(sys('sales'), v.goods);
+        cr(sys('sales'), v.goods - serviceValue);
+        cr(sys('service_income'), serviceValue);
         cr(sys('gst'), v.gst); // output GST payable
         // Hamali charged on the bill is our income; paying the labourers at
         // day end is an expense (हमाली), so charging more shows as profit.
@@ -173,7 +177,8 @@ class VoucherService {
         }
       case VoucherType.purchase:
         final party = v.partyId ?? pay;
-        dr(sys('purchase'), v.goods);
+        dr(sys('purchase'), v.goods - serviceValue);
+        dr(sys('service_cost'), serviceValue); // e.g. a contractor's work bought in
         dr(sys('gst'), v.gst); // input GST (credit)
         // we pay a rounded amount: up → small expense, down → small income
         if (v.roundOffApplies && v.roundOff > 0) dr(sys('round_off'), v.roundOff);
@@ -267,7 +272,17 @@ class VoucherService {
 
   /// Creates or (if [existingId] is given) edits a voucher. Returns its id.
   Future<String> save(VoucherInput v, Actor actor, {String? existingId}) async {
-    final lines = buildLines(v);
+    // services on the bill (no stock, own income account)
+    final itemIds = v.items.map((l) => l.itemId).toSet().toList();
+    final services = itemIds.isEmpty
+        ? <String>{}
+        : {
+            for (final r in await db.getAll(
+                'SELECT id FROM items WHERE category = ? AND id IN (${List.filled(itemIds.length, '?').join(',')})',
+                [serviceCategory, ...itemIds]))
+              r['id'] as String
+          };
+    final lines = buildLines(v, services: services);
     final goodsLoan = v.type.isGoodsLoan;
     final total = goodsLoan ? 0 : v.total; // उसना माल has no money value
     if (goodsLoan && !v.items.any((i) => i.qty != 0)) throw ArgumentError('err_items');
@@ -359,10 +374,11 @@ class VoucherService {
       var n = 0;
       for (final it in v.items) {
         // stock adjustment: sign of qty decides in/out
-        final d = v.type == VoucherType.stockAdjust ? (it.qty >= 0 ? 1 : -1) : dir;
+        final service = services.contains(it.itemId);
+        final d = service ? 0 : v.type == VoucherType.stockAdjust ? (it.qty >= 0 ? 1 : -1) : dir;
         // old bills keep their item lines for the record, with no stock effect
         // old bills, opening उसना माल and bookings keep their item lines with no stock effect
-        if (d == 0 && v.type != VoucherType.history && v.type != VoucherType.booking && !goodsOpening) continue;
+        if (d == 0 && v.type != VoucherType.history && v.type != VoucherType.booking && !goodsOpening && !service) continue;
         if (it.qty == 0) continue;
         await tx.execute(
           'INSERT INTO inventory_lines (id, business_id, voucher_id, item_id, qty, rate, amount, direction, vdate, deleted) '

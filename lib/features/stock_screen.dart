@@ -11,8 +11,8 @@ import '../state/app_controller.dart';
 import 'report_view.dart';
 import 'voucher_screen.dart';
 
-const itemCategories = ['cement', 'steel', 'blocks', 'plumbing', 'sand', 'other'];
-const itemUnits = ['bag', 'kg', 'nos', 'ft', 'ton', 'brass', 'ltr'];
+const itemCategories = ['cement', 'steel', 'blocks', 'plumbing', 'sand', 'other', serviceCategory];
+const itemUnits = ['bag', 'kg', 'nos', 'ft', 'ton', 'brass', 'ltr', 'sqft', 'job', 'day'];
 
 class StockScreen extends StatelessWidget {
   const StockScreen({super.key});
@@ -102,11 +102,14 @@ class _ItemList extends StatelessWidget {
               child: Text(i.shortCode ?? '', style: const TextStyle(fontSize: 12)),
             ),
             title: Text(i.display(app.english)),
-            subtitle: Text('${t('sale_rate')} ₹${Money.fmt(i.saleRate)}'),
-            trailing: Text(
-              '${fmtQty(i.stock)} ${t('unit_${i.unit}')}',
-              style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: low || i.stock < 0 ? Colors.red.shade700 : null),
-            ),
+            subtitle: Text('${t('sale_rate')} ₹${Money.fmt(i.saleRate)}${i.isService ? ' / ${t('unit_${i.unit}')}' : ''}'),
+            // a service has no stock
+            trailing: i.isService
+                ? Text(t('no_stock'), style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant))
+                : Text(
+                    '${fmtQty(i.stock)} ${t('unit_${i.unit}')}',
+                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: low || i.stock < 0 ? Colors.red.shade700 : null),
+                  ),
             onTap: () async {
               final to = todayIso();
               final from = fyStart(to);
@@ -599,9 +602,9 @@ class _ItemFormState extends State<ItemForm> {
       shortCode: code.text,
       saleRate: Money.parse(sale.text) ?? 0,
       purchaseRate: Money.parse(purchase.text) ?? 0,
-      openingQty: double.tryParse(normalizeDigits(oq.text)) ?? 0,
+      openingQty: category == serviceCategory ? 0 : double.tryParse(normalizeDigits(oq.text)) ?? 0,
       openingRate: Money.parse(orate.text) ?? 0,
-      lowStock: double.tryParse(normalizeDigits(low.text)) ?? 0,
+      lowStock: category == serviceCategory ? 0 : double.tryParse(normalizeDigits(low.text)) ?? 0,
     );
     if (mounted) Navigator.pop(context);
   }
@@ -646,7 +649,10 @@ class _ItemFormState extends State<ItemForm> {
           initialValue: category,
           decoration: d(t('category')),
           items: [for (final c in itemCategories) DropdownMenuItem(value: c, child: Text(t('cat_$c')))],
-          onChanged: (v) => setState(() => category = v!),
+          onChanged: (v) => setState(() {
+            category = v!;
+            if (v == serviceCategory && const ['bag', 'kg'].contains(unit)) unit = 'job';
+          }),
         ),
         const SizedBox(height: 12),
         Row(children: [
@@ -654,14 +660,20 @@ class _ItemFormState extends State<ItemForm> {
           const SizedBox(width: 12),
           Expanded(child: TextField(controller: purchase, keyboardType: TextInputType.number, decoration: d('${t('purchase_rate')} ₹'))),
         ]),
-        const SizedBox(height: 12),
-        Row(children: [
-          Expanded(child: TextField(controller: oq, keyboardType: TextInputType.number, decoration: d(t('opening_qty')))),
-          const SizedBox(width: 12),
-          Expanded(child: TextField(controller: orate, keyboardType: TextInputType.number, decoration: d('${t('opening_rate')} ₹'))),
-        ]),
-        const SizedBox(height: 12),
-        TextField(controller: low, keyboardType: TextInputType.number, decoration: d(t('low_stock'))),
+        // a service has no stock: no opening stock or low-stock alert
+        if (category == serviceCategory) ...[
+          const SizedBox(height: 10),
+          Text(t('service_help'), style: Theme.of(context).textTheme.bodySmall),
+        ] else ...[
+          const SizedBox(height: 12),
+          Row(children: [
+            Expanded(child: TextField(controller: oq, keyboardType: TextInputType.number, decoration: d(t('opening_qty')))),
+            const SizedBox(width: 12),
+            Expanded(child: TextField(controller: orate, keyboardType: TextInputType.number, decoration: d('${t('opening_rate')} ₹'))),
+          ]),
+          const SizedBox(height: 12),
+          TextField(controller: low, keyboardType: TextInputType.number, decoration: d(t('low_stock'))),
+        ],
         const SizedBox(height: 24),
         FilledButton(style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)), onPressed: _save, child: Text(t('save'))),
       ]),

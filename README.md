@@ -84,6 +84,13 @@ Bags that were already out before the books start: owner turns on **सुरु
 screen – counted as owed, but no change to stock (the opening count already left them out), money or profit.
 Old entries (जुनी नोंद) stay reference only.
 
+## सेवा (services)
+
+An item with the category **सेवा (स्टॉक नाही)** – e.g. labour or fitting work – is billed like any item
+(500 sq ft × ₹12, or 1 job × ₹2,000), on the same bill as goods, but never touches stock (not in the stock
+list, register or valuation). Its money goes to *सेवा उत्पन्न*; work bought in on a purchase bill goes to
+*सेवा खर्च / मजुरी*. Units sq ft / job / day.
+
 ## रोख मोजणी (cash count)
 
 Rojmal → calculator icon (or **+** → रोख मोजणी): type how many notes of each kind (or just the

@@ -165,7 +165,7 @@ class StockRepo {
 
   /// The paper stock register for one day: opening per item, every bill, closing.
   Future<DailyRegister> dailyRegister(String date) async {
-    final items = await list();
+    final items = (await list()).where((i) => !i.isService).toList(); // services have no stock
     final opening = <String, double>{};
     final openRows = await db.getAll(
       'SELECT i.id, COALESCE(i.opening_qty,0) + COALESCE((SELECT SUM(qty * direction) FROM inventory_lines '

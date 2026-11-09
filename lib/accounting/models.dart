@@ -38,7 +38,7 @@ enum Nature { asset, liability, income, expense }
 const coreLedgerKeys = {
   'cash', 'sales', 'sales_return', 'purchase', 'purchase_return', 'gst', 'capital', 'history_adj',
   'hamali_income', 'transport_income', 'freight', 'hamali', 'discount_given', 'discount_recd', 'stock_adj',
-  'round_off', 'varhai', 'cash_diff', 'interest_income',
+  'round_off', 'varhai', 'cash_diff', 'interest_income', 'service_income', 'service_cost',
 };
 
 const _moneyGroups = [LedgerGroup.cash, LedgerGroup.upi, LedgerGroup.bank];
@@ -210,7 +210,13 @@ class Item {
 
   String display(bool english) =>
       english && (nameEn?.isNotEmpty ?? false) ? nameEn! : name;
+
+  /// सेवा: billed like an item (qty × rate) but never in stock; its money goes
+  /// to सेवा उत्पन्न, not sales.
+  bool get isService => category == serviceCategory;
 }
+
+const serviceCategory = 'service';
 
 /// One item row on a sale/purchase bill.
 class ItemLine {

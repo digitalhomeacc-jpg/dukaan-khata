@@ -296,7 +296,7 @@ class Reports {
   }
 
   Future<ReportTable> stockSummary() async {
-    final items = await stock.list();
+    final items = (await stock.list()).where((i) => !i.isService).toList();
     final avg = await stock.averageCosts();
     var value = 0.0;
     final hl = <int>{};

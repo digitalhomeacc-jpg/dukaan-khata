@@ -129,7 +129,7 @@ class _SearchScreenState extends State<SearchScreen> {
                       ListTile(
                         leading: CircleAvatar(child: Text(i.shortCode ?? '', style: const TextStyle(fontSize: 12))),
                         title: Text(i.display(app.english)),
-                        trailing: Text('${fmtQty(i.stock)} ${t('unit_${i.unit}')}', style: const TextStyle(fontWeight: FontWeight.w600)),
+                        trailing: Text(i.isService ? t('cat_service') : '${fmtQty(i.stock)} ${t('unit_${i.unit}')}', style: const TextStyle(fontWeight: FontWeight.w600)),
                         onTap: () => Navigator.push(
                           context,
                           MaterialPageRoute(

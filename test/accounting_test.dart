@@ -433,6 +433,35 @@ void main() {
     expect(b.lines.single.remaining, 50);
   });
 
+  test('services: billed like items, no stock, income in सेवा उत्पन्न', () async {
+    final cust = await lr.create(name: 'Home Owner', group: LedgerGroup.customer);
+    final contractor = await lr.create(name: 'Paint Contractor', group: LedgerGroup.supplier);
+    final work = await sr.save(name: 'Wall work', category: serviceCategory, unit: 'sqft', saleRate: rs(12));
+    final w = items['W']!;
+    const day = '2026-11-07';
+    final stockW = await sr.stockAt(w.id, day);
+    // one bill: 10 bags cement + 500 sq ft of work at ₹12
+    final id = await vs.save(
+        VoucherInput(type: VoucherType.sale, date: day, partyId: cust, items: [ItemLine(w.id, 10, rs(280)), ItemLine(work, 500, rs(12))]),
+        owner);
+    expect(await lr.balanceAt(cust), rs(2800 + 6000));
+    expect(await lr.balanceAt(vs.sys('sales')), -rs(2800)); // goods only
+    expect(await lr.balanceAt(vs.sys('service_income')), -rs(6000));
+    expect(await sr.stockAt(w.id, day), stockW - 10);
+    expect(await sr.stockAt(work, day), 0); // never in stock
+    final reg = await sr.dailyRegister(day);
+    expect(reg.items.any((i) => i.id == work), isFalse);
+    expect(reg.rows.single.qty.containsKey(work), isFalse);
+    // the bill still shows the service line when opened again
+    final (_, lines) = await vs.load(id);
+    expect(lines.map((l) => l.itemId), containsAll([w.id, work]));
+    // work bought from a contractor → service cost, not purchases / stock
+    await vs.save(VoucherInput(type: VoucherType.purchase, date: day, partyId: contractor, items: [ItemLine(work, 500, rs(8))]), owner);
+    expect(await lr.balanceAt(vs.sys('service_cost')), rs(4000));
+    expect(await sr.stockAt(work, day), 0);
+    expect(await lr.unbalanced(), isEmpty);
+  });
+
   test('रोख मोजणी: short and extra cash go to रोख फरक, books then match the count', () async {
     const day = '2026-11-07';
     final cash = vs.sys('cash');
