@@ -160,9 +160,9 @@ class _DailyRegisterViewState extends State<DailyRegisterView> {
               Future<ReportTable> build() => app.reports.dailyRegister(date, allItems: allItems);
               switch (v) {
                 case 'pdf':
-                  await Exporter.sharePdf(await app.pdfTable(build), shop: app.businessName);
+                  await Exporter.sharePdf(await app.pdfTable(build), shop: app.pdfShopName);
                 case 'print':
-                  await Exporter.printPdf(await app.pdfTable(build), shop: app.businessName);
+                  await Exporter.printPdf(await app.pdfTable(build), shop: app.pdfShopName);
                 case 'xls':
                   await Exporter.shareExcel([await build()], '${t('daily_register')} ${shortDate(date)}');
               }

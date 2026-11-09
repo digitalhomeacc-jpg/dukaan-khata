@@ -207,7 +207,7 @@ extension BillPdf on Exporter {
       pageFormat: PdfPageFormat.a5,
       margin: const pw.EdgeInsets.all(20),
       build: (_) => pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.stretch, children: [
-        pw.Text(l(app.businessName), style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold), textAlign: pw.TextAlign.center),
+        pw.Text(l(app.pdfShopName), style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold), textAlign: pw.TextAlign.center),
         if (app.shopAddress.isNotEmpty) pw.Text(l(app.shopAddress), style: const pw.TextStyle(fontSize: 9), textAlign: pw.TextAlign.center),
         pw.Text([if (app.shopPhone.isNotEmpty) app.shopPhone, if (isGst && app.shopGstin.isNotEmpty) 'GSTIN ${app.shopGstin}'].join(' · '),
             style: const pw.TextStyle(fontSize: 9), textAlign: pw.TextAlign.center),

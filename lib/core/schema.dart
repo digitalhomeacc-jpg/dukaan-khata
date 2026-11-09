@@ -31,6 +31,7 @@ class TableDef {
 const List<TableDef> appTables = [
   TableDef('businesses', [
     ColDef.t('name'),
+    ColDef.t('name_en'), // English shop name for PDFs / bills
     ColDef.t('phone'),
     ColDef.t('address'),
     ColDef.t('gstin'),
@@ -60,6 +61,7 @@ const List<TableDef> appTables = [
     ColDef.t('short_code'), // C, H, D, P, T for money accounts
     ColDef.i('opening_balance'), // paise, +ve = receivable/debit
     ColDef.i('credit_limit'),
+    ColDef.i('interest_rate'), // व्याज: % per month × 100 (150 = 1.5 % दरमहा), 0 = none
     ColDef.i('system'), // 1 = built-in ledger, cannot be deleted
     ColDef.i('archived'),
     ColDef.t('created_at'),

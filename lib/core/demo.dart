@@ -33,7 +33,9 @@ Future<void> loadDemoData(VoucherService vs, LedgerRepo lr, StockRepo sr) async 
   final mukesh = await lr.create(name: 'संजय माने', nameEn: 'Sanjay Mane', group: LedgerGroup.customer, pageNo: '69', phone: '9800000069');
   await lr.create(name: 'प्रकाश गायकवाड', nameEn: 'Prakash Gaikwad', group: LedgerGroup.customer, pageNo: '135', openingBalance: rs(4200));
   await lr.create(name: 'रमेश काका', nameEn: 'Ramesh Kaka', group: LedgerGroup.customer, pageNo: '81');
-  await lr.create(name: 'दीपक साळुंखे', nameEn: 'Deepak Salunkhe', group: LedgerGroup.customer, pageNo: '15', openingBalance: rs(15000));
+  final deepak = await lr.create(name: 'दीपक साळुंखे', nameEn: 'Deepak Salunkhe', group: LedgerGroup.customer, pageNo: '15', openingBalance: rs(15000));
+  await lr.setInterestRate(deepak, 150); // व्याज 1.5 % दरमहा – has not paid for months
+  await vs.db.execute("UPDATE businesses SET name_en = 'Sai Building Material' WHERE id = ?", [vs.businessId]);
   final agency = await lr.create(name: 'लक्ष्मी सिमेंट एजन्सी', nameEn: 'Laxmi Cement Agency', group: LedgerGroup.supplier, openingBalance: -rs(150000));
 
   // Old khata entries from before the books start (no effect on cash or stock)

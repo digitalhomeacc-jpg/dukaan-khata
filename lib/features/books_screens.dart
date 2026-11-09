@@ -64,6 +64,7 @@ class ShopDetailsScreen extends StatefulWidget {
 class _ShopDetailsScreenState extends State<ShopDetailsScreen> {
   late final app = App.read(context);
   late final name = TextEditingController(text: app.businessName);
+  late final nameEn = TextEditingController(text: app.shopNameEn);
   late final address = TextEditingController(text: app.shopAddress);
   late final phone = TextEditingController(text: app.shopPhone);
   late final gstin = TextEditingController(text: app.shopGstin);
@@ -78,6 +79,13 @@ class _ShopDetailsScreenState extends State<ShopDetailsScreen> {
       appBar: AppBar(title: Text(t('shop_details'))),
       body: ListView(padding: const EdgeInsets.all(16), children: [
         TextField(controller: name, decoration: d(t('business_name'))),
+        const SizedBox(height: 12),
+        TextField(
+          key: const Key('shop_name_en'),
+          controller: nameEn,
+          textCapitalization: TextCapitalization.words,
+          decoration: d(t('business_name_en')).copyWith(helperText: t('business_name_en_help')),
+        ),
         const SizedBox(height: 12),
         TextField(controller: address, maxLines: 2, decoration: d(t('address'))),
         const SizedBox(height: 12),
@@ -112,6 +120,7 @@ class _ShopDetailsScreenState extends State<ShopDetailsScreen> {
             }
             await app.saveShopDetails(
               name: name.text.trim(),
+              nameEn: nameEn.text,
               address: address.text.trim(),
               phone: phone.text.trim(),
               gstin: gstin.text.trim(),

@@ -37,7 +37,7 @@ enum Nature { asset, liability, income, expense }
 const coreLedgerKeys = {
   'cash', 'sales', 'sales_return', 'purchase', 'purchase_return', 'gst', 'capital', 'history_adj',
   'hamali_income', 'transport_income', 'freight', 'hamali', 'discount_given', 'discount_recd', 'stock_adj',
-  'round_off', 'varhai', 'cash_diff',
+  'round_off', 'varhai', 'cash_diff', 'interest_income',
 };
 
 const _moneyGroups = [LedgerGroup.cash, LedgerGroup.upi, LedgerGroup.bank];
@@ -57,6 +57,7 @@ enum VoucherType {
   promise('promise'), // customer's promised payment date (वायदा): reminder only, posts nothing
   goodsOut('goods_out'), // माल उसना दिला: bags lent to a party, to come back as bags – stock only, no money
   goodsIn('goods_in'), // उसना माल परत आला / उसना घेतला: bags back from (or borrowed from) a party
+  interest('interest'), // व्याज: interest charged on a party's overdue balance
   opening('opening'); // reserved – opening balances live on the ledger/item rows
 
   final String code;
@@ -86,6 +87,7 @@ class Ledger {
   final String? gstin;
   final int openingBalance;
   final int creditLimit;
+  final int interestRate; // % per month × 100 (150 = 1.5 % दरमहा)
   final bool system;
   final bool archived;
   final int balance; // computed: opening + Σ(debit − credit)
@@ -104,6 +106,7 @@ class Ledger {
     this.gstin,
     this.openingBalance = 0,
     this.creditLimit = 0,
+    this.interestRate = 0,
     this.system = false,
     this.archived = false,
     this.balance = 0,
@@ -122,6 +125,7 @@ class Ledger {
         gstin: r['gstin'] as String?,
         openingBalance: (r['opening_balance'] as int?) ?? 0,
         creditLimit: (r['credit_limit'] as int?) ?? 0,
+        interestRate: (r['interest_rate'] as int?) ?? 0,
         system: (r['system'] as int?) == 1,
         archived: (r['archived'] as int?) == 1,
         balance: (r['balance'] as num?)?.toInt() ?? 0,

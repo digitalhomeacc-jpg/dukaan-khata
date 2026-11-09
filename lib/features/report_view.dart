@@ -7,6 +7,7 @@ import '../shared/export.dart';
 import '../shared/widgets.dart';
 import '../state/app_controller.dart';
 import 'parties_screen.dart';
+import 'interest_screen.dart';
 import 'promise_screen.dart';
 import 'voucher_screen.dart';
 
@@ -34,14 +35,14 @@ class ReportView extends StatelessWidget {
             IconButton(
               icon: const Icon(Icons.picture_as_pdf),
               tooltip: 'PDF',
-              onPressed: () async => Exporter.sharePdf(await app.pdfTable(load), shop: app.businessName),
+              onPressed: () async => Exporter.sharePdf(await app.pdfTable(load), shop: app.pdfShopName),
             ),
             IconButton(
               icon: const Icon(Icons.table_chart),
               tooltip: 'Excel',
               onPressed: () => Exporter.shareExcel([t], t.title),
             ),
-            IconButton(icon: const Icon(Icons.print), onPressed: () async => Exporter.printPdf(await app.pdfTable(load), shop: app.businessName)),
+            IconButton(icon: const Icon(Icons.print), onPressed: () async => Exporter.printPdf(await app.pdfTable(load), shop: app.pdfShopName)),
           ],
         ),
         body: ReportTableView(
@@ -166,6 +167,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
       (Icons.people, t('r_receivable'), () => open(() => r.outstanding(LedgerGroup.customer), ledgers: true), false),
       (Icons.local_shipping, t('r_payable'), () => open(() => r.outstanding(LedgerGroup.supplier), ledgers: true), false),
       (Icons.inventory_2_outlined, t('r_goods_owed'), () => open(() => r.goodsOwed(), ledgers: true), false),
+      (Icons.percent, t('interest_list'), () => InterestListScreen.open(context), true),
       (Icons.menu_book, t('r_ledger'), () async {
         final l = await pickLedger(context, groups: LedgerGroup.values);
         if (l != null) open(() => r.ledgerStatement(l.id, from: from, to: to));

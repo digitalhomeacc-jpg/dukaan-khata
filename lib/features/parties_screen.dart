@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
+import '../accounting/interest.dart';
 import '../accounting/ledger_repo.dart';
 import '../accounting/models.dart';
 import '../core/money.dart';
@@ -12,6 +13,7 @@ import '../shared/export.dart';
 import '../shared/widgets.dart';
 import '../state/app_controller.dart';
 import 'books_screens.dart';
+import 'interest_screen.dart';
 import 'promise_screen.dart';
 import 'voucher_screen.dart';
 
@@ -172,6 +174,8 @@ class _PartyFormState extends State<PartyForm> {
       text: widget.existing == null || widget.existing!.openingBalance == 0
           ? ''
           : Money.fmt(widget.existing!.openingBalance.abs()).replaceAll(',', ''));
+  late final interestRate = TextEditingController(
+      text: (widget.existing?.interestRate ?? 0) == 0 ? '' : fmtRate(widget.existing!.interestRate));
   late final limit = TextEditingController(
       text: (widget.existing?.creditLimit ?? 0) == 0 ? '' : Money.fmt(widget.existing!.creditLimit).replaceAll(',', ''));
   late bool openingTheyOwe = widget.existing == null
@@ -213,8 +217,9 @@ class _PartyFormState extends State<PartyForm> {
     final app = App.read(context);
     if (name.text.trim().isEmpty) return toast(context, app.t('err_required'), error: true);
     final ob = (Money.parse(opening.text) ?? 0) * (openingTheyOwe ? 1 : -1);
+    String id;
     if (widget.existing == null) {
-      await app.ledgers.create(
+      id = await app.ledgers.create(
         name: name.text,
         nameEn: nameEn.text,
         group: group,
@@ -227,6 +232,7 @@ class _PartyFormState extends State<PartyForm> {
         creditLimit: Money.parse(limit.text) ?? 0,
       );
     } else {
+      id = widget.existing!.id;
       await app.ledgers.update(widget.existing!.id,
           name: name.text,
           nameEn: nameEn.text,
@@ -238,6 +244,11 @@ class _PartyFormState extends State<PartyForm> {
           openingBalance: ob,
           creditLimit: Money.parse(limit.text) ?? 0,
           group: group == widget.existing!.group ? null : group);
+    }
+    // व्याज दर – owner only
+    if (app.actor.isOwner && group.isParty) {
+      final r = parseRate(interestRate.text);
+      if (r != (widget.existing?.interestRate ?? 0)) await app.ledgers.setInterestRate(id, r);
     }
     if (mounted) Navigator.pop(context);
   }
@@ -331,6 +342,20 @@ class _PartyFormState extends State<PartyForm> {
           keyboardType: TextInputType.number,
           decoration: InputDecoration(labelText: t('amount'), prefixText: '₹ ', border: const OutlineInputBorder()),
         ),
+        if (group.isParty && app.actor.isOwner) ...[
+          const SizedBox(height: 12),
+          TextField(
+            key: const Key('party_interest_rate'),
+            controller: interestRate,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: InputDecoration(
+              labelText: t('interest_rate'),
+              suffixText: '% ${t('per_month')}',
+              helperText: t('interest_rate_help'),
+              border: const OutlineInputBorder(),
+            ),
+          ),
+        ],
         if (group == LedgerGroup.customer) ...[
           const SizedBox(height: 12),
           TextField(
@@ -410,11 +435,11 @@ class _KhataScreenState extends State<KhataScreen> {
                   final rep = app.reports;
                   switch (v) {
                     case 'pdf':
-                      await Exporter.sharePdf(await app.pdfTable(() => app.reports.ledgerStatement(l.id, from: from, to: to)), shop: app.businessName);
+                      await Exporter.sharePdf(await app.pdfTable(() => app.reports.ledgerStatement(l.id, from: from, to: to)), shop: app.pdfShopName);
                     case 'xls':
                       await Exporter.shareExcel([await rep.ledgerStatement(l.id, from: from, to: to)], l.name);
                     case 'print':
-                      await Exporter.printPdf(await app.pdfTable(() => app.reports.ledgerStatement(l.id, from: from, to: to)), shop: app.businessName);
+                      await Exporter.printPdf(await app.pdfTable(() => app.reports.ledgerStatement(l.id, from: from, to: to)), shop: app.pdfShopName);
                     case 'v_sale':
                       if (context.mounted) await VoucherScreen.open(context, VoucherType.sale, partyId: l.id);
                     case 'v_receipt':
@@ -425,6 +450,8 @@ class _KhataScreenState extends State<KhataScreen> {
                       if (context.mounted) await VoucherScreen.open(context, VoucherType.payment, partyId: l.id);
                     case 'old':
                       if (context.mounted) await VoucherScreen.open(context, VoucherType.history, partyId: l.id);
+                    case 'interest':
+                      if (context.mounted) await InterestScreen.open(context, l.id);
                     case 'goods_out':
                       if (context.mounted) await VoucherScreen.open(context, VoucherType.goodsOut, partyId: l.id);
                     case 'goods_in':
@@ -452,6 +479,8 @@ class _KhataScreenState extends State<KhataScreen> {
                     PopupMenuItem(value: 'v_sale', child: Text(t('sale'))),
                     PopupMenuItem(value: 'v_receipt', child: Text(t('receipt'))),
                   ],
+                  if (app.actor.isOwner && l.group.isParty)
+                    PopupMenuItem(value: 'interest', child: Text(t('interest_add'))),
                   if (l.group.isParty || l.group == LedgerGroup.transporter) ...[
                     PopupMenuItem(value: 'goods_out', child: Text(t('goods_out'))),
                     PopupMenuItem(value: 'goods_in', child: Text(t('goods_in'))),
@@ -501,7 +530,7 @@ class _KhataScreenState extends State<KhataScreen> {
                   key: _shotKey,
                   child: Container(
                     color: Theme.of(context).colorScheme.surface,
-                    child: _KhataTable(st: st, shop: app.businessName),
+                    child: _KhataTable(st: st, shop: app.pdfShopName),
                   ),
                 ),
               ),

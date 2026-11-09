@@ -44,6 +44,19 @@ Every sale bill has **हमाली** and **गाडी भाडे** fields
   The optional *ट्रान्सपोर्टरला द्यायचे* field records his fare if it differs; the extra is your income.
   Pay him from the day-end card (*पैसे द्या*).
 
+## व्याज (interest on overdue balances)
+
+Owner only. Set a rate per account (khata → ✏️ → *व्याज दर*, % per month), then khata → ⋮ → **व्याज लावा**:
+pick the period (from the last interest entry by default; 1 / 3 / 6 / 12 month chips), see the day-by-day
+working and tap **खात्यात लावा** – it goes on the khata as a *व्याज* entry (income: *व्याज मिळाले*).
+Simple interest on the daily balance (month = 30 days); no interest on days with nothing owed or on earlier
+interest. Reports → **व्याज यादी** lists every account with a rate and charges all at once.
+
+## PDFs
+
+PDFs and prints are in English (the PDF engine cannot join Marathi letters): names use the saved English
+name, or are spelt in English letters. Set the English shop name in *दुकान माहिती*. Screens and Excel stay Marathi.
+
 ## उसना माल (bags lent / borrowed)
 
 Khata page → ⋮ → **माल उसना दिला** when bags are given to come back as bags (no money), and

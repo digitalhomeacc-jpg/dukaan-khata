@@ -226,6 +226,11 @@ class VoucherService {
       case VoucherType.promise:
         // promised payment date: a reminder, posts nothing
         _require(v.partyId, 'party');
+      case VoucherType.interest:
+        // व्याज on an overdue balance: the party owes it, it is our income
+        _require(v.partyId, 'party');
+        dr(v.partyId!, total);
+        cr(sys('interest_income'), total);
       case VoucherType.goodsOut:
       case VoucherType.goodsIn:
         // bags lent / returned: counted in bags on the party's khata, no money
@@ -277,6 +282,7 @@ class VoucherService {
       throw ArgumentError('err_before_books');
     }
     if (v.gstApplies && !actor.isOwner) throw PermissionDenied('err_owner_gst');
+    if (v.type == VoucherType.interest && !actor.isOwner) throw PermissionDenied('err_owner_interest');
 
     return db.writeTransaction((tx) async {
       final now = nowIso();
@@ -356,6 +362,7 @@ class VoucherService {
 
   int _paidFor(VoucherInput v, int total) => switch (v.type) {
         VoucherType.receipt || VoucherType.payment || VoucherType.contra => total,
+        VoucherType.interest => 0,
         VoucherType.sale || VoucherType.purchase || VoucherType.salesReturn || VoucherType.purchaseReturn =>
           v.partyId == null ? total : v.paid,
         VoucherType.history => v.paid,

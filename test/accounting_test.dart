@@ -1,3 +1,4 @@
+import 'package:dukaan_khata/accounting/interest.dart';
 import 'package:dukaan_khata/accounting/ledger_repo.dart';
 import 'package:dukaan_khata/accounting/models.dart';
 import 'package:dukaan_khata/accounting/reports.dart';
@@ -299,6 +300,42 @@ void main() {
     expect(await sr.stockAt(w.id, day) + await sr.lentAt(w.id, day), stock0 + lent0 + 30);
     final moves = await sr.goodsMoves(cust);
     expect(moves.where((m) => m.$5).length, 1);
+  });
+
+  test('व्याज: simple interest on the daily balance, posted to the khata, never on interest', () async {
+    final cust = await lr.create(name: 'Vilas', group: LedgerGroup.customer, openingBalance: rs(10000));
+    final ins = InterestService(db, biz);
+    // ₹10,000 for 30 days at 1.5 % a month = ₹150
+    var c = await ins.calculate(cust, from: '2026-10-01', to: '2026-10-30', rate: 150);
+    expect(c.days, 30);
+    expect(c.interest, rs(150));
+
+    // ₹5,000 paid on the 16th: 15 days on 10,000 (75) + 15 days on 5,000 (37.50) = 112.50 → ₹113
+    await vs.save(VoucherInput(type: VoucherType.receipt, date: '2026-10-16', partyId: cust, payLedgerId: vs.sys('cash'), amount: rs(5000)), owner);
+    c = await ins.calculate(cust, from: '2026-10-01', to: '2026-10-30', rate: 150);
+    expect(c.slabs.length, 2);
+    expect(c.slabs.first.days, 15);
+    expect(c.interest, rs(113));
+
+    // only the owner can charge it; it goes on the khata as व्याज
+    expect(() => ins.post(vs, staff, c, note: 'x'), throwsA(isA<PermissionDenied>()));
+    await ins.post(vs, owner, c, note: 'व्याज');
+    expect(await lr.balanceAt(cust), rs(5000 + 113));
+    expect(await lr.balanceAt(vs.sys('interest_income')), -rs(113));
+    expect(await ins.lastCharged(cust), '2026-10-30');
+    expect(await ins.defaultFrom(cust, '2026-11-30'), '2026-10-31');
+
+    // next month: base is still ₹5,000 – no interest on the ₹113 interest
+    c = await ins.calculate(cust, from: '2026-10-31', to: '2026-11-29', rate: 150);
+    expect(c.interest, rs(75));
+
+    // advance / zero balance → no interest
+    await vs.save(VoucherInput(type: VoucherType.receipt, date: '2026-11-01', partyId: cust, payLedgerId: vs.sys('cash'), amount: rs(6000)), owner);
+    c = await ins.calculate(cust, from: '2026-11-01', to: '2026-11-30', rate: 150);
+    expect(c.interest, 0);
+    expect(parseRate('1.5'), 150);
+    expect(fmtRate(150), '1.5');
+    expect(fmtRate(200), '2');
   });
 
   test('रोख मोजणी: short and extra cash go to रोख फरक, books then match the count', () async {

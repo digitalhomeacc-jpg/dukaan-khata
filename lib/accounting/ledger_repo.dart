@@ -227,6 +227,10 @@ class LedgerRepo {
     );
   }
 
+  /// Interest rate for a party (% per month × 100; 0 = no interest).
+  Future<void> setInterestRate(String id, int rate) =>
+      db.execute('UPDATE ledgers SET interest_rate = ? WHERE id = ?', [rate, id]);
+
   /// How many entries use this account (including deleted ones kept for history).
   Future<int> usageCount(String id) async {
     final r = await db.get(

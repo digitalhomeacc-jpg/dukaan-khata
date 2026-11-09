@@ -10,6 +10,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../shared/export.dart';
 import '../accounting/ledger_repo.dart';
+import '../accounting/interest.dart';
 import '../accounting/reports.dart';
 import '../accounting/voucher_service.dart';
 import '../core/backup.dart';
@@ -47,6 +48,7 @@ class AppController extends ChangeNotifier {
   VoucherService get vouchers => _vouchers!;
   LedgerRepo get ledgers => _ledgers!;
   StockRepo get stock => _stock!;
+  InterestService get interest => InterestService(db, businessId!);
   Reports get reports => Reports(db, businessId!, (_pdfEnglish ? const Strings(true) : strings).t);
   bool _pdfEnglish = false;
 
@@ -156,6 +158,10 @@ class AppController extends ChangeNotifier {
 
   // ---------------- shop details & book settings ----------------
   String shopAddress = '';
+  String shopNameEn = '';
+
+  /// Shop name on PDFs and bills (English – see Exporter.latin).
+  String get pdfShopName => shopNameEn.isNotEmpty ? shopNameEn : businessName;
   String shopPhone = '';
   String shopGstin = '';
 
@@ -167,6 +173,7 @@ class AppController extends ChangeNotifier {
     Books.start = (r['books_start'] as String?) ?? ((r['created_at'] as String?)?.substring(0, 10) ?? Books.start);
     Books.fyStartMonth = (r['fy_start_month'] as int?) ?? 4;
     shopAddress = (r['address'] as String?) ?? '';
+    shopNameEn = (r['name_en'] as String?) ?? '';
     shopPhone = (r['phone'] as String?) ?? '';
     shopGstin = (r['gstin'] as String?) ?? '';
     notifyListeners();
@@ -174,6 +181,7 @@ class AppController extends ChangeNotifier {
 
   Future<void> saveShopDetails({
     required String name,
+    String nameEn = '',
     required String address,
     required String phone,
     required String gstin,
@@ -181,8 +189,8 @@ class AppController extends ChangeNotifier {
     required int fyStartMonth,
   }) async {
     await db.execute(
-      'UPDATE businesses SET name = ?, address = ?, phone = ?, gstin = ?, books_start = ?, fy_start_month = ? WHERE id = ?',
-      [name, address, phone, gstin.toUpperCase(), booksStart, fyStartMonth, businessId],
+      'UPDATE businesses SET name = ?, name_en = ?, address = ?, phone = ?, gstin = ?, books_start = ?, fy_start_month = ? WHERE id = ?',
+      [name, nameEn.trim().isEmpty ? null : nameEn.trim(), address, phone, gstin.toUpperCase(), booksStart, fyStartMonth, businessId],
     );
     await _prefs.setString('business_name', name);
     businessName = name;
