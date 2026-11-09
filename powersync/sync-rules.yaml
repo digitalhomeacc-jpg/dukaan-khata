@@ -1,0 +1,28 @@
+# PowerSync Sync Config (Sync Streams) – what each device downloads.
+# Each person gets only the shop(s) they are a member of; bank statement lines
+# go to owners only. Deploy from the PowerSync dashboard (Sync Rules → paste → Deploy).
+config:
+  edition: 3
+
+streams:
+  shop:
+    auto_subscribe: true
+    with:
+      my_shops: SELECT business_id FROM members WHERE user_id = auth.user_id()
+    queries:
+      - "SELECT businesses.* FROM businesses, my_shops AS bucket WHERE businesses.id = bucket.business_id"
+      - "SELECT members.* FROM members, my_shops AS bucket WHERE members.business_id = bucket.business_id"
+      - "SELECT ledgers.* FROM ledgers, my_shops AS bucket WHERE ledgers.business_id = bucket.business_id"
+      - "SELECT items.* FROM items, my_shops AS bucket WHERE items.business_id = bucket.business_id"
+      - "SELECT vouchers.* FROM vouchers, my_shops AS bucket WHERE vouchers.business_id = bucket.business_id"
+      - "SELECT voucher_lines.* FROM voucher_lines, my_shops AS bucket WHERE voucher_lines.business_id = bucket.business_id"
+      - "SELECT inventory_lines.* FROM inventory_lines, my_shops AS bucket WHERE inventory_lines.business_id = bucket.business_id"
+      - "SELECT audit_log.* FROM audit_log, my_shops AS bucket WHERE audit_log.business_id = bucket.business_id"
+
+  # bank statements are visible to the owner only
+  owner_shop:
+    auto_subscribe: true
+    with:
+      owned_shops: SELECT business_id FROM members WHERE user_id = auth.user_id() AND role = 'owner'
+    queries:
+      - "SELECT bank_lines.* FROM bank_lines, owned_shops AS bucket WHERE bank_lines.business_id = bucket.business_id"
