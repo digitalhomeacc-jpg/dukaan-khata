@@ -8,19 +8,32 @@ const CACHE = 'dk-__BUILD__';
 // Every file of this build (filled in by tool/build_web.sh).
 const FILES = __FILES__;
 
-// Save the whole app once. Files that did not change since the last version
-// (engine, fonts) are copied from the old saved copy instead of downloaded again.
+// Fingerprint of each file's content (filled in by tool/build_web.sh).
+const HASHES = __HASHES__;
+const HASH_KEY = '__hashes__';
+
+// Save the whole app once. A file is copied from the old saved copy only if
+// its fingerprint is unchanged (engine, text fonts); anything that changed –
+// e.g. the icon font, which Flutter trims to the icons each build uses – is
+// downloaded fresh, so no icon ever shows up blank after an update.
 self.addEventListener('install', (e) => {
   e.waitUntil((async () => {
     const cache = await caches.open(CACHE);
+    let oldHashes = {};
+    try {
+      const r = await caches.match(HASH_KEY);
+      if (r) oldHashes = await r.json();
+    } catch (_) { /* first install */ }
     await Promise.all(FILES.map(async (f) => {
-      const old = f.includes('?v=') ? null : await caches.match(f);
+      const same = HASHES[f] && oldHashes[f] === HASHES[f];
+      const old = same ? await caches.match(f) : null;
       if (old) return cache.put(f, old);
       try {
         const res = await fetch(f, { cache: 'reload' });
         if (res.ok) await cache.put(f, res);
       } catch (_) { /* offline during install – saved on next use */ }
     }));
+    await cache.put(HASH_KEY, new Response(JSON.stringify(HASHES), { headers: { 'Content-Type': 'application/json' } }));
     await self.skipWaiting();
   })());
 });

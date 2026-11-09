@@ -19,10 +19,11 @@ for d in "$OUT" "$OUT/demo"; do
   rm -f "$d/flutter_service_worker.js" "$d/.last_build_id"
   # list every file of this build for the offline service worker
   python3 - "$d" "$BUILD" <<'PY'
-import json, os, sys
+import hashlib, json, os, sys
 d, build = sys.argv[1], sys.argv[2]
 versioned = {'main.dart.js', 'flutter_bootstrap.js', 'pdf_text.js'}
 files = ['./']
+hashes = {}  # file → content fingerprint: a saved copy is reused only if it is byte-identical
 for root, dirs, names in os.walk(d):
     dirs[:] = [x for x in dirs if not (root == d and x == 'demo')]
     for n in names:
@@ -30,8 +31,10 @@ for root, dirs, names in os.walk(d):
         if rel in ('app_sw.js', 'version.json') or rel.endswith('.map') or rel.startswith('.'):
             continue
         files.append(f'{rel}?v={build}' if rel in versioned else rel)
+        if rel not in versioned and rel != 'index.html':
+            hashes[rel] = hashlib.sha1(open(os.path.join(root, n), 'rb').read()).hexdigest()[:16]
 p = os.path.join(d, 'app_sw.js')
-s = open(p).read().replace('__FILES__', json.dumps(sorted(files))).replace('__BUILD__', build)
+s = open(p).read().replace('__FILES__', json.dumps(sorted(files))).replace('__HASHES__', json.dumps(hashes, sort_keys=True)).replace('__BUILD__', build)
 open(p, 'w').write(s)
 print(len(files), 'files listed for offline use in', d)
 PY
