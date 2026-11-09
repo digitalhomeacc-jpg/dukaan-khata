@@ -30,8 +30,14 @@ class RegisterRow {
   final int paid;
   final Map<String, double> qty; // itemId → qty (+in / −out)
   final Map<String, int> rate;
+  final String? payName; // रोख / फोनपे / bank – the account the money went to
+  final String? payNameEn;
+  final String? partyNameEn;
+  final String? haste;
   RegisterRow(this.voucherId, this.serial, this.type, this.partyName, this.pageNo, this.payCode, this.amount,
-      this.paid, this.qty, this.rate);
+      this.paid, this.qty, this.rate, {this.payName, this.payNameEn, this.partyNameEn, this.haste});
+
+  bool get isIn => qty.values.any((q) => q > 0) && !qty.values.any((q) => q < 0);
 }
 
 class DailyRegister {
@@ -46,6 +52,7 @@ class DailyRegister {
   double totalIn(String itemId) =>
       rows.fold(0.0, (s, r) => s + ((r.qty[itemId] ?? 0) > 0 ? r.qty[itemId]! : 0));
   double closing(String itemId) => (opening[itemId] ?? 0) + totalIn(itemId) - totalOut(itemId);
+  bool moved(String itemId) => rows.any((r) => r.qty.containsKey(itemId));
 }
 
 class StockRepo {
@@ -153,7 +160,8 @@ class StockRepo {
       opening[r['id'] as String] = (r['q'] as num).toDouble();
     }
     final lines = await db.getAll(
-      'SELECT v.id, v.vtype, v.amount, v.paid, v.created_at, p.name AS party_name, p.page_no, pl.short_code AS pay_code, '
+      'SELECT v.id, v.vtype, v.amount, v.paid, v.created_at, v.haste, p.name AS party_name, p.name_en AS party_name_en, p.page_no, '
+      'pl.short_code AS pay_code, pl.name AS pay_name, pl.name_en AS pay_name_en, '
       'il.item_id, il.qty, il.direction, il.rate FROM inventory_lines il JOIN vouchers v ON v.id = il.voucher_id '
       'LEFT JOIN ledgers p ON p.id = v.party_id LEFT JOIN ledgers pl ON pl.id = v.pay_ledger_id '
       'WHERE il.business_id = ? AND il.vdate = ? AND il.deleted = 0 AND il.direction <> 0 ORDER BY v.created_at',
@@ -166,7 +174,9 @@ class StockRepo {
       final row = byVoucher.putIfAbsent(
         vid,
         () => RegisterRow(vid, ++serial, VoucherType.fromCode(r['vtype'] as String), r['party_name'] as String?,
-            r['page_no'] as String?, r['pay_code'] as String?, r['amount'] as int, r['paid'] as int, {}, {}),
+            r['page_no'] as String?, r['pay_code'] as String?, r['amount'] as int, r['paid'] as int, {}, {},
+            payName: r['pay_name'] as String?, payNameEn: r['pay_name_en'] as String?,
+            partyNameEn: r['party_name_en'] as String?, haste: r['haste'] as String?),
       );
       final item = r['item_id'] as String;
       row.qty[item] = (row.qty[item] ?? 0) + (r['qty'] as num).toDouble() * (r['direction'] as int);
