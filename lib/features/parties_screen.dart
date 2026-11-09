@@ -7,6 +7,7 @@ import '../accounting/bookings.dart';
 import '../accounting/interest.dart';
 import '../accounting/ledger_repo.dart';
 import '../accounting/models.dart';
+import '../accounting/reports.dart' show NaturalKey;
 import '../core/money.dart';
 import '../core/theme.dart';
 import '../inventory/stock_repo.dart';
@@ -96,7 +97,12 @@ class _PartiesScreenState extends State<PartiesScreen> {
                 case _Sort.name:
                   break;
                 case _Sort.page:
-                  list.sort((a, b) => (int.tryParse(a.pageNo ?? '') ?? 99999).compareTo(int.tryParse(b.pageNo ?? '') ?? 99999));
+                  // natural order like the paper index: 1/2, 3, 11, 100; no page no. last
+                  list.sort((a, b) => (a.pageNo ?? '').isEmpty
+                      ? ((b.pageNo ?? '').isEmpty ? 0 : 1)
+                      : (b.pageNo ?? '').isEmpty
+                          ? -1
+                          : NaturalKey(a.pageNo!).compareTo(NaturalKey(b.pageNo!)));
                 case _Sort.due:
                   list.sort((a, b) => isCust ? b.balance.compareTo(a.balance) : a.balance.compareTo(b.balance));
               }

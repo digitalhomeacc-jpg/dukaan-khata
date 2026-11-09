@@ -699,13 +699,13 @@ ReportTable shapeReport(ReportTable t, {String query = '', int? sortCol, bool as
     final values = idx.map(cell).where((c) => c.isNotEmpty && c != '—' && c != '–').toList();
     final kind = values.isNotEmpty && values.every((c) => _dateKey(c) != null)
         ? 'date'
-        : values.isNotEmpty && values.every((c) => _numKey(c) != null)
+        : values.isNotEmpty && values.every(_isAmount)
             ? 'num'
             : 'text';
     Comparable? key(int r) {
       final c = cell(r);
       if (c.isEmpty || c == '—' || c == '–') return null;
-      return switch (kind) { 'date' => _dateKey(c), 'num' => _numKey(c), _ => c.toLowerCase() };
+      return switch (kind) { 'date' => _dateKey(c), 'num' => _numKey(c), _ => NaturalKey(c) };
     }
 
     idx.sort((a, b) {
@@ -741,6 +741,37 @@ ReportTable shapeReport(ReportTable t, {String query = '', int? sortCol, bool as
     highlight: {for (final h in t.highlight) if (old[h] != null) old[h]!},
   );
 }
+
+/// Text that sorts the way people count: "1/2" < "3" < "11" < "100" < "12A"
+/// after "12" – digit runs compare as numbers, the rest alphabetically.
+class NaturalKey implements Comparable<NaturalKey> {
+  final List<Object> parts; // int or String, alternating
+  NaturalKey(String s)
+      : parts = [
+          for (final m in RegExp(r'\d+|\D+').allMatches(normalizeDigits(s.toLowerCase().trim())))
+            int.tryParse(m[0]!) ?? m[0]!,
+        ];
+
+  @override
+  int compareTo(NaturalKey o) {
+    for (var i = 0; i < parts.length && i < o.parts.length; i++) {
+      final a = parts[i], b = o.parts[i];
+      final c = a is int && b is int
+          ? a.compareTo(b)
+          : a is int
+              ? -1 // a number sorts before text ("12" before "A")
+              : b is int
+                  ? 1
+                  : (a as String).compareTo(b as String);
+      if (c != 0) return c;
+    }
+    return parts.length.compareTo(o.parts.length);
+  }
+}
+
+/// A cell that is only an amount / number ("1,04,594", "₹532 येणे", "-12.5",
+/// "20,532 Dr") – not a page number like "1/2" or "12A".
+bool _isAmount(String c) => RegExp(r'^[₹\-\s]*[\d,]+(\.\d+)?\s*(Dr|Cr|येणे|देणे|जमा|आगाऊ|%)?$').hasMatch(normalizeDigits(c.trim()));
 
 /// "1,04,594", "₹532 येणे", "-12.5", "20,532 Dr" → number; null if no number.
 double? _numKey(String s) {

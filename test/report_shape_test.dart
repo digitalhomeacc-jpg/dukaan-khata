@@ -40,4 +40,15 @@ void main() {
     expect(shapeReport(t, query: 'ajay').rows, isEmpty);
     expect(shapeReport(t).totals![3], '1,21,826'); // unfiltered: original total
   });
+
+  test('page numbers like 1/2 and 12A sort naturally', () {
+    final pages = ['100', '1/2', '11', '3', '109', '12A', '12', '4', '', '2'];
+    final p = ReportTable(
+      title: 'x',
+      columns: const [ReportColumn('Page'), ReportColumn('Name')],
+      rows: [for (final x in pages) [x, 'n$x']],
+    );
+    expect(shapeReport(p, sortCol: 0).rows.map((r) => r[0]), ['1/2', '2', '3', '4', '11', '12', '12A', '100', '109', '']);
+    expect(shapeReport(p, sortCol: 0, ascending: false).rows.map((r) => r[0]).first, '109');
+  });
 }
