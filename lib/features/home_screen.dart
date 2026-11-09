@@ -7,6 +7,7 @@ import '../shared/widgets.dart';
 import '../state/app_controller.dart';
 import 'parties_screen.dart';
 import 'promise_screen.dart';
+import 'recurring_screen.dart';
 import 'search_screen.dart';
 import 'sync_sheet.dart';
 import 'voucher_screen.dart';
@@ -34,15 +35,16 @@ class HomeScreen extends StatelessWidget {
           IconButton(tooltip: t('lock'), icon: const Icon(Icons.lock_outline), onPressed: app.lock),
         ],
       ),
-      body: LiveBuilder<(Map<String, int>, List<Item>, List<Voucher>, int)>(
+      body: LiveBuilder<(Map<String, int>, List<Item>, List<Voucher>, int, int)>(
         load: () async => (
           await app.ledgers.dashboard(today),
           (await app.stock.list()).where((i) => i.lowStock > 0 && i.stock <= i.lowStock).toList(),
           (await app.ledgers.dayBook(today)).reversed.take(12).toList(),
           await app.ledgers.promisesDue(today),
+          app.actor.isOwner ? (await app.recurring.due(today)).length : 0, // दरमहा आकार to charge
         ),
         builder: (context, data) {
-          final (d, low, recent, due) = data;
+          final (d, low, recent, due, monthly) = data;
           return ListView(padding: const EdgeInsets.fromLTRB(16, 4, 16, 24), children: [
             _SearchField(onTap: () => SearchScreen.open(context), hint: t('search_all_hint')),
             if (due > 0) ...[
@@ -56,6 +58,21 @@ class HomeScreen extends StatelessWidget {
                   title: Text(t('promises_due').replaceAll('{n}', '$due'), style: const TextStyle(fontWeight: FontWeight.w700)),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () => PromisesScreen.open(context),
+                ),
+              ),
+            ],
+            if (monthly > 0) ...[
+              const SizedBox(height: 10),
+              Material(
+                color: AppColors.ink.withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(14),
+                child: ListTile(
+                  key: const Key('home_monthly_due'),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  leading: const Icon(Icons.event_repeat, color: AppColors.ink),
+                  title: Text(t('recurring_due').replaceAll('{n}', '$monthly'), style: const TextStyle(fontWeight: FontWeight.w700)),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => DueChargesScreen.open(context),
                 ),
               ),
             ],

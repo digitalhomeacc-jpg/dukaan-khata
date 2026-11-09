@@ -15,6 +15,7 @@ import 'audit_screen.dart';
 import 'booking_screen.dart';
 import 'books_screens.dart';
 import 'parties_screen.dart';
+import 'recurring_screen.dart';
 import 'stock_screen.dart' show itemUnits;
 
 /// One screen for every kind of entry. Shows only the fields the type needs.
@@ -58,6 +59,7 @@ class VoucherScreen extends StatefulWidget {
     if (!context.mounted) return;
     // entries with their own screens
     if (v.type == VoucherType.booking) return BookingScreen.open(context, editId: voucherId);
+    if (v.type == VoucherType.recurring) return RecurringForm.open(context, editId: voucherId);
     if (v.type == VoucherType.salary || v.type == VoucherType.interest) return _EntrySheet.show(context, v);
     await Navigator.push(
       context,

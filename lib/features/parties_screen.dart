@@ -16,6 +16,7 @@ import '../state/app_controller.dart';
 import 'books_screens.dart';
 import 'booking_screen.dart';
 import 'interest_screen.dart';
+import 'recurring_screen.dart';
 import 'staff_screen.dart';
 import 'promise_screen.dart';
 import 'voucher_screen.dart';
@@ -470,6 +471,8 @@ class _KhataScreenState extends State<KhataScreen> {
                       if (context.mounted) await VoucherScreen.open(context, VoucherType.history, partyId: l.id);
                     case 'advance_back':
                       if (context.mounted) await VoucherScreen.open(context, VoucherType.receipt, partyId: l.id, narration: t('advance_back'));
+                    case 'recurring':
+                      if (context.mounted) await RecurringListScreen.open(context, partyId: l.id);
                     case 'booking':
                       if (context.mounted) await BookingScreen.open(context, partyId: l.id);
                     case 'interest':
@@ -503,6 +506,7 @@ class _KhataScreenState extends State<KhataScreen> {
                   ],
                   if (l.group == LedgerGroup.staff) PopupMenuItem(value: 'advance_back', child: Text(t('advance_back'))),
                   if (l.group.isParty) PopupMenuItem(value: 'booking', child: Text(t('booking_new'))),
+                  if (l.group.isParty && app.actor.isOwner) PopupMenuItem(value: 'recurring', child: Text(t('recurring'))),
                   if (app.actor.isOwner && l.group.isParty)
                     PopupMenuItem(value: 'interest', child: Text(t('interest_add'))),
                   if (l.group.isParty || l.group == LedgerGroup.transporter) ...[

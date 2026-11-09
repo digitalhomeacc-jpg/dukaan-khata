@@ -61,6 +61,7 @@ enum VoucherType {
   interest('interest'), // व्याज: interest charged on a party's overdue balance
   salary('salary'), // पगार: a month's salary to staff, less any advance (उचल) recovered
   booking('booking'), // बुकिंग: goods booked at a fixed rate – posts nothing, deliveries count against it
+  recurring('recurring'), // दरमहा आकार: monthly charge template (rent, water …) – posts nothing
   opening('opening'); // reserved – opening balances live on the ledger/item rows
 
   final String code;

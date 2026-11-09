@@ -1,5 +1,6 @@
 import '../accounting/bookings.dart';
 import '../accounting/ledger_repo.dart';
+import '../accounting/recurring.dart';
 import '../accounting/models.dart';
 import '../accounting/voucher_service.dart';
 import '../inventory/stock_repo.dart';
@@ -76,6 +77,13 @@ Future<void> loadDemoData(VoucherService vs, LedgerRepo lr, StockRepo sr) async 
       items: [ItemLine(items['U']!.id, 200, rs(275))], advance: rs(20000), advanceLedgerId: vs.sys('cash'), note: 'स्लॅब काम');
   await bookings.save(vs, owner, date: ago(4), partyId: agency, customer: false,
       items: [ItemLine(items['U']!.id, 500, rs(262))], advance: rs(40000), advanceLedgerId: vs.sys('bank'));
+
+  // दरमहा आकार: the restaurant next door pays rent + water every month
+  final hotel = await lr.create(name: 'हॉटेल सह्याद्री', nameEn: 'Hotel Sahyadri', group: LedgerGroup.customer, pageNo: '90');
+  final rent = await sr.save(name: 'दुकान भाडे', nameEn: 'Shop rent', category: serviceCategory, unit: 'job', saleRate: rs(8000));
+  final water = await sr.save(name: 'पाणी बिल', nameEn: 'Water charges', category: serviceCategory, unit: 'job');
+  await RecurringService(vs.db, vs.businessId)
+      .save(vs, owner, partyId: hotel, startMonth: today.substring(0, 7), lines: [ItemLine(rent, 1, rs(8000)), ItemLine(water, 1, 0)]);
 
   // कर्मचारी: Raju, ₹12,000 a month, took ₹5,000 advance
   final raju = await lr.create(name: 'राजू पवार', nameEn: 'Raju Pawar', group: LedgerGroup.staff, phone: '9800000044');

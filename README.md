@@ -91,6 +91,14 @@ An item with the category **सेवा (स्टॉक नाही)** – e.
 list, register or valuation). Its money goes to *सेवा उत्पन्न*; work bought in on a purchase bill goes to
 *सेवा खर्च / मजुरी*. Units sq ft / job / day.
 
+## दरमहा आकार (monthly charges – rent, water …)
+
+Owner: khata → ⋮ → **दरमहा आकार** (or **अधिक → दरमहा आकार**): what to charge every month (usually service
+items like rent and water; leave a rate empty if it changes monthly) and the first month. From the 1st of each
+month the home screen shows **दरमहा आकार लावायचे** – check / fill the amounts and tap **खात्यात लावा**: a
+credit bill dated the 1st goes on the khata. Missed months are listed oldest first; a month can be skipped;
+a charge can be stopped / resumed.
+
 ## रोख मोजणी (cash count)
 
 Rojmal → calculator icon (or **+** → रोख मोजणी): type how many notes of each kind (or just the

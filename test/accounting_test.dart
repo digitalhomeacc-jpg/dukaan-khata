@@ -1,6 +1,7 @@
 import 'package:dukaan_khata/accounting/bookings.dart';
 import 'package:dukaan_khata/accounting/interest.dart';
 import 'package:dukaan_khata/accounting/ledger_repo.dart';
+import 'package:dukaan_khata/accounting/recurring.dart';
 import 'package:dukaan_khata/accounting/models.dart';
 import 'package:dukaan_khata/accounting/reports.dart';
 import 'package:dukaan_khata/accounting/voucher_service.dart';
@@ -460,6 +461,40 @@ void main() {
     expect(await lr.balanceAt(vs.sys('service_cost')), rs(4000));
     expect(await sr.stockAt(work, day), 0);
     expect(await lr.unbalanced(), isEmpty);
+  });
+
+  test('monthly charges: due from the 1st, charged as a credit bill, missed months caught up', () async {
+    final rs_ = RecurringService(db, biz);
+    final hotel = await lr.create(name: 'Hotel Annapurna', group: LedgerGroup.customer);
+    final rent = await sr.save(name: 'Shop rent', category: serviceCategory, unit: 'job', saleRate: rs(8000));
+    final water = await sr.save(name: 'Water', category: serviceCategory, unit: 'job');
+    expect(
+        () => rs_.save(vs, staff, partyId: hotel, startMonth: '2026-09', lines: [ItemLine(rent, 1, rs(8000))]),
+        throwsA(isA<PermissionDenied>()));
+    await rs_.save(vs, owner, partyId: hotel, startMonth: '2026-09', lines: [ItemLine(rent, 1, rs(8000)), ItemLine(water, 1, 0)], note: 'हॉटेल');
+    expect(await lr.balanceAt(hotel), 0); // the template posts nothing
+    expect(await lr.unbalanced(), isEmpty);
+    // on 5 Nov: Sep, Oct and Nov are due
+    var due = await rs_.due('2026-11-05');
+    expect(due.map((d) => d.$2), ['2026-09', '2026-10', '2026-11']);
+    final r = due.first.$1;
+    expect(r.fixedTotal, rs(8000));
+    // charge September with this month's water amount
+    await rs_.charge(vs, owner, r, '2026-09', [ItemLine(rent, 1, rs(8000)), ItemLine(water, 1, rs(450))], narration: 'Sep');
+    expect(await lr.balanceAt(hotel), rs(8450));
+    expect(await lr.balanceAt(vs.sys('service_income')), -rs(8450));
+    due = await rs_.due('2026-11-05');
+    expect(due.map((d) => d.$2), ['2026-10', '2026-11']);
+    // skip October (shop closed), charge November
+    await rs_.skip(due.first.$1, '2026-10');
+    due = await rs_.due('2026-11-05');
+    await rs_.charge(vs, owner, due.single.$1, '2026-11', [ItemLine(rent, 1, rs(8000)), ItemLine(water, 1, rs(500))], narration: 'Nov');
+    expect(await rs_.due('2026-11-30'), isEmpty);
+    expect((await rs_.due('2026-12-01')).single.$2, '2026-12');
+    // stopped: nothing due
+    await rs_.setStopped(r.id, true);
+    expect(await rs_.due('2027-02-01'), isEmpty);
+    expect(await lr.balanceAt(hotel), rs(8450 + 8500));
   });
 
   test('रोख मोजणी: short and extra cash go to रोख फरक, books then match the count', () async {

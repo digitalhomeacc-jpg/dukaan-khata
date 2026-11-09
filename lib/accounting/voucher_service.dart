@@ -241,6 +241,9 @@ class VoucherService {
           dr(v.partyId!, v.paid);
           cr(pay, v.paid);
         }
+      case VoucherType.recurring:
+        // monthly charge template: each month's bill is a separate sale
+        _require(v.partyId, 'party');
       case VoucherType.booking:
         // बुकिंग: a promise of goods at a rate – the advance is a separate
         // receipt / payment, so the booking itself posts nothing
@@ -378,7 +381,7 @@ class VoucherService {
         final d = service ? 0 : v.type == VoucherType.stockAdjust ? (it.qty >= 0 ? 1 : -1) : dir;
         // old bills keep their item lines for the record, with no stock effect
         // old bills, opening उसना माल and bookings keep their item lines with no stock effect
-        if (d == 0 && v.type != VoucherType.history && v.type != VoucherType.booking && !goodsOpening && !service) continue;
+        if (d == 0 && v.type != VoucherType.history && v.type != VoucherType.booking && v.type != VoucherType.recurring && !goodsOpening && !service) continue;
         if (it.qty == 0) continue;
         await tx.execute(
           'INSERT INTO inventory_lines (id, business_id, voucher_id, item_id, qty, rate, amount, direction, vdate, deleted) '

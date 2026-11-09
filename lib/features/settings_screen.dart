@@ -17,6 +17,7 @@ import 'bank_screen.dart';
 import 'booking_screen.dart';
 import 'books_screens.dart';
 import 'parties_screen.dart';
+import 'recurring_screen.dart';
 import 'report_view.dart';
 import 'staff_screen.dart';
 
@@ -48,6 +49,13 @@ class SettingsScreen extends StatelessWidget {
           subtitle: Text(t('bookings_sub')),
           onTap: () => BookingsScreen.open(context),
         ),
+        if (owner)
+          ListTile(
+            leading: const Icon(Icons.event_repeat),
+            title: Text(t('recurring')),
+            subtitle: Text(t('recurring_sub')),
+            onTap: () => RecurringListScreen.open(context),
+          ),
         ListTile(
           leading: const Icon(Icons.bar_chart),
           title: Text(t('reports')),

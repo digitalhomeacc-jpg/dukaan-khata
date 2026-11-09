@@ -12,6 +12,7 @@ import '../shared/export.dart';
 import '../accounting/ledger_repo.dart';
 import '../accounting/bookings.dart';
 import '../accounting/interest.dart';
+import '../accounting/recurring.dart';
 import '../accounting/reports.dart';
 import '../accounting/voucher_service.dart';
 import '../core/backup.dart';
@@ -51,6 +52,7 @@ class AppController extends ChangeNotifier {
   StockRepo get stock => _stock!;
   InterestService get interest => InterestService(db, businessId!);
   BookingService get bookings => BookingService(db, businessId!);
+  RecurringService get recurring => RecurringService(db, businessId!);
   Reports get reports => Reports(db, businessId!, (_pdfEnglish ? const Strings(true) : strings).t);
   bool _pdfEnglish = false;
 
