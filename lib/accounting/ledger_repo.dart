@@ -357,7 +357,7 @@ class LedgerRepo {
     final rows = await db.getAll(
       'SELECT v.*, p.name AS party_name, pl.short_code AS pay_code FROM vouchers v '
       'LEFT JOIN ledgers p ON p.id = v.party_id LEFT JOIN ledgers pl ON pl.id = v.pay_ledger_id '
-      "WHERE v.business_id = ? AND v.deleted = 0 AND v.vtype NOT IN ('stock_adjust', 'opening', 'history', 'promise', 'goods_out', 'goods_in', 'booking', 'recurring') AND ("
+      "WHERE v.business_id = ? AND v.deleted = 0 AND v.vtype NOT IN ('stock_adjust', 'opening', 'history', 'promise', 'goods_out', 'goods_in', 'booking', 'recurring', 'recurring_pay') AND ("
       ' COALESCE((SELECT SUM(debit) - SUM(credit) FROM voucher_lines WHERE voucher_id = v.id AND deleted = 0), 0) <> 0'
       ' OR (v.amount <> 0 AND NOT EXISTS (SELECT 1 FROM voucher_lines WHERE voucher_id = v.id AND deleted = 0)))'
       ' ORDER BY v.vdate DESC',
@@ -488,7 +488,7 @@ class LedgerRepo {
     final rows = await db.getAll(
       'SELECT v.*, p.name AS party_name, pl.short_code AS pay_code FROM vouchers v '
       'LEFT JOIN ledgers p ON p.id = v.party_id LEFT JOIN ledgers pl ON pl.id = v.pay_ledger_id '
-      "WHERE v.business_id = ? AND v.deleted = 0 AND v.vtype NOT IN ('history', 'promise', 'recurring') AND v.vdate >= ? AND v.vdate <= ? "
+      "WHERE v.business_id = ? AND v.deleted = 0 AND v.vtype NOT IN ('history', 'promise', 'recurring', 'recurring_pay') AND v.vdate >= ? AND v.vdate <= ? "
       'ORDER BY v.vdate, v.created_at',
       [businessId, from, to ?? from],
     );

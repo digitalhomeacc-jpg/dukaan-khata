@@ -98,6 +98,10 @@ items like rent and water; leave a rate empty if it changes monthly) and the fir
 month the home screen shows **दरमहा आकार लावायचे** – check / fill the amounts and tap **खात्यात लावा**: a
 credit bill dated the 1st goes on the khata. Missed months are listed oldest first; a month can be skipped;
 a charge can be stopped / resumed.
+**दरमहा देणे** (same screen, + → *दरमहा देणे*): a payment every month – loan interest, light bill, internet – into
+an expense / loan account from cash or PhonePe. It shows in the same reminder; *पैसे दिले* enters the payment
+(dated today for this month). For an owner's loan: a *कर्ज* account per lender with the opening balance, and the
+monthly interest to a *व्याज खर्च* expense.
 
 ## रोख मोजणी (cash count)
 

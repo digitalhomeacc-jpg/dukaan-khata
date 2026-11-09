@@ -60,6 +60,7 @@ class VoucherScreen extends StatefulWidget {
     // entries with their own screens
     if (v.type == VoucherType.booking) return BookingScreen.open(context, editId: voucherId);
     if (v.type == VoucherType.recurring) return RecurringForm.open(context, editId: voucherId);
+    if (v.type == VoucherType.recurringPay) return RecurringPayForm.open(context, editId: voucherId);
     if (v.type == VoucherType.salary || v.type == VoucherType.interest) return _EntrySheet.show(context, v);
     await Navigator.push(
       context,

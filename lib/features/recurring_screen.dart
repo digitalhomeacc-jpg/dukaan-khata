@@ -51,7 +51,31 @@ class RecurringListScreen extends StatelessWidget {
                   heroTag: 'rec_add',
                   icon: const Icon(Icons.add),
                   label: Text(t('recurring_new')),
-                  onPressed: () => RecurringForm.open(context, partyId: partyId),
+                  onPressed: () async {
+                    // money coming in (rent, water) or going out (loan interest, bills)
+                    final kind = await showModalBottomSheet<bool>(
+                      context: context,
+                      showDragHandle: true,
+                      builder: (ctx) => SafeArea(
+                        child: Column(mainAxisSize: MainAxisSize.min, children: [
+                          ListTile(
+                            leading: const Icon(Icons.south_west, color: AppColors.paid),
+                            title: Text(t('recurring_in')),
+                            subtitle: Text(t('recurring_in_sub')),
+                            onTap: () => Navigator.pop(ctx, false),
+                          ),
+                          ListTile(
+                            leading: const Icon(Icons.north_east, color: AppColors.due),
+                            title: Text(t('recurring_out')),
+                            subtitle: Text(t('recurring_out_sub')),
+                            onTap: () => Navigator.pop(ctx, true),
+                          ),
+                        ]),
+                      ),
+                    );
+                    if (kind == null || !context.mounted) return;
+                    kind ? await RecurringPayForm.open(context) : await RecurringForm.open(context, partyId: partyId);
+                  },
                 )
               : null,
           body: ListView(padding: const EdgeInsets.fromLTRB(8, 8, 8, 96), children: [
@@ -71,8 +95,12 @@ class RecurringListScreen extends StatelessWidget {
               Card(
                 child: ListTile(
                   title: Text(r.partyName, style: const TextStyle(fontWeight: FontWeight.w700)),
+                  leading: Icon(r.payment ? Icons.north_east : Icons.south_west, color: r.payment ? AppColors.due : AppColors.paid),
                   subtitle: Text([
-                    r.lines.map((l) => '${l.item.display(app.english)} ${l.rate > 0 ? '₹${Money.fmt((l.qty * l.rate).round())}' : t('recurring_ask')}').join(' + '),
+                    if (r.payment)
+                      '${t('recurring_out')} · ${r.amount > 0 ? '₹${Money.fmt(r.amount)}' : t('recurring_ask')}${r.note == null ? '' : ' · ${r.note}'}'
+                    else
+                      r.lines.map((l) => '${l.item.display(app.english)} ${l.rate > 0 ? '₹${Money.fmt((l.qty * l.rate).round())}' : t('recurring_ask')}').join(' + '),
                     if (r.stopped)
                       t('recurring_stopped')
                     else if (r.lastCharged != null)
@@ -86,7 +114,7 @@ class RecurringListScreen extends StatelessWidget {
                           onSelected: (v) async {
                             switch (v) {
                               case 'edit':
-                                await RecurringForm.open(context, editId: r.id);
+                                r.payment ? await RecurringPayForm.open(context, editId: r.id) : await RecurringForm.open(context, editId: r.id);
                               case 'stop':
                                 await app.recurring.setStopped(r.id, !r.stopped, lastCharged: r.lastCharged);
                               case 'khata':
@@ -341,6 +369,106 @@ class _DueChargesScreenState extends State<DueChargesScreen> {
     if (mounted) setState(() => (busy.remove('${r.id}|$m'), reload++));
   }
 
+  final payFrom = <String, String>{}; // recurring id → money account chosen
+  List<Ledger> moneyAccounts = [];
+
+  @override
+  void initState() {
+    super.initState();
+    App.read(context).ledgers.list([LedgerGroup.cash, LedgerGroup.upi, LedgerGroup.bank]).then((l) {
+      if (mounted) setState(() => moneyAccounts = l);
+    });
+  }
+
+  Future<void> _pay(Recurring r, String m) async {
+    final app = App.read(context);
+    final t = app.t;
+    final amt = Money.parse(_rate(r, m, 0).text) ?? 0;
+    if (amt <= 0) return toast(context, t('err_amount'), error: true);
+    setState(() => busy.add('${r.id}|$m'));
+    try {
+      final label = monthLabel(m, app.english);
+      final today = todayIso();
+      await app.recurring.pay(app.vouchers, app.actor, r, m,
+          amount: amt,
+          payFromId: payFrom[r.id] ?? r.payFromId ?? app.vouchers.sys('cash'),
+          // this month's payment is made today; an older month's on its 1st
+          date: m == monthOf(today) ? today : null,
+          narration: '${r.note ?? r.partyName} – $label');
+      if (mounted) toast(context, '${t('saved')} · ${r.note ?? r.partyName} · ₹${Money.fmt(amt)}');
+    } catch (e) {
+      if (mounted) toast(context, errText(context, e), error: true);
+    }
+    if (mounted) setState(() => (busy.remove('${r.id}|$m'), reload++));
+  }
+
+  Widget _payCard(Recurring r, String m, List<(Recurring, String)> due, AppController app) {
+    final t = app.t;
+    final scheme = Theme.of(context).colorScheme;
+    final first = due.firstWhere((d) => d.$1.id == r.id).$2 == m;
+    final ctl = rates.putIfAbsent('${r.id}|$m|0', () => TextEditingController(text: r.amount == 0 ? '' : Money.fmt(r.amount).replaceAll(',', '')));
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 10, 10, 8),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            const Icon(Icons.north_east, size: 18, color: AppColors.due),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text.rich(TextSpan(children: [
+                TextSpan(text: r.note ?? r.partyName, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+                TextSpan(text: '  ${monthLabel(m, app.english)}', style: TextStyle(color: scheme.onSurfaceVariant)),
+              ])),
+            ),
+            SizedBox(
+              width: 120,
+              child: TextField(
+                key: Key('due_pay_${r.id}_$m'),
+                controller: ctl,
+                enabled: first,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                textAlign: TextAlign.right,
+                decoration: InputDecoration(prefixText: '₹ ', isDense: true, hintText: r.amount == 0 ? t('recurring_enter') : null),
+                onChanged: (_) => setState(() {}),
+              ),
+            ),
+          ]),
+          if (r.note != null) Text(r.partyName, style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
+          if (first) ...[
+            const SizedBox(height: 8),
+            PayModeChips(
+              accounts: moneyAccounts,
+              selected: payFrom[r.id] ?? r.payFromId,
+              allowCredit: false,
+              onSelected: (id) => setState(() => payFrom[r.id] = id!),
+            ),
+          ],
+          if (first && app.actor.isOwner)
+            Row(mainAxisAlignment: MainAxisAlignment.end, children: [
+              TextButton(
+                onPressed: () async {
+                  if (!await confirm(context, t('recurring_skip_q').replaceAll('{m}', monthLabel(m, app.english)))) return;
+                  await app.recurring.skip(r, m);
+                  if (mounted) setState(() => reload++);
+                },
+                child: Text(t('recurring_skip')),
+              ),
+              const SizedBox(width: 6),
+              FilledButton.icon(
+                key: Key('due_paybtn_${r.id}_$m'),
+                style: FilledButton.styleFrom(backgroundColor: AppColors.due),
+                onPressed: busy.contains('${r.id}|$m') || (Money.parse(ctl.text) ?? 0) <= 0 ? null : () => _pay(r, m),
+                icon: const Icon(Icons.check, size: 18),
+                label: Text(t('recurring_pay_btn')),
+              ),
+            ])
+          else if (!first)
+            Text(t('recurring_after_prev'), style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
+        ]),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final app = App.of(context);
@@ -355,7 +483,7 @@ class _DueChargesScreenState extends State<DueChargesScreen> {
             ? Center(child: Padding(padding: const EdgeInsets.all(24), child: Text(t('recurring_none_due'), textAlign: TextAlign.center)))
             : ListView(padding: const EdgeInsets.fromLTRB(8, 8, 8, 40), children: [
                 for (final (r, m) in due)
-                  () {
+                  if (r.payment) _payCard(r, m, due, app) else () {
                     // months of one charge are done oldest first
                     final first = due.firstWhere((d) => d.$1.id == r.id).$2 == m;
                     final total = _lines(r, m).fold<int>(0, (s, l) => s + l.amount);
@@ -423,6 +551,145 @@ class _DueChargesScreenState extends State<DueChargesScreen> {
                     );
                   }(),
               ]),
+      ),
+    );
+  }
+}
+
+/// दरमहा देणे: a payment made every month – loan interest, light bill, internet …
+class RecurringPayForm extends StatefulWidget {
+  final String? editId;
+  const RecurringPayForm({super.key, this.editId});
+  static Future<void> open(BuildContext context, {String? editId}) =>
+      Navigator.push(context, MaterialPageRoute(builder: (_) => RecurringPayForm(editId: editId)));
+  @override
+  State<RecurringPayForm> createState() => _RecurringPayFormState();
+}
+
+class _RecurringPayFormState extends State<RecurringPayForm> {
+  Ledger? account;
+  String? payFrom;
+  List<Ledger> moneyAccounts = [];
+  final amount = TextEditingController();
+  final note = TextEditingController();
+  late String start = monthOf(todayIso());
+  bool loading = true, saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final app = App.read(context);
+    moneyAccounts = await app.ledgers.list([LedgerGroup.cash, LedgerGroup.upi, LedgerGroup.bank]);
+    payFrom = app.vouchers.sys('cash');
+    if (widget.editId != null) {
+      final r = (await app.recurring.list()).firstWhere((x) => x.id == widget.editId);
+      account = await app.ledgers.byId(r.partyId);
+      payFrom = r.payFromId ?? payFrom;
+      start = r.startMonth;
+      if (r.amount > 0) amount.text = Money.fmt(r.amount).replaceAll(',', '');
+      note.text = r.note ?? '';
+    }
+    if (mounted) setState(() => loading = false);
+  }
+
+  Future<void> _save() async {
+    final app = App.read(context);
+    final t = app.t;
+    if (account == null) return toast(context, t('err_party'), error: true);
+    setState(() => saving = true);
+    try {
+      await app.recurring.savePayment(app.vouchers, app.actor,
+          existingId: widget.editId,
+          ledgerId: account!.id,
+          payFromId: payFrom!,
+          startMonth: start,
+          amount: Money.parse(amount.text) ?? 0,
+          note: note.text.trim().isEmpty ? null : note.text.trim());
+      if (mounted) {
+        toast(context, t('saved'));
+        Navigator.pop(context);
+      }
+    } catch (e) {
+      if (mounted) {
+        toast(context, errText(context, e), error: true);
+        setState(() => saving = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final app = App.of(context);
+    final t = app.t;
+    final now = monthOf(todayIso());
+    final months = [for (var m = now, i = 0; i < 3; m = nextMonth(m), i++) m];
+    if (!months.contains(start)) months.insert(0, start);
+    return Scaffold(
+      appBar: AppBar(title: Text(t('recurring_out'))),
+      body: loading
+          ? const Center(child: CircularProgressIndicator())
+          : Align(
+              alignment: Alignment.topCenter,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 600),
+                child: ListView(padding: const EdgeInsets.fromLTRB(12, 8, 12, 110), children: [
+                  TextField(
+                    key: const Key('recpay_note'),
+                    controller: note,
+                    autofocus: widget.editId == null,
+                    decoration: InputDecoration(labelText: t('recurring_pay_name'), hintText: t('recurring_pay_name_hint'), border: const OutlineInputBorder()),
+                  ),
+                  const SizedBox(height: 12),
+                  Card(
+                    child: ListTile(
+                      leading: const Icon(Icons.account_balance_wallet_outlined),
+                      title: Text(account?.name ?? t('recurring_pay_account'), style: const TextStyle(fontWeight: FontWeight.w600)),
+                      subtitle: Text(account == null ? t('recurring_pay_account_help') : t('grp_${account!.group.code}')),
+                      trailing: const Icon(Icons.search),
+                      onTap: () async {
+                        final l = await pickLedger(context, groups: const [
+                          LedgerGroup.expense,
+                          LedgerGroup.directExpense,
+                          LedgerGroup.loan,
+                          LedgerGroup.capital,
+                          LedgerGroup.supplier,
+                          LedgerGroup.otherLiability,
+                        ], createAs: LedgerGroup.expense);
+                        if (l != null) setState(() => account = l);
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  AmountField(controller: amount, label: t('recurring_pay_amount')),
+                  const SizedBox(height: 4),
+                  Text(t('recurring_rate_help'), style: Theme.of(context).textTheme.bodySmall),
+                  SectionTitle(t('pay_mode')),
+                  PayModeChips(accounts: moneyAccounts, selected: payFrom, allowCredit: false, onSelected: (id) => setState(() => payFrom = id)),
+                  SectionTitle(t('recurring_from')),
+                  Wrap(spacing: 6, children: [
+                    for (final m in months)
+                      ChoiceChip(label: Text(monthLabel(m, app.english)), selected: m == start, onSelected: (_) => setState(() => start = m)),
+                  ]),
+                  const SizedBox(height: 6),
+                  Text(t('recurring_pay_help'), style: Theme.of(context).textTheme.bodySmall),
+                ]),
+              ),
+            ),
+      bottomNavigationBar: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+          child: FilledButton.icon(
+            key: const Key('recpay_save'),
+            style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
+            onPressed: saving || loading || !app.actor.isOwner ? null : _save,
+            icon: const Icon(Icons.event_repeat),
+            label: Text(t('save')),
+          ),
+        ),
       ),
     );
   }

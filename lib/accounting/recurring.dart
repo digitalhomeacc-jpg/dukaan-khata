@@ -29,10 +29,15 @@ class Recurring {
   final bool stopped;
   final String? note;
   final List<RecurringLine> lines;
+  /// दरमहा देणे: money we pay every month (loan interest, light bill …)
+  /// into [partyId] from [payFromId]; [amount] 0 = ask each month.
+  final bool payment;
+  final int amount;
+  final String? payFromId;
   Recurring(this.id, this.partyId, this.partyName, this.pageNo, this.startMonth, this.lastCharged, this.stopped, this.note,
-      this.lines);
+      this.lines, {this.payment = false, this.amount = 0, this.payFromId});
 
-  int get fixedTotal => lines.fold(0, (s, l) => s + (l.qty * l.rate).round());
+  int get fixedTotal => payment ? amount : lines.fold(0, (s, l) => s + (l.qty * l.rate).round());
 
   /// Months still to charge, oldest first, up to [today]'s month.
   List<String> dueMonths(String today) {
@@ -64,9 +69,9 @@ class RecurringService {
       for (final r in await db.getAll('SELECT * FROM items WHERE business_id = ?', [businessId])) r['id'] as String: Item.fromRow(r)
     };
     final rows = await db.getAll(
-      'SELECT v.id, v.vdate, v.party_id, v.status, v.narration, p.name AS party_name, p.page_no FROM vouchers v '
-      'LEFT JOIN ledgers p ON p.id = v.party_id '
-      "WHERE v.business_id = ? AND v.vtype = 'recurring' AND v.deleted = 0 ${partyId != null ? 'AND v.party_id = ? ' : ''}"
+      'SELECT v.id, v.vtype, v.vdate, v.party_id, v.pay_ledger_id, v.amount, v.status, v.narration, p.name AS party_name, p.page_no '
+      'FROM vouchers v LEFT JOIN ledgers p ON p.id = v.party_id '
+      "WHERE v.business_id = ? AND v.vtype IN ('recurring', 'recurring_pay') AND v.deleted = 0 ${partyId != null ? 'AND v.party_id = ? ' : ''}"
       'ORDER BY p.name, v.created_at',
       [businessId, if (partyId != null) partyId],
     );
@@ -88,6 +93,9 @@ class RecurringService {
         status == 'stopped',
         r['narration'] as String?,
         lines,
+        payment: r['vtype'] == 'recurring_pay',
+        amount: (r['amount'] as int?) ?? 0,
+        payFromId: r['pay_ledger_id'] as String?,
       ));
     }
     return out;
@@ -134,6 +142,39 @@ class RecurringService {
       actor,
     );
     await db.execute("UPDATE vouchers SET status = ?, updated_at = ? WHERE id = ?", ['active:$month', nowIso(), r.id]);
+    return id;
+  }
+
+  /// दरमहा देणे template: pay [amount] (0 = ask) to [ledgerId] from [payFromId] every month.
+  Future<String> savePayment(VoucherService vs, Actor actor,
+      {String? existingId, required String ledgerId, required String payFromId, required String startMonth, int amount = 0, String? note}) async {
+    if (!actor.isOwner) throw PermissionDenied('err_owner_recurring');
+    var date = '$startMonth-01';
+    if (Books.isHistory(date)) date = Books.start;
+    String? keep;
+    if (existingId != null) {
+      keep = (await db.get('SELECT status FROM vouchers WHERE id = ?', [existingId]))['status'] as String?;
+    }
+    final id = await vs.save(
+      VoucherInput(type: VoucherType.recurringPay, date: date, partyId: ledgerId, payLedgerId: payFromId, amount: amount, narration: note),
+      actor,
+      existingId: existingId,
+    );
+    await db.execute('UPDATE vouchers SET status = ? WHERE id = ?', [keep ?? 'active', id]);
+    return id;
+  }
+
+  /// Pays one month (a payment dated today, or the 1st of a past month) and marks it done.
+  Future<String> pay(VoucherService vs, Actor actor, Recurring r, String month,
+      {required int amount, required String payFromId, required String narration, String? date}) async {
+    if (!actor.isOwner) throw PermissionDenied('err_owner_recurring');
+    var d = date ?? '$month-01';
+    if (Books.isHistory(d)) d = Books.start;
+    final id = await vs.save(
+      VoucherInput(type: VoucherType.payment, date: d, partyId: r.partyId, payLedgerId: payFromId, amount: amount, narration: narration),
+      actor,
+    );
+    await db.execute('UPDATE vouchers SET status = ?, updated_at = ? WHERE id = ?', ['active:$month', nowIso(), r.id]);
     return id;
   }
 

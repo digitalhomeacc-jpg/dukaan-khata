@@ -242,7 +242,8 @@ class VoucherService {
           cr(pay, v.paid);
         }
       case VoucherType.recurring:
-        // monthly charge template: each month's bill is a separate sale
+      case VoucherType.recurringPay:
+        // monthly template: each month's bill / payment is a separate entry
         _require(v.partyId, 'party');
       case VoucherType.booking:
         // बुकिंग: a promise of goods at a rate – the advance is a separate
@@ -302,7 +303,7 @@ class VoucherService {
       if (v.total <= 0 && v.paid <= 0) throw ArgumentError('err_amount');
     } else if (v.type == VoucherType.promise) {
       // amount is optional ("will pay something on Monday")
-    } else if (v.items.isEmpty && lines.isEmpty && v.type != VoucherType.stockAdjust) {
+    } else if (v.items.isEmpty && lines.isEmpty && v.type != VoucherType.stockAdjust && v.type != VoucherType.recurringPay) {
       throw ArgumentError('err_amount');
     }
     if (v.type == VoucherType.history) {

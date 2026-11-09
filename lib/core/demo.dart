@@ -85,6 +85,12 @@ Future<void> loadDemoData(VoucherService vs, LedgerRepo lr, StockRepo sr) async 
   await RecurringService(vs.db, vs.businessId)
       .save(vs, owner, partyId: hotel, startMonth: today.substring(0, 7), lines: [ItemLine(rent, 1, rs(8000)), ItemLine(water, 1, 0)]);
 
+  // दरमहा देणे: loan interest paid every month
+  await lr.create(name: 'कर्ज – रमेश पाटील', nameEn: 'Loan - Ramesh Patil', group: LedgerGroup.loan, openingBalance: -rs(500000));
+  final interestPaid = await lr.create(name: 'व्याज खर्च', nameEn: 'Interest paid', group: LedgerGroup.expense);
+  await RecurringService(vs.db, vs.businessId).savePayment(vs, owner,
+      ledgerId: interestPaid, payFromId: vs.sys('cash'), startMonth: today.substring(0, 7), amount: rs(5000), note: 'रमेश पाटील – कर्ज व्याज');
+
   // कर्मचारी: Raju, ₹12,000 a month, took ₹5,000 advance
   final raju = await lr.create(name: 'राजू पवार', nameEn: 'Raju Pawar', group: LedgerGroup.staff, phone: '9800000044');
   await lr.setStaffPay(raju, salary: rs(12000), cut: rs(2000));

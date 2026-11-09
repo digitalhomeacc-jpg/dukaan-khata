@@ -497,6 +497,26 @@ void main() {
     expect(await lr.balanceAt(hotel), rs(8450 + 8500));
   });
 
+  test('monthly payments: loan interest reminded and paid from cash', () async {
+    final rec = RecurringService(db, biz);
+    final interestExp = await lr.create(name: 'Interest paid', group: LedgerGroup.expense);
+    final cash0 = await lr.balanceAt(vs.sys('cash'));
+    await rec.savePayment(vs, owner, ledgerId: interestExp, payFromId: vs.sys('cash'), startMonth: '2026-10', amount: rs(5000), note: 'Ramesh loan');
+    expect(await lr.balanceAt(vs.sys('cash')), cash0); // template posts nothing
+    expect(await lr.unbalanced(), isEmpty);
+    var due = await rec.due('2026-11-03');
+    expect(due.map((d) => d.$2), ['2026-10', '2026-11']);
+    final r = due.first.$1;
+    expect(r.payment, isTrue);
+    expect(r.fixedTotal, rs(5000));
+    await rec.pay(vs, owner, r, '2026-10', amount: rs(5000), payFromId: vs.sys('cash'), narration: 'Oct');
+    await rec.pay(vs, owner, r, '2026-11', amount: rs(5000), payFromId: vs.sys('upi_h'), narration: 'Nov', date: '2026-11-03');
+    expect(await lr.balanceAt(interestExp), rs(10000));
+    expect(await lr.balanceAt(vs.sys('cash')), cash0 - rs(5000));
+    expect(await rec.due('2026-11-30'), isEmpty);
+    expect(() => rec.pay(vs, staff, r, '2026-12', amount: 1, payFromId: vs.sys('cash'), narration: 'x'), throwsA(isA<PermissionDenied>()));
+  });
+
   test('रोख मोजणी: short and extra cash go to रोख फरक, books then match the count', () async {
     const day = '2026-11-07';
     final cash = vs.sys('cash');

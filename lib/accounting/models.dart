@@ -62,6 +62,7 @@ enum VoucherType {
   salary('salary'), // पगार: a month's salary to staff, less any advance (उचल) recovered
   booking('booking'), // बुकिंग: goods booked at a fixed rate – posts nothing, deliveries count against it
   recurring('recurring'), // दरमहा आकार: monthly charge template (rent, water …) – posts nothing
+  recurringPay('recurring_pay'), // दरमहा देणे: monthly payment template (loan interest, light bill …) – posts nothing
   opening('opening'); // reserved – opening balances live on the ledger/item rows
 
   final String code;
