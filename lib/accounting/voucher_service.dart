@@ -25,6 +25,11 @@ class PermissionDenied implements Exception {
 /// pay_ledger_id marker for old entries: "hist:sale", "hist:purchase", …
 const historyKindPrefix = 'hist:';
 
+/// pay_ledger_id marker for उसना माल that was already out before the books
+/// start: counts in the bags owed, but never in shop stock (the opening stock
+/// count already left those bags out) and never in money.
+const goodsOpeningMarker = 'opening';
+
 class VoucherInput {
   final VoucherType type;
   final String date;
@@ -247,6 +252,11 @@ class VoucherService {
     final goodsLoan = v.type.isGoodsLoan;
     final total = goodsLoan ? 0 : v.total; // उसना माल has no money value
     if (goodsLoan && !v.items.any((i) => i.qty != 0)) throw ArgumentError('err_items');
+    final goodsOpening = goodsLoan && v.payLedgerId == goodsOpeningMarker;
+    if (goodsOpening) {
+      if (!actor.isOwner) throw PermissionDenied('err_owner_opening_goods');
+      if (v.date != Books.start) throw ArgumentError('err_opening_goods_date');
+    }
     final today = todayIso();
     if (!actor.isOwner && v.date.compareTo(today) < 0) {
       throw PermissionDenied('err_staff_today');
@@ -314,13 +324,13 @@ class VoucherService {
           ['$id:L$n', businessId, id, l.ledgerId, l.debit, l.credit, v.date],
         );
       }
-      final dir = v.type.stockDirection;
+      final dir = goodsOpening ? 0 : v.type.stockDirection;
       var n = 0;
       for (final it in v.items) {
         // stock adjustment: sign of qty decides in/out
         final d = v.type == VoucherType.stockAdjust ? (it.qty >= 0 ? 1 : -1) : dir;
         // old bills keep their item lines for the record, with no stock effect
-        if (d == 0 && v.type != VoucherType.history) continue;
+        if (d == 0 && v.type != VoucherType.history && !goodsOpening) continue;
         if (it.qty == 0) continue;
         await tx.execute(
           'INSERT INTO inventory_lines (id, business_id, voucher_id, item_id, qty, rate, amount, direction, vdate, deleted) '

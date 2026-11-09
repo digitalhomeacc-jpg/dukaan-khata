@@ -44,6 +44,15 @@ Every sale bill has **हमाली** and **गाडी भाडे** fields
   The optional *ट्रान्सपोर्टरला द्यायचे* field records his fare if it differs; the extra is your income.
   Pay him from the day-end card (*पैसे द्या*).
 
+## उसना माल (bags lent / borrowed)
+
+Khata page → ⋮ → **माल उसना दिला** when bags are given to come back as bags (no money), and
+**उसना माल आला** when they come back (or when we borrow). Stock moves; money never does. The khata and
+customer list show **माल येणे / माल देणे** in bags next to the ₹ balance; Reports → *उसना माल* lists all.
+Bags that were already out before the books start: owner turns on **सुरुवातीचा उसना माल** in the same
+screen – counted as owed, but no change to stock (the opening count already left them out), money or profit.
+Old entries (जुनी नोंद) stay reference only.
+
 ## रोख मोजणी (cash count)
 
 Rojmal → calculator icon (or **+** → रोख मोजणी): type how many notes of each kind (or just the

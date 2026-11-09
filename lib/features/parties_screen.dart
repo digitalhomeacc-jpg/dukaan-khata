@@ -781,12 +781,12 @@ class _GoodsOwedCard extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
               child: Text('${t('r_goods_owed')} · ${party.name}', style: Theme.of(ctx).textTheme.titleMedium),
             ),
-            for (final (id, date, type, what) in moves)
+            for (final (id, date, type, what, opening) in moves)
               ListTile(
                 leading: Icon(type == VoucherType.goodsOut ? Icons.north_east : Icons.south_west,
                     color: type == VoucherType.goodsOut ? AppColors.due : AppColors.paid),
                 title: Text(what),
-                subtitle: Text('${shortDate(date)} · ${t('vt_${type.code}')}'),
+                subtitle: Text('${opening ? t('goods_opening_short') : shortDate(date)} · ${t('vt_${type.code}')}'),
                 onTap: () {
                   Navigator.pop(ctx);
                   VoucherScreen.edit(context, id);

@@ -1,6 +1,7 @@
 import 'package:sqlite_async/sqlite_async.dart';
 
 import '../accounting/models.dart';
+import '../accounting/voucher_service.dart' show goodsOpeningMarker;
 import '../core/ids.dart';
 
 class StockMove {
@@ -67,6 +68,10 @@ class GoodsOwed {
 }
 
 class StockRepo {
+  /// + bags the party owes us, − bags we owe (from the entry type, so opening
+  /// entries without a stock direction count too).
+  static const _goodsSign = "CASE v.vtype WHEN 'goods_out' THEN il.qty ELSE -il.qty END";
+
   final SqliteConnection db;
   final String businessId;
   StockRepo(this.db, this.businessId);
@@ -200,11 +205,11 @@ class StockRepo {
   Future<List<GoodsOwed>> goodsOwed({String? partyId}) async {
     final items = {for (final i in await list()) i.id: i};
     final rows = await db.getAll(
-      'SELECT v.party_id, p.name AS party_name, p.page_no, il.item_id, SUM(-il.qty * il.direction) AS q '
+      'SELECT v.party_id, p.name AS party_name, p.page_no, il.item_id, SUM($_goodsSign) AS q '
       'FROM inventory_lines il JOIN vouchers v ON v.id = il.voucher_id LEFT JOIN ledgers p ON p.id = v.party_id '
       "WHERE il.business_id = ? AND il.deleted = 0 AND v.deleted = 0 AND v.vtype IN ('goods_out', 'goods_in') "
       '${partyId != null ? 'AND v.party_id = ? ' : ''}'
-      'GROUP BY v.party_id, il.item_id HAVING ABS(SUM(-il.qty * il.direction)) > 0.0001 ORDER BY p.name',
+      'GROUP BY v.party_id, il.item_id HAVING ABS(SUM($_goodsSign)) > 0.0001 ORDER BY p.name',
       [businessId, if (partyId != null) partyId],
     );
     return [
@@ -216,9 +221,9 @@ class StockRepo {
   }
 
   /// Every उसना माल entry with one party, newest first: (voucher id, date, type, "W सिमेंट 30, …").
-  Future<List<(String, String, VoucherType, String)>> goodsMoves(String partyId) async {
+  Future<List<(String, String, VoucherType, String, bool)>> goodsMoves(String partyId) async {
     final rows = await db.getAll(
-      "SELECT v.id, v.vdate, v.vtype, GROUP_CONCAT(i.name || ' ' || il.qty, ', ') AS what FROM vouchers v "
+      "SELECT v.id, v.vdate, v.vtype, v.pay_ledger_id, GROUP_CONCAT(i.name || ' ' || il.qty, ', ') AS what FROM vouchers v "
       'JOIN inventory_lines il ON il.voucher_id = v.id AND il.deleted = 0 JOIN items i ON i.id = il.item_id '
       "WHERE v.party_id = ? AND v.deleted = 0 AND v.vtype IN ('goods_out', 'goods_in') "
       'GROUP BY v.id ORDER BY v.vdate DESC, v.created_at DESC',
@@ -231,6 +236,7 @@ class StockRepo {
           r['vdate'] as String,
           VoucherType.fromCode(r['vtype'] as String),
           ((r['what'] as String?) ?? '').replaceAllMapped(RegExp(r'(\d+)\.0\b'), (m) => m[1]!),
+          r['pay_ledger_id'] == goodsOpeningMarker,
         ),
     ];
   }
@@ -239,8 +245,10 @@ class StockRepo {
   /// still ours, so they count in the stock value.
   Future<double> lentAt(String itemId, String date, {bool before = false}) async {
     final r = await db.get(
-      'SELECT COALESCE(SUM(-il.qty * il.direction), 0) AS q FROM inventory_lines il JOIN vouchers v ON v.id = il.voucher_id '
-      "WHERE il.item_id = ? AND il.deleted = 0 AND v.vtype IN ('goods_out', 'goods_in') AND il.vdate ${before ? '<' : '<='} ?",
+      'SELECT COALESCE(SUM($_goodsSign), 0) AS q FROM inventory_lines il JOIN vouchers v ON v.id = il.voucher_id '
+      "WHERE il.item_id = ? AND il.deleted = 0 AND v.deleted = 0 AND v.vtype IN ('goods_out', 'goods_in') "
+      // opening bags were out before the books began – counted on every date
+      "AND (il.vdate ${before ? '<' : '<='} ? OR v.pay_ledger_id = '$goodsOpeningMarker')",
       [itemId, date],
     );
     return (r['q'] as num).toDouble();

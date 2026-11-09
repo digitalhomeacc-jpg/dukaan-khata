@@ -128,6 +128,7 @@ class _VoucherScreenState extends State<VoucherScreen> {
   final narration = TextEditingController();
   final ref = TextEditingController();
   bool gstBill = false;
+  bool goodsOpening = false; // उसना माल already out before the books start
   // bill charges (sale only)
   final hamaliCtl = TextEditingController();
   final varhaiCtl = TextEditingController(); // वराई with a purchase
@@ -244,6 +245,7 @@ class _VoucherScreenState extends State<VoucherScreen> {
       date = v.date;
       if (v.partyId != null) party = await app.ledgers.byId(v.partyId!);
       payId = v.payLedgerId;
+      goodsOpening = v.type.isGoodsLoan && v.payLedgerId == goodsOpeningMarker;
       if (v.type == VoucherType.history) {
         final k = v.payLedgerId ?? '';
         hKind = k.startsWith(historyKindPrefix)
@@ -385,7 +387,11 @@ class _VoucherScreenState extends State<VoucherScreen> {
       type: type,
       date: date,
       partyId: party?.id,
-      payLedgerId: isHistory ? '$historyKindPrefix$hKind' : payId,
+      payLedgerId: isHistory
+          ? '$historyKindPrefix$hKind'
+          : type.isGoodsLoan
+          ? (goodsOpening ? goodsOpeningMarker : null)
+          : payId,
       items: [
         for (final l in lines)
           if (l.q != 0) l.toLine(),
@@ -519,7 +525,7 @@ class _VoucherScreenState extends State<VoucherScreen> {
                   width: 210,
                   child: DateField(
                     date: date,
-                    enabled: app.actor.isOwner,
+                    enabled: app.actor.isOwner && !goodsOpening,
                     autofocus: isHistory && editing == null,
                     // old entries: any date before the books start; others: from the books start
                     first: isHistory ? null : Books.start,
@@ -536,7 +542,19 @@ class _VoucherScreenState extends State<VoucherScreen> {
             ),
             const SizedBox(height: 8),
             if (partyGroups.isNotEmpty) _partyCard(app),
-            if (type.isGoodsLoan)
+            if (type.isGoodsLoan && app.actor.isOwner)
+              SwitchListTile(
+                key: const Key('goods_opening'),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                value: goodsOpening,
+                title: Text(t('goods_opening')),
+                subtitle: Text(t('goods_opening_help').replaceAll('{date}', shortDate(Books.start))),
+                onChanged: (v) => setState(() {
+                  goodsOpening = v;
+                  date = v ? Books.start : todayIso();
+                }),
+              ),
+            if (type.isGoodsLoan && !goodsOpening)
               Padding(
                 padding: const EdgeInsets.fromLTRB(4, 8, 4, 0),
                 child: Text(t(type == VoucherType.goodsOut ? 'goods_out_help' : 'goods_in_help'),

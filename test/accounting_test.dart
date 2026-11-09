@@ -249,6 +249,42 @@ void main() {
     expect(() => vs.save(VoucherInput(type: VoucherType.goodsOut, date: day, items: [ItemLine(w.id, 1, 0)]), owner), throwsArgumentError);
   });
 
+  test('opening उसना माल: owed bags only – stock, money and profit untouched', () async {
+    final cust = await lr.create(name: 'Deepak', group: LedgerGroup.customer, openingBalance: rs(5000));
+    final w = items['W']!;
+    const day = '2026-11-07';
+    final start = Books.start;
+    final stock0 = await sr.stockAt(w.id, day);
+    final lent0 = await sr.lentAt(w.id, day);
+    final lentBefore0 = await sr.lentAt(w.id, start, before: true);
+    final cash0 = await lr.balanceAt(vs.sys('cash'));
+
+    // 30 bags were lent before the books started
+    VoucherInput opening(Actor a, String d) => VoucherInput(
+        type: VoucherType.goodsOut, date: d, partyId: cust, payLedgerId: goodsOpeningMarker, items: [ItemLine(w.id, 30, 0)]);
+    expect(() => vs.save(opening(staff, start), staff), throwsA(isA<PermissionDenied>()));
+    expect(() => vs.save(opening(owner, day), owner), throwsArgumentError);
+    await vs.save(opening(owner, start), owner);
+
+    expect((await sr.goodsOwed(partyId: cust)).single.qty, 30);
+    expect(await sr.stockAt(w.id, day), stock0); // shop stock unchanged
+    expect(await lr.balanceAt(cust), rs(5000)); // money unchanged
+    expect(await lr.balanceAt(vs.sys('cash')), cash0);
+    final reg = await sr.dailyRegister(start);
+    expect(reg.rows, isEmpty); // not in the stock register
+    // counted in stock value on every date alike (opening and closing) → no profit effect
+    expect(await sr.lentAt(w.id, day) - lent0, 30);
+    expect(await sr.lentAt(w.id, start, before: true) - lentBefore0, 30);
+
+    // they bring the bags back → into stock, nothing owed
+    await vs.save(VoucherInput(type: VoucherType.goodsIn, date: day, partyId: cust, items: [ItemLine(w.id, 30, 0)]), owner);
+    expect(await sr.goodsOwed(partyId: cust), isEmpty);
+    expect(await sr.stockAt(w.id, day), stock0 + 30);
+    expect(await sr.stockAt(w.id, day) + await sr.lentAt(w.id, day), stock0 + lent0 + 30);
+    final moves = await sr.goodsMoves(cust);
+    expect(moves.where((m) => m.$5).length, 1);
+  });
+
   test('रोख मोजणी: short and extra cash go to रोख फरक, books then match the count', () async {
     const day = '2026-11-07';
     final cash = vs.sys('cash');
