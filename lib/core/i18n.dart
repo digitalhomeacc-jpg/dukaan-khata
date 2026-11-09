@@ -179,6 +179,7 @@ const Map<String, (String, String)> _s = {
   'goods_opening_help': ('{date} पूर्वीच दिलेला/घेतलेला माल. फक्त "माल येणे/देणे" मध्ये धरतो – स्टॉक, पैसे, नफा बदलत नाही.', 'Already out before {date}. Counts only in goods owed – stock, money, profit unchanged.'),
   'err_owner_opening_goods': ('सुरुवातीचा उसना माल फक्त मालक नोंदवू शकतो', 'Only the owner can enter opening goods owed'),
   'err_opening_goods_date': ('सुरुवातीचा उसना माल पुस्तके सुरू होण्याच्या तारखेला नोंदतो', 'Opening goods owed is dated on the books start'),
+  'print': ('प्रिंट', 'Print'),
   'reg_simple': ('सोपे', 'Simple'),
   'reg_grid': ('रजिस्टर', 'Register'),
   'reg_movement': ('मालाचा हिशोब', 'Stock movement'),

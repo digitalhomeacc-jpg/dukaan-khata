@@ -122,6 +122,57 @@ class Reports {
   /// "12,000 Dr" style balance using simple words.
   String _bal(int b) => b == 0 ? '0' : '${Money.fmt(b, abs: true)} ${b > 0 ? tr('dr_short') : tr('cr_short')}';
 
+  /// दैनिक स्टॉक रजिस्टर for printing: one row per bill, one column per item.
+  Future<ReportTable> dailyRegister(String date, {bool allItems = false}) async {
+    final reg = await stock.dailyRegister(date);
+    final items = reg.items.where((i) => allItems || reg.moved(i.id)).toList();
+    String q(double v) => v == 0 ? '' : fmtQty(v);
+    String pay(RegisterRow r) => switch (r.type) {
+          VoucherType.salesReturn || VoucherType.purchaseReturn || VoucherType.stockAdjust || VoucherType.goodsOut ||
+          VoucherType.goodsIn =>
+            vtypeLabel(r.type, tr),
+          _ when r.amount == 0 => vtypeLabel(r.type, tr),
+          _ when r.paid >= r.amount => r.payName ?? tr('paid'),
+          _ when r.paid == 0 => tr('reg_credit'),
+          _ => tr('reg_part_paid').replaceAll('{paid}', Money.fmt(r.paid)),
+        };
+    String party(RegisterRow r) =>
+        '${r.partyName ?? (r.type == VoucherType.sale ? tr('cash_sale') : vtypeLabel(r.type, tr))}${r.pageNo != null ? ' (${r.pageNo})' : ''}';
+    final saleTotal = reg.rows.where((r) => r.type == VoucherType.sale).fold(0, (s, r) => s + r.amount);
+    final rows = <List<String>>[
+      ['', tr('opening'), for (final i in items) q(reg.opening[i.id] ?? 0), '', ''],
+      for (final r in reg.rows)
+        [
+          '${r.serial}',
+          party(r),
+          for (final i in items)
+            r.qty[i.id] == null
+                ? ''
+                : '${r.qty[i.id]! > 0 ? '+' : ''}${fmtQty(r.qty[i.id]!.abs())}'
+                    '${(r.rate[i.id] ?? 0) > 0 ? '\n@${Money.fmt(r.rate[i.id]!)}' : ''}',
+          r.type.isGoodsLoan ? '' : Money.fmt(r.amount),
+          pay(r),
+        ],
+      ['', '− ${tr('out')}', for (final i in items) q(reg.totalOut(i.id)), Money.fmt(saleTotal), ''],
+      ['', '+ ${tr('in')}', for (final i in items) q(reg.totalIn(i.id)), '', ''],
+    ];
+    return ReportTable(
+      title: tr('daily_register'),
+      subtitle: shortDate(date),
+      columns: [
+        const ReportColumn('#', flex: 1),
+        ReportColumn(tr('party'), flex: 4),
+        for (final i in items) ReportColumn.num('${i.name}\n${tr('unit_${i.unit}')}'),
+        ReportColumn.num(tr('amount'), flex: 3),
+        ReportColumn(tr('pay_mode'), flex: 3),
+      ],
+      rows: rows,
+      rowRefs: [null, for (final r in reg.rows) r.voucherId, null, null],
+      highlight: {0, rows.length - 2, rows.length - 1},
+      totals: ['', tr('closing'), for (final i in items) fmtQty(reg.closing(i.id)), '', ''],
+    );
+  }
+
   /// उसना माल: bags lent to / borrowed from each party.
   Future<ReportTable> goodsOwed() async {
     final list = await stock.goodsOwed();

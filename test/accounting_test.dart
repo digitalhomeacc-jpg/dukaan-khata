@@ -1,5 +1,6 @@
 import 'package:dukaan_khata/accounting/ledger_repo.dart';
 import 'package:dukaan_khata/accounting/models.dart';
+import 'package:dukaan_khata/accounting/reports.dart';
 import 'package:dukaan_khata/accounting/voucher_service.dart';
 import 'package:dukaan_khata/core/money.dart';
 import 'package:dukaan_khata/core/seed.dart';
@@ -197,6 +198,21 @@ void main() {
     expect(reg.totalOut(u.id), 25);
     expect(reg.closing(u.id), 197);
     expect(reg.closing(s8.id), -120.5);
+
+    // printable / PDF version of the same day
+    final rep = Reports(db, biz, (k) => k);
+    final t = await rep.dailyRegister('2026-11-05');
+    // #, party, moved items…, amount, paid-by
+    expect(t.columns.first.title, '#');
+    expect(t.columns.last.title, 'pay_mode');
+    final itemCols = t.columns.length - 4;
+    expect(itemCols, greaterThan(0));
+    expect(t.rows.first[1], 'opening');
+    expect(t.rows.length, 1 + 2 + 2); // opening, 2 bills, out, in
+    expect(t.rows[1][1], contains('(84)'));
+    expect(t.totals![1], 'closing');
+    expect(t.rows.every((r) => r.length == t.columns.length), isTrue);
+    expect(t.totals!.length, t.columns.length);
   });
 
   test('search by page number, Marathi and English name', () async {

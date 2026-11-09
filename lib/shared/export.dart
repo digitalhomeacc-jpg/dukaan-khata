@@ -27,8 +27,11 @@ class Exporter {
     final doc = pw.Document(theme: pw.ThemeData.withFont(base: _regular, bold: _bold));
     final flex = {for (var i = 0; i < t.columns.length; i++) i: pw.FlexColumnWidth(t.columns[i].flex.toDouble())};
     pw.Alignment al(int i) => t.columns[i].align == ColAlign.right ? pw.Alignment.centerRight : pw.Alignment.centerLeft;
+    // multi-line cells ("15\n@275") keep every line under the same edge
+    pw.TextAlign ta(int i) => t.columns[i].align == ColAlign.right ? pw.TextAlign.right : pw.TextAlign.left;
     doc.addPage(pw.MultiPage(
-      pageFormat: PdfPageFormat.a4,
+      // wide tables (daily stock register: one column per item) print sideways
+      pageFormat: t.columns.length > 8 ? PdfPageFormat.a4.landscape : PdfPageFormat.a4,
       margin: const pw.EdgeInsets.all(24),
       header: (_) => pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
         if (shop.isNotEmpty) pw.Text(shop, style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
@@ -52,7 +55,7 @@ class Exporter {
                   pw.Container(
                     alignment: al(i),
                     padding: const pw.EdgeInsets.all(3),
-                    child: pw.Text(t.columns[i].title, style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
+                    child: pw.Text(t.columns[i].title, textAlign: ta(i), style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
                   ),
               ],
             ),
@@ -64,7 +67,7 @@ class Exporter {
                     pw.Container(
                       alignment: al(i),
                       padding: const pw.EdgeInsets.all(3),
-                      child: pw.Text(i < t.rows[r].length ? t.rows[r][i] : '', style: const pw.TextStyle(fontSize: 9)),
+                      child: pw.Text(i < t.rows[r].length ? t.rows[r][i] : '', textAlign: ta(i), style: const pw.TextStyle(fontSize: 9)),
                     ),
                 ],
               ),
@@ -76,7 +79,7 @@ class Exporter {
                     pw.Container(
                       alignment: al(i),
                       padding: const pw.EdgeInsets.all(3),
-                      child: pw.Text(t.totals![i], style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
+                      child: pw.Text(t.totals![i], textAlign: ta(i), style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
                     ),
                 ],
               ),

@@ -4,6 +4,7 @@ import '../accounting/models.dart';
 import '../core/money.dart';
 import '../core/theme.dart';
 import '../inventory/stock_repo.dart';
+import '../shared/export.dart';
 import '../shared/widgets.dart';
 import '../state/app_controller.dart';
 import 'report_view.dart';
@@ -150,6 +151,27 @@ class _DailyRegisterViewState extends State<DailyRegisterView> {
         padding: const EdgeInsets.fromLTRB(4, 6, 12, 6),
         child: Row(children: [
           Expanded(child: Align(alignment: Alignment.centerLeft, child: DayStepper(date: date, onChanged: (d) => setState(() => date = d)))),
+          PopupMenuButton<String>(
+            key: const Key('register_export'),
+            tooltip: '${t('print')} / PDF',
+            icon: const Icon(Icons.print_outlined),
+            onSelected: (v) async {
+              final table = await app.reports.dailyRegister(date, allItems: allItems);
+              switch (v) {
+                case 'pdf':
+                  await Exporter.sharePdf(table, shop: app.businessName);
+                case 'print':
+                  await Exporter.printPdf(table, shop: app.businessName);
+                case 'xls':
+                  await Exporter.shareExcel([table], '${t('daily_register')} ${shortDate(date)}');
+              }
+            },
+            itemBuilder: (_) => [
+              PopupMenuItem(value: 'print', child: Text(t('print'))),
+              const PopupMenuItem(value: 'pdf', child: Text('PDF')),
+              const PopupMenuItem(value: 'xls', child: Text('Excel')),
+            ],
+          ),
           SegmentedButton<bool>(
             showSelectedIcon: false,
             style: const ButtonStyle(visualDensity: VisualDensity.compact),
