@@ -50,11 +50,29 @@
     // Keep the app on the phone so it opens without internet.
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', function () {
-        navigator.serviceWorker.register('app_sw.js?v=202611090249').catch(function () {});
+        navigator.serviceWorker.register('app_sw.js?v=202611090315').catch(function () {});
+        // A new version took over: reload once so every file (icons too) comes
+        // from the new version. Right after opening this is automatic; later,
+        // a small bar asks first so nothing being typed is lost.
+        var hadController = !!navigator.serviceWorker.controller;
+        var reloading = false;
+        navigator.serviceWorker.addEventListener('controllerchange', function () {
+          if (!hadController || reloading) return;
+          if (performance.now() < 30000) { reloading = true; location.reload(); return; }
+          if (document.getElementById('dk-update')) return;
+          var b = document.createElement('button');
+          b.id = 'dk-update';
+          b.textContent = 'नवीन आवृत्ती आली – रीलोड करा / Update ready – tap to reload';
+          b.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);bottom:calc(84px + env(safe-area-inset-bottom));' +
+            'z-index:9999;max-width:92vw;padding:10px 16px;border:0;border-radius:22px;background:#1F4E79;color:#fff;' +
+            'font:600 14px sans-serif;box-shadow:0 4px 14px rgba(0,0,0,.25);cursor:pointer';
+          b.onclick = function () { reloading = true; location.reload(); };
+          document.body.appendChild(b);
+        });
       });
     }
   </script>
-  <script src="pdf_text.js?v=202611090249" defer></script>
-  <script src="flutter_bootstrap.js?v=202611090249" async></script>
+  <script src="pdf_text.js?v=202611090315" defer></script>
+  <script src="flutter_bootstrap.js?v=202611090315" async></script>
 </body>
 </html>
