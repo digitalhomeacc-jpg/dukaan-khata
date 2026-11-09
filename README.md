@@ -44,6 +44,13 @@ Every sale bill has **हमाली** and **गाडी भाडे** fields
   The optional *ट्रान्सपोर्टरला द्यायचे* field records his fare if it differs; the extra is your income.
   Pay him from the day-end card (*पैसे द्या*).
 
+## वराई (company hamali)
+
+When the company's truck driver hands over hamali money for the labourers, type it in the purchase
+bill's **वराई मिळाली** field, or use Rojmal → **+** / day-end card → **वराई मिळाली** on its own.
+It goes into cash and the built-in *वराई (कंपनीकडून हमाली)* account, never into the company's
+khata. The day-end card adds it to the hamali taken on bills: **हमालांना द्यायचे** = bills + वराई.
+
 ## Books start, financial year and old entries
 
 Set on first launch (and later in **अधिक → दुकान माहिती व हिशोब वर्ष**): the **books start date**

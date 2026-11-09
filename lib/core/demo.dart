@@ -88,6 +88,8 @@ Future<void> loadDemoData(VoucherService vs, LedgerRepo lr, StockRepo sr) async 
           hamali: rs(200), transport: rs(800), transporterId: ganesh, transporterFare: rs(700)),
       owner);
   await vs.save(VoucherInput(type: VoucherType.payment, date: today, partyId: vs.sys('hamali'), payLedgerId: vs.sys('cash'), amount: rs(400), narration: 'अनलोडिंग'), owner);
+  // वराई handed over by the company's truck driver
+  await vs.save(VoucherInput(type: VoucherType.receipt, date: today, partyId: vs.sys('varhai'), payLedgerId: vs.sys('cash'), amount: rs(300), narration: 'लक्ष्मी सिमेंट गाडी'), owner);
   await vs.save(VoucherInput(type: VoucherType.payment, date: today, partyId: vs.sys('tea'), payLedgerId: vs.sys('cash'), amount: rs(80)), owner);
   await vs.save(VoucherInput(type: VoucherType.payment, date: today, partyId: vs.sys('freight'), payLedgerId: vs.sys('cash'), amount: rs(2400), narration: 'ट्रॅक्टर भाडे'), owner);
   await vs.save(VoucherInput(type: VoucherType.contra, date: today, partyId: vs.sys('bank'), payLedgerId: vs.sys('cash'), amount: rs(5000), narration: 'बँकेत भरले'), owner);

@@ -207,6 +207,44 @@ void main() {
     expect((await lr.search('२९')).single.pageNo, '29');
   });
 
+  test('वराई: driver cash goes to cash + day-end hamali, never the supplier bill', () async {
+    final sup = await lr.create(name: 'Laxmi Cement Agency', group: LedgerGroup.supplier);
+    final cust = await lr.create(name: 'Vijay', group: LedgerGroup.customer);
+    final m = items['M']!;
+    const day = '2026-11-07';
+    final cashBefore = await lr.balanceAt(vs.sys('cash'));
+    // company truck: 100 bags on credit, driver hands over ₹500 varhaai
+    final pid = await vs.save(
+        VoucherInput(type: VoucherType.purchase, date: day, partyId: sup, items: [ItemLine(m.id, 100, rs(250))], varhai: rs(500)),
+        owner);
+    expect(await lr.balanceAt(sup), -rs(25000)); // bill untouched
+    expect(await lr.balanceAt(vs.sys('cash')), cashBefore + rs(500));
+    expect(await lr.balanceAt(vs.sys('varhai')), -rs(500));
+    final (pv, _) = await vs.load(pid);
+    expect(await vs.varhaiOf(pv), rs(500));
+
+    // a sale with ₹200 hamali, then ₹300 more varhaai entered on its own
+    await vs.save(VoucherInput(type: VoucherType.sale, date: day, partyId: cust, items: [ItemLine(m.id, 10, rs(285))], hamali: rs(200)), owner);
+    await vs.save(VoucherInput(type: VoucherType.receipt, date: day, partyId: vs.sys('varhai'), payLedgerId: vs.sys('cash'), amount: rs(300)), owner);
+    var dc = await lr.dayCharges(day);
+    expect(dc.hamaliCharged, rs(200));
+    expect(dc.varhai, rs(800));
+    expect(dc.hamaliToPay, rs(1000));
+
+    // labourers get the full ₹1,000 → nothing left over
+    await vs.save(
+        VoucherInput(type: VoucherType.payment, date: day, partyId: vs.sys('hamali'), payLedgerId: vs.sys('cash'), amount: rs(1000)),
+        owner);
+    dc = await lr.dayCharges(day);
+    expect(dc.hamaliProfit, 0);
+
+    // editing the purchase without varhaai removes it
+    await vs.save(VoucherInput(type: VoucherType.purchase, date: day, partyId: sup, items: [ItemLine(m.id, 100, rs(250))]), owner,
+        existingId: pid);
+    expect((await lr.dayCharges(day)).varhai, rs(300));
+    expect(await lr.balanceAt(sup), -rs(25000));
+  });
+
   test('bill charges: hamali + own vehicle are income, outside transporter is owed', () async {
     final cust = await lr.create(name: 'Sunil', group: LedgerGroup.customer);
     final ganesh = await lr.create(name: 'Ganesh Transport', group: LedgerGroup.transporter);

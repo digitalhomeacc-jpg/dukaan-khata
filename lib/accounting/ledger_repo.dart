@@ -40,9 +40,12 @@ class DayCharges {
   final int hamaliPaid; // paid to labourers
   final int ownTransport; // own vehicle income + margin on outside trips
   final List<TransporterDue> transporters;
-  DayCharges(this.date, this.hamaliCharged, this.hamaliPaid, this.ownTransport, this.transporters);
-  int get hamaliProfit => hamaliCharged - hamaliPaid;
-  bool get isEmpty => hamaliCharged == 0 && hamaliPaid == 0 && ownTransport == 0 && transporters.isEmpty;
+  final int varhai; // वराई: hamali money the company's driver handed over
+  DayCharges(this.date, this.hamaliCharged, this.hamaliPaid, this.ownTransport, this.transporters, {this.varhai = 0});
+  /// What the labourers get today: hamali taken on bills + वराई.
+  int get hamaliToPay => hamaliCharged + varhai;
+  int get hamaliProfit => hamaliToPay - hamaliPaid;
+  bool get isEmpty => hamaliCharged == 0 && hamaliPaid == 0 && varhai == 0 && ownTransport == 0 && transporters.isEmpty;
 }
 
 class Statement {
@@ -414,6 +417,7 @@ class LedgerRepo {
     final hamaliCharged = await sum('$businessId:hamali_income', 'credit - debit');
     final hamaliPaid = await sum('$businessId:hamali', 'debit - credit');
     final ownTransport = await sum('$businessId:transport_income', 'credit - debit');
+    final varhai = await sum('$businessId:varhai', 'credit - debit');
     final rows = await db.getAll(
       'SELECT l.*, $_balanceExpr AS balance, '
       'COALESCE((SELECT SUM(credit) FROM voucher_lines WHERE ledger_id = l.id AND vdate = ? AND deleted = 0),0) AS earned, '
@@ -427,7 +431,7 @@ class LedgerRepo {
           TransporterDue(Ledger.fromRow(r), (r['earned'] as num).toInt(), (r['paid'] as num).toInt(),
               -(r['balance'] as num).toInt()),
     ];
-    return DayCharges(date, hamaliCharged, hamaliPaid, ownTransport, dues);
+    return DayCharges(date, hamaliCharged, hamaliPaid, ownTransport, dues, varhai: varhai);
   }
 
   /// "M 12.0×285.0" → "M 12×285"

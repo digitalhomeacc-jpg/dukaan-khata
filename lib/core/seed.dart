@@ -30,6 +30,8 @@ const seedLedgers = <SeedLedger>[
   SeedLedger('freight', 'भाडे', 'Freight / Transport', LedgerGroup.directExpense),
   SeedLedger('hamali', 'हमाली', 'Labour (Hamali)', LedgerGroup.directExpense),
   SeedLedger('hamali_income', 'हमाली (बिलात घेतली)', 'Hamali charged', LedgerGroup.income),
+  // वराई: hamali money the company's truck driver hands over for the labourers
+  SeedLedger('varhai', 'वराई (कंपनीकडून हमाली)', 'Varhaai (company hamali)', LedgerGroup.income),
   SeedLedger('transport_income', 'गाडी भाडे (आपली गाडी)', 'Transport income (own vehicle)', LedgerGroup.income),
   SeedLedger('salary', 'पगार', 'Salary', LedgerGroup.expense),
   SeedLedger('rent', 'भाडे (दुकान)', 'Shop Rent', LedgerGroup.expense),

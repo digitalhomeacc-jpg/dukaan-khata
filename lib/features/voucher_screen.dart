@@ -12,6 +12,7 @@ import '../shared/widgets.dart';
 import '../state/app_controller.dart';
 import 'audit_screen.dart';
 import 'books_screens.dart';
+import 'parties_screen.dart';
 
 /// One screen for every kind of entry. Shows only the fields the type needs.
 class VoucherScreen extends StatefulWidget {
@@ -129,6 +130,7 @@ class _VoucherScreenState extends State<VoucherScreen> {
   bool gstBill = false;
   // bill charges (sale only)
   final hamaliCtl = TextEditingController();
+  final varhaiCtl = TextEditingController(); // वराई with a purchase
   final transportCtl = TextEditingController();
   final fareCtl = TextEditingController();
   String? transporterId; // null = own vehicle
@@ -269,6 +271,8 @@ class _VoucherScreenState extends State<VoucherScreen> {
       gstRate = v.gstRate;
       final ro = await app.vouchers.roundOffOf(v);
       if (ro != 0) roundCtl.text = Money.fmt(ro).replaceAll(',', '');
+      final vr = await app.vouchers.varhaiOf(v);
+      if (vr != 0) varhaiCtl.text = _plain(vr);
       if (v.transporterFare != null && v.transporterFare != v.transport) {
         fareCtl.text = _plain(v.transporterFare!);
         fareTouched = true;
@@ -400,6 +404,7 @@ class _VoucherScreenState extends State<VoucherScreen> {
       gstRate: gstAllowed ? gstRate : 0,
       roundOff: roundOff,
       haste: hasteCtl.text,
+      varhai: type == VoucherType.purchase ? (Money.parse(varhaiCtl.text) ?? 0) : 0,
     );
     // credit limit warning
     if (party != null && party!.creditLimit > 0 && type == VoucherType.sale) {
@@ -540,6 +545,7 @@ class _VoucherScreenState extends State<VoucherScreen> {
                 AmountField(controller: amount, label: t('amount_no_items'), onChanged: (_) => setState(() {})),
               ],
               if (chargesOn) _chargesCard(app),
+              if (type == VoucherType.purchase) _varhaiCard(app),
               if (gstAllowed && app.actor.isOwner) _gstCard(app),
               if (roundAllowed) _roundCard(app),
               if (!stockOnly)
@@ -798,8 +804,24 @@ class _VoucherScreenState extends State<VoucherScreen> {
                   if (party!.phone != null) party!.phone!,
                 ].join(' · '),
         ),
-        trailing: party != null && party!.group.isParty
-            ? BalanceText(party!.balance, supplier: party!.group == LedgerGroup.supplier)
+        trailing: party != null && (party!.group.isParty || party!.group == LedgerGroup.transporter)
+            ? Row(mainAxisSize: MainAxisSize.min, children: [
+                if (party!.group.isParty) BalanceText(party!.balance, supplier: party!.group == LedgerGroup.supplier),
+                // edit phone, page no., opening balance … without leaving the bill
+                IconButton(
+                  key: const Key('voucher_party_edit'),
+                  tooltip: t('edit_party'),
+                  icon: const Icon(Icons.edit_outlined, size: 20),
+                  onPressed: () async {
+                    final before = party!;
+                    await PartyForm.open(context, before.group, existing: before);
+                    final fresh = await app.ledgers.byId(before.id);
+                    if (mounted && party?.id == before.id) setState(() => party = fresh);
+                  },
+                ),
+              ])
+            : party != null
+            ? null
             : const Icon(Icons.search),
         onTap: () async {
           final l = await pickLedger(context, groups: partyGroups, createAs: createAs);
@@ -923,6 +945,35 @@ class _VoucherScreenState extends State<VoucherScreen> {
 
   /// Hamali + transport on the bill. Own vehicle = our income; outside
   /// transporter = we owe him (paid at day end), any extra = our margin.
+  /// वराई: the company's driver hands over hamali money for the labourers.
+  /// Kept out of the supplier's bill – it goes to cash and the day-end hamali.
+  Widget _varhaiCard(AppController app) {
+    final t = app.t;
+    return Card(
+      margin: const EdgeInsets.only(top: 8),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          TextField(
+            key: const Key('varhai'),
+            controller: varhaiCtl,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: InputDecoration(
+              labelText: t('varhai_received'),
+              border: const OutlineInputBorder(),
+              isDense: true,
+              prefixText: '₹ ',
+              prefixIcon: const Icon(Icons.engineering, size: 20),
+            ),
+            onChanged: (_) => setState(() {}),
+          ),
+          const SizedBox(height: 6),
+          Text(t('varhai_help'), style: Theme.of(context).textTheme.bodySmall),
+        ]),
+      ),
+    );
+  }
+
   Widget _chargesCard(AppController app) {
     final t = app.t;
     final dense = InputDecoration(border: const OutlineInputBorder(), isDense: true, prefixText: '₹ ');

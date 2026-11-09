@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../accounting/ledger_repo.dart';
 import '../accounting/models.dart';
 import '../core/money.dart';
+import '../core/theme.dart';
 import '../shared/export.dart';
 import '../shared/widgets.dart';
 import '../state/app_controller.dart';
@@ -168,6 +169,15 @@ class _RojmalScreenState extends State<RojmalScreen> {
                 VoucherScreen.open(context, type, expense: exp);
               },
             ),
+          ListTile(
+            leading: const Icon(Icons.engineering),
+            title: Text(t('varhai_add')),
+            subtitle: Text(t('varhai_sub')),
+            onTap: () {
+              Navigator.pop(context);
+              VoucherScreen.open(context, VoucherType.receipt, partyId: '${App.read(context).businessId}:varhai');
+            },
+          ),
         ]),
       ),
     );
@@ -185,7 +195,7 @@ class _DayEndCard extends StatelessWidget {
     final app = App.of(context);
     final t = app.t;
     final c = charges;
-    final pending = c.hamaliCharged - c.hamaliPaid;
+    final pending = c.hamaliToPay - c.hamaliPaid;
     final owedTotal = c.transporters.fold<int>(0, (s, d) => s + (d.owed > 0 ? d.owed : 0));
     Widget money(int v, {Color? color, bool bold = false}) => Text(Money.fmt(v),
         style: TextStyle(color: color, fontWeight: bold ? FontWeight.bold : null, fontFeatures: const [FontFeature.tabularFigures()]));
@@ -195,25 +205,43 @@ class _DayEndCard extends StatelessWidget {
         key: PageStorageKey('dayend_${c.date}'),
         leading: const Icon(Icons.fact_check_outlined),
         title: Text(t('day_end')),
-        subtitle: Text('${t('hamali')}: ${Money.fmt(c.hamaliCharged)} / ${Money.fmt(c.hamaliPaid)}'
+        subtitle: Text('${t('hamali')}: ${Money.fmt(c.hamaliToPay)} / ${Money.fmt(c.hamaliPaid)}'
             '${owedTotal > 0 ? ' · ${t('transporters')}: ₹${Money.fmt(owedTotal)}' : ''}'),
         childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
         children: [
           Row(children: [Expanded(child: Text(t('hamali_charged'))), money(c.hamaliCharged)]),
-          Row(children: [Expanded(child: Text(t('hamali_paid'))), money(c.hamaliPaid)]),
           Row(children: [
-            Expanded(child: Text(t('hamali_profit'), style: const TextStyle(fontWeight: FontWeight.bold))),
-            money(c.hamaliProfit, color: c.hamaliProfit >= 0 ? Colors.green.shade700 : Colors.red.shade700, bold: true),
+            Expanded(child: Text('+ ${t('varhai')}')),
+            money(c.varhai),
           ]),
-          Align(
-            alignment: Alignment.centerRight,
-            child: TextButton.icon(
+          const Divider(height: 12),
+          Row(children: [
+            Expanded(child: Text(t('hamali_to_pay'), style: const TextStyle(fontWeight: FontWeight.w600))),
+            money(c.hamaliToPay, bold: true),
+          ]),
+          Row(children: [Expanded(child: Text('− ${t('hamali_paid')}')), money(c.hamaliPaid)]),
+          Row(children: [
+            // left to give the labourers / paid more than taken / all settled
+            Expanded(
+              child: Text(t(c.hamaliProfit > 0 ? 'hamali_left' : c.hamaliProfit < 0 ? 'hamali_over' : 'hamali_settled'),
+                  style: const TextStyle(fontWeight: FontWeight.bold)),
+            ),
+            money(c.hamaliProfit.abs(),
+                color: c.hamaliProfit > 0 ? AppColors.haldi : c.hamaliProfit < 0 ? Colors.red.shade700 : Colors.green.shade700, bold: true),
+          ]),
+          Wrap(alignment: WrapAlignment.end, spacing: 4, children: [
+            TextButton.icon(
+              icon: const Icon(Icons.add, size: 18),
+              label: Text(t('varhai_add')),
+              onPressed: () => VoucherScreen.open(context, VoucherType.receipt, partyId: '${app.businessId}:varhai'),
+            ),
+            TextButton.icon(
               icon: const Icon(Icons.payments_outlined, size: 18),
               label: Text(t('pay_labourers')),
               onPressed: () => VoucherScreen.open(context, VoucherType.payment,
                   partyId: '${app.businessId}:hamali', expense: true, amount: pending > 0 ? pending : null),
             ),
-          ),
+          ]),
           if (c.ownTransport != 0)
             Row(children: [Expanded(child: Text(t('transport_income'))), money(c.ownTransport, color: Colors.green.shade700)]),
           if (c.transporters.isNotEmpty) ...[

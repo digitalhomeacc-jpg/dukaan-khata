@@ -64,7 +64,12 @@ class VoucherInput {
     this.gstRate = 0,
     this.roundOff = 0,
     this.haste,
+    this.varhai = 0,
   });
+
+  /// वराई on a purchase: cash the company's driver gave for the labourers.
+  /// Goes into cash and the वराई ledger; never part of the supplier's bill.
+  final int varhai;
 
   /// GST on a genuine GST bill: rate is percent × 100 (1800 = 18 %), charged on the goods value.
   final int gstRate;
@@ -172,6 +177,10 @@ class VoucherService {
         if (v.paid > 0 && party != pay) {
           dr(party, v.paid);
           cr(pay, v.paid);
+        }
+        if (v.varhai > 0) {
+          dr(sys('cash'), v.varhai); // handed over by the driver
+          cr(sys('varhai'), v.varhai);
         }
       case VoucherType.purchaseReturn:
         final party = v.partyId ?? pay;
@@ -408,6 +417,15 @@ class VoucherService {
       );
     }
     return n;
+  }
+
+  /// वराई received with a purchase (read back from its वराई line).
+  Future<int> varhaiOf(Voucher v) async {
+    if (v.type != VoucherType.purchase) return 0;
+    final r = await db.get(
+        'SELECT COALESCE(SUM(credit - debit), 0) AS n FROM voucher_lines WHERE voucher_id = ? AND ledger_id = ? AND deleted = 0',
+        [v.id, sys('varhai')]);
+    return (r['n'] as num).toInt();
   }
 
   /// Round off stored on a bill (read back from its round-off line).
