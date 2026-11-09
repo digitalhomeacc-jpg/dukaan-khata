@@ -72236,7 +72236,7 @@ r=A.eC(p,p,p,!0,!0,p,B.age,p,p,new A.aVh(this,a),p,p,p,p,A.F(n.$1("export_templa
 q=A.F(n.$1("full_backup"),p,p,p,p,p,p,p,p)
 B.i.O(j,A.b([k,s,r,A.eC(p,p,p,!0,!0,p,B.agh,p,p,new A.aVi(o),p,p,p,A.F(n.$1("full_backup_sub"),p,p,p,p,p,p,p,p),q,p,p),A.eC(p,p,p,!0,!0,p,B.CV,p,p,new A.aVj(a),p,p,p,p,A.F(n.$1("audit"),p,p,p,p,p,p,p,p),p,p)],i))}j.push(A.eC(p,p,p,!0,!0,p,B.agx,p,p,new A.aVb(a,n,o),p,p,p,p,A.F(n.$1("sign_out"),p,p,p,p,p,p,p,p),p,p))
 j.push(B.lZ)
-j.push(A.dZ(A.F("Dukaan Khata \xb7 "+A.k(n.$1("version"))+" 09/11/26 08:07",p,p,p,p,A.H(a).ok.Q,p,p,p),p,p))
+j.push(A.dZ(A.F("Dukaan Khata \xb7 "+A.k(n.$1("version"))+" 09/11/26 08:19",p,p,p,p,A.H(a).ok.Q,p,p,p),p,p))
 j.push(B.lZ)
 return A.fT(l,p,A.hg(j,p,p,B.aD,!1),p,p)},
 Ls(a){return this.aOY(a)},

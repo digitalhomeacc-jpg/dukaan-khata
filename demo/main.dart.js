@@ -71815,7 +71815,7 @@ s=A.eO(p,p,p,!0,!0,p,B.Cp,p,p,new A.aTy(this,a),p,p,p,A.G(n.$1("import_opening_s
 r=A.eO(p,p,p,!0,!0,p,B.afv,p,p,new A.aTz(this,a),p,p,p,p,A.G(n.$1("export_template"),p,p,p,p,p,p,p,p),p,p)
 q=A.G(n.$1("full_backup"),p,p,p,p,p,p,p,p)
 B.i.O(j,A.b([k,s,r,A.eO(p,p,p,!0,!0,p,B.afy,p,p,new A.aTA(o),p,p,p,A.G(n.$1("full_backup_sub"),p,p,p,p,p,p,p,p),q,p,p),A.eO(p,p,p,!0,!0,p,B.Cu,p,p,new A.aTB(a),p,p,p,p,A.G(n.$1("audit"),p,p,p,p,p,p,p,p),p,p)],i))}j.push(B.lO)
-j.push(A.dZ(A.G("Dukaan Khata \xb7 "+A.k(n.$1("version"))+" 09/11/26 08:07",p,p,p,p,A.H(a).ok.Q,p,p,p),p,p))
+j.push(A.dZ(A.G("Dukaan Khata \xb7 "+A.k(n.$1("version"))+" 09/11/26 08:19",p,p,p,p,A.H(a).ok.Q,p,p,p),p,p))
 j.push(B.lO)
 return A.fR(l,p,A.hf(j,p,p,B.aB,!1),p,p)},
 Ky(a){return this.aN2(a)},
