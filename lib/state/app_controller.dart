@@ -8,6 +8,7 @@ import 'package:powersync/powersync.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../shared/export.dart';
 import '../accounting/ledger_repo.dart';
 import '../accounting/reports.dart';
 import '../accounting/voucher_service.dart';
@@ -46,7 +47,33 @@ class AppController extends ChangeNotifier {
   VoucherService get vouchers => _vouchers!;
   LedgerRepo get ledgers => _ledgers!;
   StockRepo get stock => _stock!;
-  Reports get reports => Reports(db, businessId!, strings.t);
+  Reports get reports => Reports(db, businessId!, (_pdfEnglish ? const Strings(true) : strings).t);
+  bool _pdfEnglish = false;
+
+  /// Builds a report in English for a PDF / print (the PDF engine cannot join
+  /// Marathi letters). Names are swapped for their English names, or spelt in
+  /// English letters, when the PDF is drawn.
+  Future<ReportTable> pdfTable(Future<ReportTable> Function() build) async {
+    await loadPdfNames();
+    _pdfEnglish = true;
+    try {
+      return await build();
+    } finally {
+      _pdfEnglish = false;
+    }
+  }
+
+  /// Marathi name → English name of every account and item, for PDFs.
+  Future<void> loadPdfNames() async {
+    final names = <String, String>{};
+    for (final r in await db.getAll(
+        "SELECT name, name_en FROM ledgers WHERE business_id = ? AND COALESCE(name_en, '') <> '' "
+        "UNION ALL SELECT name, name_en FROM items WHERE business_id = ? AND COALESCE(name_en, '') <> ''",
+        [businessId, businessId])) {
+      names[r['name'] as String] = r['name_en'] as String;
+    }
+    Exporter.englishNames = names;
+  }
   bool get cloud => AppConfig.cloudEnabled;
   bool get english => strings.english;
   String t(String k) => strings.t(k);

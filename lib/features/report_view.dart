@@ -34,14 +34,14 @@ class ReportView extends StatelessWidget {
             IconButton(
               icon: const Icon(Icons.picture_as_pdf),
               tooltip: 'PDF',
-              onPressed: () => Exporter.sharePdf(t, shop: app.businessName),
+              onPressed: () async => Exporter.sharePdf(await app.pdfTable(load), shop: app.businessName),
             ),
             IconButton(
               icon: const Icon(Icons.table_chart),
               tooltip: 'Excel',
               onPressed: () => Exporter.shareExcel([t], t.title),
             ),
-            IconButton(icon: const Icon(Icons.print), onPressed: () => Exporter.printPdf(t, shop: app.businessName)),
+            IconButton(icon: const Icon(Icons.print), onPressed: () async => Exporter.printPdf(await app.pdfTable(load), shop: app.businessName)),
           ],
         ),
         body: ReportTableView(

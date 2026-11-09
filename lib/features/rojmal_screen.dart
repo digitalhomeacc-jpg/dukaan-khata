@@ -53,7 +53,7 @@ class _RojmalScreenState extends State<RojmalScreen> {
                 onPressed: () async {
                   final ids = accountId == null ? accts.map((a) => a.id).toList() : [accountId!];
                   final title = accountId == null ? t('rojmal') : accts.firstWhere((a) => a.id == accountId).name;
-                  await Exporter.sharePdf(await app.reports.moneyBook(ids, title, date, date), shop: app.businessName);
+                  await Exporter.sharePdf(await app.pdfTable(() => app.reports.moneyBook(ids, title, date, date)), shop: app.businessName);
                 },
               ),
             ],

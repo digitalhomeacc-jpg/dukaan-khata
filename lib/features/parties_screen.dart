@@ -410,11 +410,11 @@ class _KhataScreenState extends State<KhataScreen> {
                   final rep = app.reports;
                   switch (v) {
                     case 'pdf':
-                      await Exporter.sharePdf(await rep.ledgerStatement(l.id, from: from, to: to), shop: app.businessName);
+                      await Exporter.sharePdf(await app.pdfTable(() => app.reports.ledgerStatement(l.id, from: from, to: to)), shop: app.businessName);
                     case 'xls':
                       await Exporter.shareExcel([await rep.ledgerStatement(l.id, from: from, to: to)], l.name);
                     case 'print':
-                      await Exporter.printPdf(await rep.ledgerStatement(l.id, from: from, to: to), shop: app.businessName);
+                      await Exporter.printPdf(await app.pdfTable(() => app.reports.ledgerStatement(l.id, from: from, to: to)), shop: app.businessName);
                     case 'v_sale':
                       if (context.mounted) await VoucherScreen.open(context, VoucherType.sale, partyId: l.id);
                     case 'v_receipt':

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../accounting/models.dart';
+import '../accounting/reports.dart';
 import '../core/money.dart';
 import '../core/theme.dart';
 import '../inventory/stock_repo.dart';
@@ -156,14 +157,14 @@ class _DailyRegisterViewState extends State<DailyRegisterView> {
             tooltip: '${t('print')} / PDF',
             icon: const Icon(Icons.print_outlined),
             onSelected: (v) async {
-              final table = await app.reports.dailyRegister(date, allItems: allItems);
+              Future<ReportTable> build() => app.reports.dailyRegister(date, allItems: allItems);
               switch (v) {
                 case 'pdf':
-                  await Exporter.sharePdf(table, shop: app.businessName);
+                  await Exporter.sharePdf(await app.pdfTable(build), shop: app.businessName);
                 case 'print':
-                  await Exporter.printPdf(table, shop: app.businessName);
+                  await Exporter.printPdf(await app.pdfTable(build), shop: app.businessName);
                 case 'xls':
-                  await Exporter.shareExcel([table], '${t('daily_register')} ${shortDate(date)}');
+                  await Exporter.shareExcel([await build()], '${t('daily_register')} ${shortDate(date)}');
               }
             },
             itemBuilder: (_) => [

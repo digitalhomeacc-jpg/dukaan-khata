@@ -9,6 +9,8 @@ import 'package:url_launcher/url_launcher.dart';
 import '../accounting/models.dart';
 import '../accounting/reports.dart';
 import '../core/money.dart';
+import '../core/i18n.dart';
+import '../core/translit.dart';
 import '../state/app_controller.dart';
 
 /// Turns any [ReportTable] into a PDF or Excel file and shares it
@@ -16,6 +18,23 @@ import '../state/app_controller.dart';
 class Exporter {
   static pw.Font? _regular;
   static pw.Font? _bold;
+
+  /// Marathi name → English name (accounts, items), set before a PDF is made.
+  static Map<String, String> englishNames = {};
+
+  /// PDFs are English only: known names become their English names, any
+  /// other Marathi word is spelt in English letters.
+  static String latin(String s) {
+    if (!hasDevanagari(s)) return s;
+    var out = s;
+    if (englishNames.isNotEmpty) {
+      final keys = englishNames.keys.where(out.contains).toList()..sort((a, b) => b.length.compareTo(a.length));
+      for (final k in keys) {
+        out = out.replaceAll(k, englishNames[k]!);
+      }
+    }
+    return toLatin(out);
+  }
 
   static Future<void> _fonts() async {
     _regular ??= pw.Font.ttf(await rootBundle.load('assets/fonts/NotoSansDevanagari-Regular.ttf'));
@@ -34,9 +53,9 @@ class Exporter {
       pageFormat: t.columns.length > 8 ? PdfPageFormat.a4.landscape : PdfPageFormat.a4,
       margin: const pw.EdgeInsets.all(24),
       header: (_) => pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
-        if (shop.isNotEmpty) pw.Text(shop, style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
-        pw.Text(t.title, style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold)),
-        if (t.subtitle.isNotEmpty) pw.Text(t.subtitle, style: const pw.TextStyle(fontSize: 9)),
+        if (shop.isNotEmpty) pw.Text(latin(shop), style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
+        pw.Text(latin(t.title), style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold)),
+        if (t.subtitle.isNotEmpty) pw.Text(latin(t.subtitle), style: const pw.TextStyle(fontSize: 9)),
         pw.SizedBox(height: 6),
       ]),
       footer: (c) => pw.Align(
@@ -55,7 +74,7 @@ class Exporter {
                   pw.Container(
                     alignment: al(i),
                     padding: const pw.EdgeInsets.all(3),
-                    child: pw.Text(t.columns[i].title, textAlign: ta(i), style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
+                    child: pw.Text(latin(t.columns[i].title), textAlign: ta(i), style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
                   ),
               ],
             ),
@@ -67,7 +86,7 @@ class Exporter {
                     pw.Container(
                       alignment: al(i),
                       padding: const pw.EdgeInsets.all(3),
-                      child: pw.Text(i < t.rows[r].length ? t.rows[r][i] : '', textAlign: ta(i), style: const pw.TextStyle(fontSize: 9)),
+                      child: pw.Text(i < t.rows[r].length ? latin(t.rows[r][i]) : '', textAlign: ta(i), style: const pw.TextStyle(fontSize: 9)),
                     ),
                 ],
               ),
@@ -79,7 +98,7 @@ class Exporter {
                     pw.Container(
                       alignment: al(i),
                       padding: const pw.EdgeInsets.all(3),
-                      child: pw.Text(t.totals![i], textAlign: ta(i), style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
+                      child: pw.Text(latin(t.totals![i]), textAlign: ta(i), style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
                     ),
                 ],
               ),
@@ -129,6 +148,7 @@ class Exporter {
 
   static Future<void> shareBill(AppController app, Voucher v, List<ItemLine> lines, List<Item> items, Ledger? party,
       List<Ledger> transporters) async {
+    await app.loadPdfNames();
     final bytes = await BillPdf.build(app, v, lines, items, party, transporters);
     final name = _fileName('${party?.name ?? 'bill'}_${v.vno}', 'pdf');
     await SharePlus.instance.share(ShareParams(
@@ -138,7 +158,7 @@ class Exporter {
   }
 
   static Future<void> printPdf(ReportTable t, {String shop = ''}) =>
-      Printing.layoutPdf(onLayout: (_) => pdf(t, shop: shop), name: t.title);
+      Printing.layoutPdf(onLayout: (_) => pdf(t, shop: shop), name: latin(t.title));
 
   static Future<void> shareExcel(List<ReportTable> tables, String title) async {
     final bytes = excel(tables);
@@ -164,13 +184,15 @@ extension BillPdf on Exporter {
   static Future<Uint8List> build(AppController app, Voucher v, List<ItemLine> lines, List<Item> items, Ledger? party,
       List<Ledger> transporters) async {
     await Exporter._fonts();
-    final t = app.t;
+    // bills are printed in English (see Exporter.latin)
+    String t(String k) => const Strings(true).t(k);
+    final l = Exporter.latin;
     final doc = pw.Document(theme: pw.ThemeData.withFont(base: Exporter._regular, bold: Exporter._bold));
     final isGst = v.gst > 0;
-    String itemName(String id) => items.where((i) => i.id == id).map((i) => i.display(app.english)).firstOrNull ?? '?';
+    String itemName(String id) => items.where((i) => i.id == id).map((i) => l(i.display(true))).firstOrNull ?? '?';
     String unit(String id) => items.where((i) => i.id == id).map((i) => t('unit_${i.unit}')).firstOrNull ?? '';
     final goods = lines.fold<int>(0, (s, l) => s + l.amount);
-    final transporter = transporters.where((x) => x.id == v.transporterId).map((x) => x.name).firstOrNull;
+    final transporter = transporters.where((x) => x.id == v.transporterId).map((x) => l(x.nameEn ?? x.name)).firstOrNull;
     pw.Widget cell(String s, {bool bold = false, pw.Alignment align = pw.Alignment.centerLeft}) => pw.Container(
           alignment: align,
           padding: const pw.EdgeInsets.all(4),
@@ -185,8 +207,8 @@ extension BillPdf on Exporter {
       pageFormat: PdfPageFormat.a5,
       margin: const pw.EdgeInsets.all(20),
       build: (_) => pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.stretch, children: [
-        pw.Text(app.businessName, style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold), textAlign: pw.TextAlign.center),
-        if (app.shopAddress.isNotEmpty) pw.Text(app.shopAddress, style: const pw.TextStyle(fontSize: 9), textAlign: pw.TextAlign.center),
+        pw.Text(l(app.businessName), style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold), textAlign: pw.TextAlign.center),
+        if (app.shopAddress.isNotEmpty) pw.Text(l(app.shopAddress), style: const pw.TextStyle(fontSize: 9), textAlign: pw.TextAlign.center),
         pw.Text([if (app.shopPhone.isNotEmpty) app.shopPhone, if (isGst && app.shopGstin.isNotEmpty) 'GSTIN ${app.shopGstin}'].join(' · '),
             style: const pw.TextStyle(fontSize: 9), textAlign: pw.TextAlign.center),
         pw.SizedBox(height: 6),
@@ -196,8 +218,8 @@ extension BillPdf on Exporter {
         pw.Row(children: [
           pw.Expanded(
             child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
-              pw.Text(party?.name ?? t('cash_sale'), style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
-              if (party?.address != null) pw.Text(party!.address!, style: const pw.TextStyle(fontSize: 9)),
+              pw.Text(party == null ? t('cash_sale') : l(party.nameEn ?? party.name), style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+              if (party?.address != null) pw.Text(l(party!.address!), style: const pw.TextStyle(fontSize: 9)),
               if (party?.phone != null) pw.Text(party!.phone!, style: const pw.TextStyle(fontSize: 9)),
               if (isGst && party?.gstin != null) pw.Text('GSTIN ${party!.gstin}', style: const pw.TextStyle(fontSize: 9)),
             ]),
@@ -250,8 +272,8 @@ extension BillPdf on Exporter {
           ),
         ),
         pw.Spacer(),
-        if (v.haste != null) pw.Text('${t('haste')}: ${v.haste}', style: const pw.TextStyle(fontSize: 9)),
-        pw.Text(v.narration ?? '', style: const pw.TextStyle(fontSize: 9)),
+        if (v.haste != null) pw.Text('${t('haste')}: ${l(v.haste!)}', style: const pw.TextStyle(fontSize: 9)),
+        pw.Text(l(v.narration ?? ''), style: const pw.TextStyle(fontSize: 9)),
       ]),
     ));
     return doc.save();
