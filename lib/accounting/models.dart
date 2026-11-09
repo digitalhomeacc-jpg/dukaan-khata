@@ -37,7 +37,7 @@ enum Nature { asset, liability, income, expense }
 const coreLedgerKeys = {
   'cash', 'sales', 'sales_return', 'purchase', 'purchase_return', 'gst', 'capital', 'history_adj',
   'hamali_income', 'transport_income', 'freight', 'hamali', 'discount_given', 'discount_recd', 'stock_adj',
-  'round_off', 'varhai',
+  'round_off', 'varhai', 'cash_diff',
 };
 
 const _moneyGroups = [LedgerGroup.cash, LedgerGroup.upi, LedgerGroup.bank];

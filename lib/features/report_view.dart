@@ -161,6 +161,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
       (Icons.event_available, t('promises'), () => PromisesScreen.open(context), false),
       (Icons.today, t('r_daybook'), () => open(() => r.dayBook(from, to)), false),
       (Icons.payments, t('r_cashbook'), () => moneyBook([LedgerGroup.cash], t('r_cashbook')), false),
+      (Icons.calculate_outlined, t('r_cash_diff'), () => open(() => r.ledgerStatement(app.vouchers.sys('cash_diff'), from: from, to: to)), false),
       (Icons.account_balance, t('r_upibook'), () => moneyBook([LedgerGroup.upi, LedgerGroup.bank], t('r_upibook')), false),
       (Icons.people, t('r_receivable'), () => open(() => r.outstanding(LedgerGroup.customer), ledgers: true), false),
       (Icons.local_shipping, t('r_payable'), () => open(() => r.outstanding(LedgerGroup.supplier), ledgers: true), false),

@@ -207,6 +207,20 @@ void main() {
     expect((await lr.search('२९')).single.pageNo, '29');
   });
 
+  test('रोख मोजणी: short and extra cash go to रोख फरक, books then match the count', () async {
+    const day = '2026-11-07';
+    final cash = vs.sys('cash');
+    final book = await lr.balanceAt(cash, date: day);
+    // counted ₹125 less than the books → payment from cash to रोख फरक
+    await vs.save(VoucherInput(type: VoucherType.payment, date: day, partyId: vs.sys('cash_diff'), payLedgerId: cash, amount: rs(125)), owner);
+    expect(await lr.balanceAt(cash, date: day), book - rs(125));
+    expect(await lr.balanceAt(vs.sys('cash_diff')), rs(125)); // a loss
+    // next day ₹40 extra → receipt into cash
+    await vs.save(VoucherInput(type: VoucherType.receipt, date: '2026-11-08', partyId: vs.sys('cash_diff'), payLedgerId: cash, amount: rs(40)), owner);
+    expect(await lr.balanceAt(vs.sys('cash_diff')), rs(85)); // net short for the period
+    expect((await lr.byId(vs.sys('cash_diff')))!.group, LedgerGroup.expense);
+  });
+
   test('वराई: driver cash goes to cash + day-end hamali, never the supplier bill', () async {
     final sup = await lr.create(name: 'Laxmi Cement Agency', group: LedgerGroup.supplier);
     final cust = await lr.create(name: 'Vijay', group: LedgerGroup.customer);

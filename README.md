@@ -44,6 +44,13 @@ Every sale bill has **हमाली** and **गाडी भाडे** fields
   The optional *ट्रान्सपोर्टरला द्यायचे* field records his fare if it differs; the extra is your income.
   Pay him from the day-end card (*पैसे द्या*).
 
+## रोख मोजणी (cash count)
+
+Rojmal → calculator icon (or **+** → रोख मोजणी): type how many notes of each kind (or just the
+total). The app shows cash as per the books, cash counted and the difference. One tap books it to
+the built-in *रोख फरक (कमी/जास्त)* account – short as a loss, extra as income – so the books match
+the drawer. Reports → *रोख फरक (मोजणी)* lists every day's difference and the running total.
+
 ## वराई (company hamali)
 
 When the company's truck driver hands over hamali money for the labourers, type it in the purchase

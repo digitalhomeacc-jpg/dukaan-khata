@@ -7,6 +7,7 @@ import '../core/theme.dart';
 import '../shared/export.dart';
 import '../shared/widgets.dart';
 import '../state/app_controller.dart';
+import 'cash_count_screen.dart';
 import 'voucher_screen.dart';
 
 /// Rojmal – the daily cash book. Inflow on the left, outflow on the right,
@@ -41,6 +42,12 @@ class _RojmalScreenState extends State<RojmalScreen> {
           appBar: AppBar(
             title: Text(t('rojmal')),
             actions: [
+              IconButton(
+                key: const Key('cash_count'),
+                tooltip: t('cash_count'),
+                icon: const Icon(Icons.calculate_outlined),
+                onPressed: () => CashCountScreen.open(context, date: date),
+              ),
               IconButton(
                 icon: const Icon(Icons.picture_as_pdf),
                 onPressed: () async {
@@ -169,6 +176,15 @@ class _RojmalScreenState extends State<RojmalScreen> {
                 VoucherScreen.open(context, type, expense: exp);
               },
             ),
+          ListTile(
+            leading: const Icon(Icons.calculate_outlined),
+            title: Text(t('cash_count')),
+            subtitle: Text(t('cash_count_sub')),
+            onTap: () {
+              Navigator.pop(context);
+              CashCountScreen.open(context);
+            },
+          ),
           ListTile(
             leading: const Icon(Icons.engineering),
             title: Text(t('varhai_add')),
