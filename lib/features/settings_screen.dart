@@ -14,9 +14,11 @@ import '../shared/widgets.dart';
 import '../state/app_controller.dart';
 import 'audit_screen.dart';
 import 'bank_screen.dart';
+import 'booking_screen.dart';
 import 'books_screens.dart';
 import 'parties_screen.dart';
 import 'report_view.dart';
+import 'staff_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -33,6 +35,18 @@ class SettingsScreen extends StatelessWidget {
           leading: const Icon(Icons.local_shipping),
           title: Text(t('suppliers')),
           onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PartiesScreen(group: LedgerGroup.supplier))),
+        ),
+        ListTile(
+          leading: const Icon(Icons.badge_outlined),
+          title: Text(t('staff')),
+          subtitle: Text(t('staff_sub')),
+          onTap: () => StaffScreen.open(context),
+        ),
+        ListTile(
+          leading: const Icon(Icons.bookmark_added_outlined),
+          title: Text(t('bookings')),
+          subtitle: Text(t('bookings_sub')),
+          onTap: () => BookingsScreen.open(context),
         ),
         ListTile(
           leading: const Icon(Icons.bar_chart),
@@ -220,7 +234,7 @@ class AccountsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final app = App.of(context);
     final t = app.t;
-    final groups = LedgerGroup.values.where((g) => !g.isParty).toList();
+    final groups = LedgerGroup.values.where((g) => !g.isParty && g != LedgerGroup.staff).toList();
     return Scaffold(
       appBar: AppBar(title: Text(t('accounts'))),
       floatingActionButton: app.actor.isOwner

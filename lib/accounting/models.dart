@@ -17,7 +17,8 @@ enum LedgerGroup {
   capital('capital', Nature.liability), // owner capital / drawings
   loan('loan', Nature.liability),
   otherAsset('other_asset', Nature.asset), // deposits, advances, fixed assets
-  otherLiability('other_liability', Nature.liability);
+  otherLiability('other_liability', Nature.liability),
+  staff('staff', Nature.asset); // कर्मचारी: monthly-salaried staff; + = advance (उचल) they still owe
 
   final String code;
   final Nature nature;
@@ -58,6 +59,8 @@ enum VoucherType {
   goodsOut('goods_out'), // माल उसना दिला: bags lent to a party, to come back as bags – stock only, no money
   goodsIn('goods_in'), // उसना माल परत आला / उसना घेतला: bags back from (or borrowed from) a party
   interest('interest'), // व्याज: interest charged on a party's overdue balance
+  salary('salary'), // पगार: a month's salary to staff, less any advance (उचल) recovered
+  booking('booking'), // बुकिंग: goods booked at a fixed rate – posts nothing, deliveries count against it
   opening('opening'); // reserved – opening balances live on the ledger/item rows
 
   final String code;
@@ -88,6 +91,8 @@ class Ledger {
   final int openingBalance;
   final int creditLimit;
   final int interestRate; // % per month × 100 (150 = 1.5 % दरमहा)
+  final int salary; // staff: monthly salary (paise)
+  final int salaryCut; // staff: advance recovered each month (paise), 0 = decide each time
   final bool system;
   final bool archived;
   final int balance; // computed: opening + Σ(debit − credit)
@@ -107,6 +112,8 @@ class Ledger {
     this.openingBalance = 0,
     this.creditLimit = 0,
     this.interestRate = 0,
+    this.salary = 0,
+    this.salaryCut = 0,
     this.system = false,
     this.archived = false,
     this.balance = 0,
@@ -126,6 +133,8 @@ class Ledger {
         openingBalance: (r['opening_balance'] as int?) ?? 0,
         creditLimit: (r['credit_limit'] as int?) ?? 0,
         interestRate: (r['interest_rate'] as int?) ?? 0,
+        salary: (r['salary'] as int?) ?? 0,
+        salaryCut: (r['salary_cut'] as int?) ?? 0,
         system: (r['system'] as int?) == 1,
         archived: (r['archived'] as int?) == 1,
         balance: (r['balance'] as num?)?.toInt() ?? 0,
@@ -142,7 +151,7 @@ class Ledger {
 
   /// Groups this account may be moved to (PhonePe ⇄ bank, customer ⇄ supplier …).
   List<LedgerGroup> get allowedGroups {
-    if (isCore) return [group];
+    if (isCore || group == LedgerGroup.staff) return [group];
     if (_moneyGroups.contains(group)) return _moneyGroups;
     if (_partyGroups.contains(group)) return _partyGroups;
     return LedgerGroup.values.where((g) => !_partyGroups.contains(g) && !_moneyGroups.contains(g)).toList();

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 
+import '../accounting/bookings.dart';
 import '../accounting/models.dart';
 import '../accounting/voucher_service.dart';
 import '../core/money.dart';
@@ -11,6 +12,7 @@ import '../shared/shortcode_parser.dart';
 import '../shared/widgets.dart';
 import '../state/app_controller.dart';
 import 'audit_screen.dart';
+import 'booking_screen.dart';
 import 'books_screens.dart';
 import 'parties_screen.dart';
 
@@ -53,6 +55,9 @@ class VoucherScreen extends StatefulWidget {
     final app = App.read(context);
     final (v, _) = await app.vouchers.load(voucherId);
     if (!context.mounted) return;
+    // entries with their own screens
+    if (v.type == VoucherType.booking) return BookingScreen.open(context, editId: voucherId);
+    if (v.type == VoucherType.salary || v.type == VoucherType.interest) return _EntrySheet.show(context, v);
     await Navigator.push(
       context,
       MaterialPageRoute(
@@ -73,6 +78,7 @@ class _LineCtl {
   final TextEditingController rate;
   final TextEditingController amt;
   bool amountTyped; // the user typed the total; rate follows from it
+  final focus = FocusNode(); // qty field
   _LineCtl(this.item, double q, int ratePaise, {int? amount})
     : qty = TextEditingController(text: fmtQty(q)),
       rate = TextEditingController(text: ratePaise == 0 ? '' : _plainMoney(ratePaise)),
@@ -129,6 +135,8 @@ class _VoucherScreenState extends State<VoucherScreen> {
   final ref = TextEditingController();
   bool gstBill = false;
   bool goodsOpening = false; // उसना माल already out before the books start
+  List<Booking> openBookings = []; // party's bookings still to deliver (sale / purchase)
+  String? _bookingsFor;
   // bill charges (sale only)
   final hamaliCtl = TextEditingController();
   final varhaiCtl = TextEditingController(); // वराई with a purchase
@@ -191,6 +199,7 @@ class _VoucherScreenState extends State<VoucherScreen> {
     VoucherType.receipt => [
       LedgerGroup.customer,
       LedgerGroup.supplier,
+      LedgerGroup.staff,
       LedgerGroup.income,
       LedgerGroup.capital,
       LedgerGroup.loan,
@@ -205,6 +214,7 @@ class _VoucherScreenState extends State<VoucherScreen> {
               LedgerGroup.supplier,
               LedgerGroup.transporter,
               LedgerGroup.customer,
+              LedgerGroup.staff,
               LedgerGroup.expense,
               LedgerGroup.directExpense,
               LedgerGroup.capital,
@@ -542,6 +552,7 @@ class _VoucherScreenState extends State<VoucherScreen> {
             ),
             const SizedBox(height: 8),
             if (partyGroups.isNotEmpty) _partyCard(app),
+            if (party != null && (type == VoucherType.sale || type == VoucherType.purchase)) _bookingBanner(app),
             if (type.isGoodsLoan && app.actor.isOwner)
               SwitchListTile(
                 key: const Key('goods_opening'),
@@ -802,6 +813,61 @@ class _VoucherScreenState extends State<VoucherScreen> {
           onSelectionChanged: (s) => setState(() => hKind = s.first),
         ),
       ]),
+    );
+  }
+
+  /// Open bookings of this party: tap one to bill at the booked rate.
+  Widget _bookingBanner(AppController app) {
+    final t = app.t;
+    final key = '${party!.id}|${type.code}';
+    if (_bookingsFor != key) {
+      _bookingsFor = key;
+      app.bookings.openFor(party!.id, customer: type == VoucherType.sale).then((b) {
+        if (mounted && _bookingsFor == key) setState(() => openBookings = b);
+      });
+    }
+    if (openBookings.isEmpty) return const SizedBox.shrink();
+    return Card(
+      color: AppColors.haldi.withValues(alpha: 0.12),
+      margin: const EdgeInsets.only(top: 8),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            const Icon(Icons.bookmark_added_outlined, size: 18, color: AppColors.haldi),
+            const SizedBox(width: 6),
+            Expanded(child: Text(t('booking_on_bill'), style: const TextStyle(fontWeight: FontWeight.w700))),
+          ]),
+          const SizedBox(height: 6),
+          Wrap(spacing: 6, runSpacing: 6, children: [
+            for (final b in openBookings)
+              for (final l in b.lines)
+                if (l.remaining > 0)
+                  ActionChip(
+                    key: Key('use_booking_${l.item.id}'),
+                    avatar: const Icon(Icons.add, size: 16),
+                    label: Text('${l.item.display(app.english)} · ${fmtQty(l.remaining)} ${t('unit_${l.item.unit}')} '
+                        '${t('booking_left')} @ ₹${Money.fmt(l.rate)}'),
+                    onPressed: () => setState(() {
+                      var line = lines.where((x) => x.item.id == l.item.id).firstOrNull;
+                      if (line != null) {
+                        line.rate.text = Money.fmt(l.rate).replaceAll(',', '');
+                        line.rateChanged();
+                      } else {
+                        // the full item (with its current stock), not the booking's copy
+                        final it = items.where((x) => x.id == l.item.id).firstOrNull ?? l.item;
+                        line = _LineCtl(it, 0, l.rate)..qty.clear();
+                        lines.add(line);
+                      }
+                      _syncPaid();
+                      // straight to the quantity
+                      final f = line.focus;
+                      WidgetsBinding.instance.addPostFrameCallback((_) => f.requestFocus());
+                    }),
+                  ),
+          ]),
+        ]),
+      ),
     );
   }
 
@@ -1223,6 +1289,7 @@ class _VoucherScreenState extends State<VoucherScreen> {
                     flex: 2,
                     child: TextField(
                       controller: lines[i].qty,
+                      focusNode: lines[i].focus,
                       keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
                       decoration: _lineField('${app.t('qty')} (${app.t('unit_${lines[i].item.unit}')})'),
                       onChanged: (_) => setState(() {
@@ -1269,4 +1336,43 @@ class _VoucherScreenState extends State<VoucherScreen> {
         ),
       ),
   ];
+}
+
+/// Salary / interest entries open as a summary (they are made from their own
+/// screens); the owner can delete and redo them.
+class _EntrySheet {
+  static Future<void> show(BuildContext context, Voucher v) async {
+    final app = App.read(context);
+    final t = app.t;
+    final party = v.partyId == null ? null : await app.ledgers.byId(v.partyId!);
+    if (!context.mounted) return;
+    await showModalBottomSheet(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Text('${t('vt_${v.type.code}')} #${v.vno} · ${shortDate(v.date)}', style: Theme.of(ctx).textTheme.titleMedium),
+            const SizedBox(height: 6),
+            if (party != null) Text(party.name, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+            Text('₹${Money.fmt(v.amount)}${v.type == VoucherType.salary ? ' · ${t('salary_hand')} ₹${Money.fmt(v.paid)}' : ''}',
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+            if (v.narration != null) Padding(padding: const EdgeInsets.only(top: 4), child: Text(v.narration!)),
+            const SizedBox(height: 12),
+            if (app.actor.isOwner)
+              OutlinedButton.icon(
+                icon: const Icon(Icons.delete_outline),
+                label: Text(t('delete')),
+                onPressed: () async {
+                  if (!await confirm(ctx, t('confirm_delete'))) return;
+                  await app.vouchers.delete(v.id, app.actor);
+                  if (ctx.mounted) Navigator.pop(ctx);
+                },
+              ),
+          ]),
+        ),
+      ),
+    );
+  }
 }

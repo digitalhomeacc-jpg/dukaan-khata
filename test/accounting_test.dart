@@ -1,3 +1,4 @@
+import 'package:dukaan_khata/accounting/bookings.dart';
 import 'package:dukaan_khata/accounting/interest.dart';
 import 'package:dukaan_khata/accounting/ledger_repo.dart';
 import 'package:dukaan_khata/accounting/models.dart';
@@ -336,6 +337,75 @@ void main() {
     expect(parseRate('1.5'), 150);
     expect(fmtRate(150), '1.5');
     expect(fmtRate(200), '2');
+  });
+
+  test('staff: advance, salary with deduction, balance carried forward', () async {
+    final raju = await lr.create(name: 'Raju', group: LedgerGroup.staff);
+    await lr.setStaffPay(raju, salary: rs(12000), cut: rs(3000));
+    expect((await lr.byId(raju))!.salary, rs(12000));
+    final cash0 = await lr.balanceAt(vs.sys('cash'));
+    // ₹5,000 advance in the month
+    await vs.save(VoucherInput(type: VoucherType.payment, date: '2026-11-05', partyId: raju, payLedgerId: vs.sys('cash'), amount: rs(5000)), owner);
+    expect(await lr.balanceAt(raju), rs(5000)); // he owes the advance
+    // month end: salary 12,000, recover 3,000, hand over 9,000
+    VoucherInput pay(int paid) => VoucherInput(type: VoucherType.salary, date: '2026-11-30', partyId: raju, payLedgerId: vs.sys('cash'), amount: rs(12000), paid: paid, narration: 'पगार');
+    expect(() => vs.save(pay(rs(9000)), staff), throwsA(isA<PermissionDenied>()));
+    expect(() => vs.save(pay(rs(13000)), owner), throwsArgumentError);
+    await vs.save(pay(rs(9000)), owner);
+    expect(await lr.balanceAt(raju), rs(2000)); // advance left
+    expect(await lr.balanceAt(vs.sys('salary')), rs(12000)); // full salary is the expense
+    expect(await lr.balanceAt(vs.sys('cash')), cash0 - rs(5000) - rs(9000));
+    expect(await lr.unbalanced(), isEmpty);
+  });
+
+  test('bookings: advance on the khata, deliveries counted oldest first, rate locked', () async {
+    final bs = BookingService(db, biz);
+    final cust = await lr.create(name: 'Builder', group: LedgerGroup.customer);
+    final sup = await lr.create(name: 'Cement Co', group: LedgerGroup.supplier);
+    final u = items['U']!;
+    final m = items['M']!;
+    final stock0 = await sr.stockAt(u.id, '2026-11-30');
+    // customer books 200 U @ 275 and 50 M @ 280 with ₹30,000 advance in cash
+    final b1 = await bs.save(vs, owner,
+        date: '2026-11-01', partyId: cust, customer: true,
+        items: [ItemLine(u.id, 200, rs(275)), ItemLine(m.id, 50, rs(280))], advance: rs(30000), advanceLedgerId: vs.sys('cash'));
+    expect(await lr.balanceAt(cust), -rs(30000)); // advance with us
+    expect(await sr.stockAt(u.id, '2026-11-30'), stock0); // no stock effect
+    // a second booking later
+    await bs.save(vs, owner, date: '2026-11-10', partyId: cust, customer: true, items: [ItemLine(u.id, 100, rs(285))]);
+    // a sale before the booking does not count; later sales do, oldest booking first
+    await vs.save(VoucherInput(type: VoucherType.sale, date: '2026-10-30', partyId: cust, items: [ItemLine(u.id, 10, rs(290))]), owner);
+    await vs.save(VoucherInput(type: VoucherType.sale, date: '2026-11-05', partyId: cust, items: [ItemLine(u.id, 150, rs(275))]), owner);
+    await vs.save(VoucherInput(type: VoucherType.sale, date: '2026-11-12', partyId: cust, items: [ItemLine(u.id, 80, rs(275))]), owner);
+    var list = await bs.list(customer: true);
+    expect(list.length, 2);
+    final first = list.firstWhere((b) => b.id == b1);
+    expect(first.lines.firstWhere((l) => l.item.id == u.id).delivered, 200); // 150 + 50
+    expect(first.lines.firstWhere((l) => l.item.id == m.id).remaining, 50);
+    expect(first.open, isTrue);
+    final second = list.firstWhere((b) => b.id != b1);
+    expect(second.lines.single.delivered, 30);
+    expect(second.lines.single.remaining, 70);
+    expect(second.advance, 0);
+
+    // closing the first booking: no longer offered on the bill
+    await bs.setClosed(b1, true);
+    final open = await bs.openFor(cust, customer: true);
+    expect(open.single.id, second.id);
+    // edits keep it closed
+    await bs.save(vs, owner, existingId: b1, date: '2026-11-01', partyId: cust, customer: true, items: [ItemLine(u.id, 200, rs(275))]);
+    expect((await bs.list(customer: true)).firstWhere((b) => b.id == b1).closed, isTrue);
+
+    // supplier booking: we pay advance, purchases count against it
+    await bs.save(vs, owner, date: '2026-11-02', partyId: sup, customer: false,
+        items: [ItemLine(u.id, 500, rs(250))], advance: rs(50000), advanceLedgerId: vs.sys('bank'));
+    expect(await lr.balanceAt(sup), rs(50000)); // advance paid to supplier
+    await vs.save(VoucherInput(type: VoucherType.purchase, date: '2026-11-08', partyId: sup, items: [ItemLine(u.id, 300, rs(250))]), owner);
+    final sb = (await bs.list(customer: false)).single;
+    expect(sb.lines.single.delivered, 300);
+    expect(sb.lines.single.remaining, 200);
+    expect((await bs.list(customer: true)).length, 2);
+    expect(await lr.unbalanced(), isEmpty);
   });
 
   test('रोख मोजणी: short and extra cash go to रोख फरक, books then match the count', () async {

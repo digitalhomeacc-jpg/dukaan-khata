@@ -1,3 +1,4 @@
+import '../accounting/bookings.dart';
 import '../accounting/ledger_repo.dart';
 import '../accounting/models.dart';
 import '../accounting/voucher_service.dart';
@@ -68,6 +69,18 @@ Future<void> loadDemoData(VoucherService vs, LedgerRepo lr, StockRepo sr) async 
       VoucherInput(type: VoucherType.purchase, date: ago(2), partyId: agency, payLedgerId: vs.sys('bank'),
           items: [ItemLine(items['U']!.id, 200, rs(262)), ItemLine(items['A']!.id, 100, rs(268))], paid: rs(50000), gstBillNeeded: true, refNo: '6207'),
       owner);
+
+  // बुकिंग: Sanjay booked 200 bags U at ₹275 with ₹20,000 advance; we booked 500 U from the agency
+  final bookings = BookingService(vs.db, vs.businessId);
+  await bookings.save(vs, owner, date: ago(5), partyId: mukesh, customer: true,
+      items: [ItemLine(items['U']!.id, 200, rs(275))], advance: rs(20000), advanceLedgerId: vs.sys('cash'), note: 'स्लॅब काम');
+  await bookings.save(vs, owner, date: ago(4), partyId: agency, customer: false,
+      items: [ItemLine(items['U']!.id, 500, rs(262))], advance: rs(40000), advanceLedgerId: vs.sys('bank'));
+
+  // कर्मचारी: Raju, ₹12,000 a month, took ₹5,000 advance
+  final raju = await lr.create(name: 'राजू पवार', nameEn: 'Raju Pawar', group: LedgerGroup.staff, phone: '9800000044');
+  await lr.setStaffPay(raju, salary: rs(12000), cut: rs(2000));
+  await vs.save(VoucherInput(type: VoucherType.payment, date: ago(6), partyId: raju, payLedgerId: vs.sys('cash'), amount: rs(5000), narration: 'उचल'), owner);
 
   // Today – like the 5/11 stock register page
   await sale(today, 15, 275, party: mukesh, item: 'U', pay: 'cash', paid: rs(4125));

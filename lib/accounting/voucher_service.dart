@@ -226,6 +226,20 @@ class VoucherService {
       case VoucherType.promise:
         // promised payment date: a reminder, posts nothing
         _require(v.partyId, 'party');
+      case VoucherType.salary:
+        // पगार: the full month's salary is the expense; what is handed over
+        // leaves cash, the rest is recovered from the advance (उचल)
+        _require(v.partyId, 'party');
+        dr(sys('salary'), total);
+        cr(v.partyId!, total);
+        if (v.paid > 0) {
+          dr(v.partyId!, v.paid);
+          cr(pay, v.paid);
+        }
+      case VoucherType.booking:
+        // बुकिंग: a promise of goods at a rate – the advance is a separate
+        // receipt / payment, so the booking itself posts nothing
+        _require(v.partyId, 'party');
       case VoucherType.interest:
         // व्याज on an overdue balance: the party owes it, it is our income
         _require(v.partyId, 'party');
@@ -283,6 +297,10 @@ class VoucherService {
     }
     if (v.gstApplies && !actor.isOwner) throw PermissionDenied('err_owner_gst');
     if (v.type == VoucherType.interest && !actor.isOwner) throw PermissionDenied('err_owner_interest');
+    if (v.type == VoucherType.salary) {
+      if (!actor.isOwner) throw PermissionDenied('err_owner_salary');
+      if (v.paid > v.total || v.paid < 0) throw ArgumentError('err_salary_cut');
+    }
 
     return db.writeTransaction((tx) async {
       final now = nowIso();
@@ -295,6 +313,7 @@ class VoucherService {
         await tx.execute('DELETE FROM voucher_lines WHERE voucher_id = ?', [existingId]);
         await tx.execute('DELETE FROM inventory_lines WHERE voucher_id = ?', [existingId]);
         version = ((old['version'] as int?) ?? 1) + 1;
+        final keepStatus = old['status']; // a closed booking stays closed when edited
         id = existingId;
         await tx.execute(
           'UPDATE vouchers SET vtype=?, vdate=?, party_id=?, pay_ledger_id=?, amount=?, paid=?, '
@@ -305,6 +324,9 @@ class VoucherService {
             v.refNo, v.gstBillNeeded ? 1 : 0, ..._charges(v), now, version, id
           ],
         );
+        if (v.type == VoucherType.booking && keepStatus != null) {
+          await tx.execute('UPDATE vouchers SET status = ? WHERE id = ?', [keepStatus, id]);
+        }
       } else {
         id = newId();
         final vno = await _nextNo(tx, v.type, v.date);
@@ -336,7 +358,8 @@ class VoucherService {
         // stock adjustment: sign of qty decides in/out
         final d = v.type == VoucherType.stockAdjust ? (it.qty >= 0 ? 1 : -1) : dir;
         // old bills keep their item lines for the record, with no stock effect
-        if (d == 0 && v.type != VoucherType.history && !goodsOpening) continue;
+        // old bills, opening उसना माल and bookings keep their item lines with no stock effect
+        if (d == 0 && v.type != VoucherType.history && v.type != VoucherType.booking && !goodsOpening) continue;
         if (it.qty == 0) continue;
         await tx.execute(
           'INSERT INTO inventory_lines (id, business_id, voucher_id, item_id, qty, rate, amount, direction, vdate, deleted) '
@@ -357,12 +380,13 @@ class VoucherService {
         v.gstApplies ? v.gstRate : 0,
         v.gst,
         (v.haste?.trim().isEmpty ?? true) ? null : v.haste!.trim(),
-        v.type == VoucherType.promise ? 'open' : null,
+        v.type == VoucherType.promise || v.type == VoucherType.booking ? 'open' : null,
       ];
 
   int _paidFor(VoucherInput v, int total) => switch (v.type) {
         VoucherType.receipt || VoucherType.payment || VoucherType.contra => total,
         VoucherType.interest => 0,
+        VoucherType.salary || VoucherType.booking => v.paid,
         VoucherType.sale || VoucherType.purchase || VoucherType.salesReturn || VoucherType.purchaseReturn =>
           v.partyId == null ? total : v.paid,
         VoucherType.history => v.paid,

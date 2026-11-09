@@ -227,6 +227,10 @@ class LedgerRepo {
     );
   }
 
+  /// Staff: monthly salary and advance recovered per month (paise).
+  Future<void> setStaffPay(String id, {required int salary, required int cut}) =>
+      db.execute('UPDATE ledgers SET salary = ?, salary_cut = ? WHERE id = ?', [salary, cut, id]);
+
   /// Interest rate for a party (% per month × 100; 0 = no interest).
   Future<void> setInterestRate(String id, int rate) =>
       db.execute('UPDATE ledgers SET interest_rate = ? WHERE id = ?', [rate, id]);
@@ -353,7 +357,7 @@ class LedgerRepo {
     final rows = await db.getAll(
       'SELECT v.*, p.name AS party_name, pl.short_code AS pay_code FROM vouchers v '
       'LEFT JOIN ledgers p ON p.id = v.party_id LEFT JOIN ledgers pl ON pl.id = v.pay_ledger_id '
-      "WHERE v.business_id = ? AND v.deleted = 0 AND v.vtype NOT IN ('stock_adjust', 'opening', 'history', 'promise', 'goods_out', 'goods_in') AND ("
+      "WHERE v.business_id = ? AND v.deleted = 0 AND v.vtype NOT IN ('stock_adjust', 'opening', 'history', 'promise', 'goods_out', 'goods_in', 'booking') AND ("
       ' COALESCE((SELECT SUM(debit) - SUM(credit) FROM voucher_lines WHERE voucher_id = v.id AND deleted = 0), 0) <> 0'
       ' OR (v.amount <> 0 AND NOT EXISTS (SELECT 1 FROM voucher_lines WHERE voucher_id = v.id AND deleted = 0)))'
       ' ORDER BY v.vdate DESC',

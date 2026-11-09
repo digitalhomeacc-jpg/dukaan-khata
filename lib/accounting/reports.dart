@@ -543,8 +543,11 @@ class Reports {
     final loans = -sum((l) => l.group == LedgerGroup.loan);
     final gst = -sum((l) => l.group == LedgerGroup.gst);
     final otherLiab = -sum((l) => l.group == LedgerGroup.otherLiability);
-    final assets = debtors + supAdv + cash + upi + bank + other + stockVal;
-    final liabilities = capital + loans + gst + otherLiab + creditors + custAdv + profit;
+    // staff: advances still with them are an asset, unpaid salary a liability
+    final staffAdv = ls.where((l) => l.group == LedgerGroup.staff && l.balance > 0).fold(0, (s, l) => s + l.balance);
+    final staffDue = -ls.where((l) => l.group == LedgerGroup.staff && l.balance < 0).fold(0, (s, l) => s + l.balance);
+    final assets = debtors + supAdv + cash + upi + bank + other + stockVal + staffAdv;
+    final liabilities = capital + loans + gst + otherLiab + creditors + custAdv + profit + staffDue;
     final diff = assets - liabilities;
     return ReportTable(
       title: tr('r_bs'),
@@ -559,6 +562,7 @@ class Reports {
         ['  ${tr('customer_advance')}', Money.fmt(custAdv)],
         ['  GST', Money.fmt(gst)],
         ['  ${tr('grp_other_liability')}', Money.fmt(otherLiab)],
+        if (staffDue != 0) ['  ${tr('salary_due')}', Money.fmt(staffDue)],
         if (diff != 0) ['  ${tr('opening_diff')}', Money.fmt(diff)],
         [tr('assets'), ''],
         ['  ${tr('customers_receivable')}', Money.fmt(debtors)],
@@ -568,8 +572,9 @@ class Reports {
         ['  ${tr('grp_upi')}', Money.fmt(upi)],
         ['  ${tr('grp_bank')}', Money.fmt(bank)],
         ['  ${tr('grp_other_asset')}', Money.fmt(other)],
+        if (staffAdv != 0) ['  ${tr('advance_due')}', Money.fmt(staffAdv)],
       ],
-      highlight: {0, diff != 0 ? 9 : 8},
+      highlight: {0, 8 + (staffDue != 0 ? 1 : 0) + (diff != 0 ? 1 : 0)},
       totals: [tr('total'), Money.fmt(assets)],
     );
   }

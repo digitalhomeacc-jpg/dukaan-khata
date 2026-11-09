@@ -7,7 +7,9 @@ import '../shared/export.dart';
 import '../shared/widgets.dart';
 import '../state/app_controller.dart';
 import 'parties_screen.dart';
+import 'booking_screen.dart';
 import 'interest_screen.dart';
+import 'staff_screen.dart';
 import 'promise_screen.dart';
 import 'voucher_screen.dart';
 
@@ -168,6 +170,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
       (Icons.local_shipping, t('r_payable'), () => open(() => r.outstanding(LedgerGroup.supplier), ledgers: true), false),
       (Icons.inventory_2_outlined, t('r_goods_owed'), () => open(() => r.goodsOwed(), ledgers: true), false),
       (Icons.percent, t('interest_list'), () => InterestListScreen.open(context), true),
+      (Icons.bookmark_added_outlined, t('bookings'), () => BookingsScreen.open(context), false),
+      (Icons.badge_outlined, t('r_staff_advance'), () => StaffScreen.open(context), false),
       (Icons.menu_book, t('r_ledger'), () async {
         final l = await pickLedger(context, groups: LedgerGroup.values);
         if (l != null) open(() => r.ledgerStatement(l.id, from: from, to: to));

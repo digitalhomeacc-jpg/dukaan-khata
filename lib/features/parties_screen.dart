@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
+import '../accounting/bookings.dart';
 import '../accounting/interest.dart';
 import '../accounting/ledger_repo.dart';
 import '../accounting/models.dart';
@@ -13,7 +14,9 @@ import '../shared/export.dart';
 import '../shared/widgets.dart';
 import '../state/app_controller.dart';
 import 'books_screens.dart';
+import 'booking_screen.dart';
 import 'interest_screen.dart';
+import 'staff_screen.dart';
 import 'promise_screen.dart';
 import 'voucher_screen.dart';
 
@@ -72,13 +75,18 @@ class _PartiesScreenState extends State<PartiesScreen> {
           ),
         ),
         Expanded(
-          child: LiveBuilder<(List<Ledger>, Map<String, List<GoodsOwed>>)>(
+          child: LiveBuilder<(List<Ledger>, Map<String, List<GoodsOwed>>, Map<String, List<Booking>>)>(
             reloadKey: '${_q.text}|$sort',
             load: () async {
               // उसना माल per party, shown under the name
               final goods = <String, List<GoodsOwed>>{};
               for (final g in await app.stock.goodsOwed()) {
                 (goods[g.partyId] ??= []).add(g);
+              }
+              // open बुकिंग per party
+              final booked = <String, List<Booking>>{};
+              for (final b in await app.bookings.list()) {
+                if (b.open) (booked[b.partyId] ??= []).add(b);
               }
               final list = _q.text.trim().isEmpty
                   ? await app.ledgers.parties(widget.group)
@@ -91,10 +99,10 @@ class _PartiesScreenState extends State<PartiesScreen> {
                 case _Sort.due:
                   list.sort((a, b) => isCust ? b.balance.compareTo(a.balance) : a.balance.compareTo(b.balance));
               }
-              return (list, goods);
+              return (list, goods, booked);
             },
             builder: (context, data) {
-              final (list, goods) = data;
+              final (list, goods, booked) = data;
               final total = list.fold<int>(0, (s, l) => s + l.balance);
               return Column(children: [
                 Container(
@@ -132,6 +140,11 @@ class _PartiesScreenState extends State<PartiesScreen> {
                                             '${x.item.display(app.english)} ${fmtQty(x.qty.abs())} ${t('unit_${x.item.unit}')}')
                                         .join(' · '),
                                     style: const TextStyle(color: AppColors.haldi, fontWeight: FontWeight.w600, fontSize: 13),
+                                  ),
+                                if (booked[l.id] case final bs?)
+                                  Text(
+                                    '${t('booking')}: ${bookingSummary(bs, app)}',
+                                    style: const TextStyle(color: AppColors.ink, fontWeight: FontWeight.w600, fontSize: 13),
                                   ),
                               ]),
                               trailing: BalanceText(l.balance, supplier: !isCust),
@@ -190,7 +203,7 @@ class _PartyFormState extends State<PartyForm> {
     if (widget.existing != null) return widget.existing!.allowedGroups;
     return widget.group.isParty || widget.group == LedgerGroup.transporter
         ? const [LedgerGroup.customer, LedgerGroup.supplier, LedgerGroup.transporter]
-        : LedgerGroup.values.where((g) => !g.isParty && g != LedgerGroup.transporter).toList();
+        : LedgerGroup.values.where((g) => !g.isParty && g != LedgerGroup.transporter && g != LedgerGroup.staff).toList();
   }
 
   Future<void> _delete() async {
@@ -429,7 +442,12 @@ class _KhataScreenState extends State<KhataScreen> {
                   icon: const Icon(Icons.event_available_outlined),
                   onPressed: () => addPromise(context, l),
                 ),
-              IconButton(icon: const Icon(Icons.edit), onPressed: () => PartyForm.open(context, l.group, existing: l)),
+              IconButton(
+                icon: const Icon(Icons.edit),
+                onPressed: () => l.group == LedgerGroup.staff
+                    ? StaffForm.open(context, existing: l)
+                    : PartyForm.open(context, l.group, existing: l),
+              ),
               PopupMenuButton<String>(
                 onSelected: (v) async {
                   final rep = app.reports;
@@ -450,6 +468,10 @@ class _KhataScreenState extends State<KhataScreen> {
                       if (context.mounted) await VoucherScreen.open(context, VoucherType.payment, partyId: l.id);
                     case 'old':
                       if (context.mounted) await VoucherScreen.open(context, VoucherType.history, partyId: l.id);
+                    case 'advance_back':
+                      if (context.mounted) await VoucherScreen.open(context, VoucherType.receipt, partyId: l.id, narration: t('advance_back'));
+                    case 'booking':
+                      if (context.mounted) await BookingScreen.open(context, partyId: l.id);
                     case 'interest':
                       if (context.mounted) await InterestScreen.open(context, l.id);
                     case 'goods_out':
@@ -479,6 +501,8 @@ class _KhataScreenState extends State<KhataScreen> {
                     PopupMenuItem(value: 'v_sale', child: Text(t('sale'))),
                     PopupMenuItem(value: 'v_receipt', child: Text(t('receipt'))),
                   ],
+                  if (l.group == LedgerGroup.staff) PopupMenuItem(value: 'advance_back', child: Text(t('advance_back'))),
+                  if (l.group.isParty) PopupMenuItem(value: 'booking', child: Text(t('booking_new'))),
                   if (app.actor.isOwner && l.group.isParty)
                     PopupMenuItem(value: 'interest', child: Text(t('interest_add'))),
                   if (l.group.isParty || l.group == LedgerGroup.transporter) ...[
@@ -523,6 +547,7 @@ class _KhataScreenState extends State<KhataScreen> {
             ),
             _OpenPromises(partyId: l.id),
             _GoodsOwedCard(party: l),
+            _BookingsBanner(party: l),
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.only(bottom: 90),
@@ -539,7 +564,7 @@ class _KhataScreenState extends State<KhataScreen> {
           bottomNavigationBar: SafeArea(
             child: Padding(
               padding: const EdgeInsets.all(8),
-              child: Row(children: [
+              child: l.group == LedgerGroup.staff ? StaffKhataActions(staff: l) : Row(children: [
                 Expanded(
                   child: FilledButton(
                     style: FilledButton.styleFrom(backgroundColor: Colors.red.shade700, minimumSize: const Size.fromHeight(52)),
@@ -824,6 +849,49 @@ class _GoodsOwedCard extends StatelessWidget {
           ]),
         ),
       ),
+    );
+  }
+}
+
+/// "अल्ट्राटेक 175 बॅग बाकी @ ₹275" for every open booking line.
+String bookingSummary(List<Booking> bs, AppController app) => [
+      for (final b in bs)
+        for (final l in b.lines)
+          if (l.remaining > 0)
+            '${l.item.display(app.english)} ${fmtQty(l.remaining)} ${app.t('unit_${l.item.unit}')} @ ₹${Money.fmt(l.rate)}',
+    ].join(' · ');
+
+/// Open bookings on the khata page – tap for the bookings report.
+class _BookingsBanner extends StatelessWidget {
+  final Ledger party;
+  const _BookingsBanner({required this.party});
+  @override
+  Widget build(BuildContext context) {
+    final app = App.of(context);
+    final t = app.t;
+    return LiveBuilder<List<Booking>>(
+      reloadKey: party.id,
+      load: () async => (await app.bookings.list(partyId: party.id)).where((b) => b.open).toList(),
+      builder: (context, list) => list.isEmpty
+          ? const SizedBox.shrink()
+          : Material(
+              color: AppColors.ink.withValues(alpha: 0.08),
+              child: InkWell(
+                onTap: () => BookingsScreen.open(context),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  child: Row(children: [
+                    const Icon(Icons.bookmark_added_outlined, size: 18, color: AppColors.ink),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text('${t('booking')} ${t('booking_left')}: ${bookingSummary(list, app)}',
+                          style: const TextStyle(fontWeight: FontWeight.w700)),
+                    ),
+                    const Icon(Icons.chevron_right, size: 18),
+                  ]),
+                ),
+              ),
+            ),
     );
   }
 }

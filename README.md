@@ -44,6 +44,22 @@ Every sale bill has **हमाली** and **गाडी भाडे** fields
   The optional *ट्रान्सपोर्टरला द्यायचे* field records his fare if it differs; the extra is your income.
   Pay him from the day-end card (*पैसे द्या*).
 
+## कर्मचारी (staff salary and advances)
+
+**अधिक → कर्मचारी**: monthly-salaried staff (hamals stay on the daily hamali card) with salary and an
+optional fixed recovery per month. Khata → **उचल दिली** for an advance / loan (⋮ → *उचल परत आली* if they
+repay in cash). **पगार द्या** (owner): month, salary, recovery from the advance (all / fixed / none) and the cash
+handed over – the full salary is the *पगार* expense, only the net leaves cash, the rest of the advance carries
+forward. Balance sheet shows staff advances as an asset. Migration 0007 adds `salary`, `salary_cut`.
+
+## बुकिंग (bookings at a fixed rate)
+
+Khata → ⋮ → **नवीन बुकिंग** (or **अधिक → बुकिंग**): items, quantity and the locked rate, plus the advance
+(a normal receipt from a customer / payment to a supplier on the khata). Bills for that party show the open
+booking – one tap adds the item at the booked rate. Sale bills (customer) / purchase bills (supplier) of the
+item from the booking date on count as delivered, oldest booking first. **बुकिंग** report: customer and
+supplier tabs with booked / delivered / left; close a booking that won't be completed.
+
 ## व्याज (interest on overdue balances)
 
 Owner only. Set a rate per account (khata → ✏️ → *व्याज दर*, % per month), then khata → ⋮ → **व्याज लावा**:
