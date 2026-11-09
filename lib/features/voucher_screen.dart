@@ -338,6 +338,164 @@ class _VoucherScreenState extends State<VoucherScreen> {
     quickFocus.requestFocus();
   }
 
+  bool get _buying => type == VoucherType.purchase || type == VoucherType.purchaseReturn;
+
+  /// Searchable list of all items; the owner can create one from the search text.
+  Future<void> _searchItem() async {
+    final app = App.read(context);
+    final t = app.t;
+    final q = TextEditingController();
+    final picked = await showModalBottomSheet<Object>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      showDragHandle: true,
+      builder: (ctx) => StatefulBuilder(builder: (ctx, setS) {
+        final s = q.text.trim().toLowerCase();
+        final found = items
+            .where((i) =>
+                s.isEmpty ||
+                i.name.toLowerCase().contains(s) ||
+                (i.nameEn ?? '').toLowerCase().contains(s) ||
+                (i.shortCode ?? '').toLowerCase() == s)
+            .toList();
+        return Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+          child: SizedBox(
+            height: MediaQuery.of(ctx).size.height * 0.75,
+            child: Column(children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: TextField(
+                  key: const Key('item_search_field'),
+                  controller: q,
+                  autofocus: true,
+                  decoration: InputDecoration(
+                      prefixIcon: const Icon(Icons.search), hintText: t('item_search_hint'), border: const OutlineInputBorder(), isDense: true),
+                  onChanged: (_) => setS(() {}),
+                ),
+              ),
+              Expanded(
+                child: ListView(children: [
+                  for (final i in found)
+                    ListTile(
+                      dense: true,
+                      title: Text(i.display(app.english)),
+                      subtitle: Text('${t('cat_${i.category}')} · ${t('stock')} ${fmtQty(i.stock)} ${t('unit_${i.unit}')}'),
+                      trailing: Text('₹${Money.fmt(_buying ? i.purchaseRate : i.saleRate)}'),
+                      onTap: () => Navigator.pop(ctx, i),
+                    ),
+                  if (app.actor.isOwner)
+                    ListTile(
+                      leading: const Icon(Icons.add_circle_outline),
+                      title: Text(q.text.trim().isEmpty ? t('new_item') : '${t('new_item')}: "${q.text.trim()}"'),
+                      onTap: () => Navigator.pop(ctx, 'new:${q.text.trim()}'),
+                    ),
+                  if (found.isEmpty && !app.actor.isOwner)
+                    Padding(padding: const EdgeInsets.all(24), child: Text(t('item_none_staff'), textAlign: TextAlign.center)),
+                ]),
+              ),
+            ]),
+          ),
+        );
+      }),
+    );
+    if (!mounted || picked == null) return;
+    if (picked is Item) {
+      _addItem(picked);
+    } else if (picked is String && picked.startsWith('new:')) {
+      await _newItem(picked.substring(4));
+    }
+  }
+
+  /// Quick new item from the bill: name, unit, category, rate – then it is on the bill.
+  Future<void> _newItem([String name = '']) async {
+    final app = App.read(context);
+    final t = app.t;
+    final nameCtl = TextEditingController(text: name);
+    final nameEn = TextEditingController();
+    final rate = TextEditingController();
+    var unit = 'nos';
+    var category = 'plumbing';
+    final id = await showDialog<String>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setD) => AlertDialog(
+          title: Text(t('new_item')),
+          content: SingleChildScrollView(
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              TextField(
+                key: const Key('new_item_name'),
+                controller: nameCtl,
+                autofocus: true,
+                textCapitalization: TextCapitalization.words,
+                decoration: InputDecoration(labelText: t('name'), hintText: t('new_item_hint')),
+              ),
+              TextField(controller: nameEn, decoration: InputDecoration(labelText: t('name_en'))),
+              const SizedBox(height: 8),
+              Row(children: [
+                Expanded(
+                  child: DropdownButtonFormField<String>(
+                    initialValue: unit,
+                    decoration: InputDecoration(labelText: t('unit')),
+                    items: [for (final u in const ['nos', 'ft', 'kg', 'bag', 'ltr', 'ton', 'brass']) DropdownMenuItem(value: u, child: Text(t('unit_$u')))],
+                    onChanged: (v) => setD(() => unit = v!),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: DropdownButtonFormField<String>(
+                    initialValue: category,
+                    isExpanded: true,
+                    decoration: InputDecoration(labelText: t('category')),
+                    items: [
+                      for (final c in const ['plumbing', 'cement', 'steel', 'blocks', 'sand', 'other'])
+                        DropdownMenuItem(value: c, child: Text(t('cat_$c'))),
+                    ],
+                    onChanged: (v) => setD(() => category = v!),
+                  ),
+                ),
+              ]),
+              TextField(
+                key: const Key('new_item_rate'),
+                controller: rate,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: InputDecoration(labelText: t(_buying ? 'purchase_rate' : 'sale_rate'), prefixText: '₹ '),
+              ),
+            ]),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: Text(t('cancel'))),
+            FilledButton(
+              key: const Key('new_item_save'),
+              onPressed: () async {
+                if (nameCtl.text.trim().isEmpty) return;
+                final r = Money.parse(rate.text) ?? 0;
+                final newId = await app.stock.save(
+                  name: nameCtl.text,
+                  nameEn: nameEn.text,
+                  category: category,
+                  unit: unit,
+                  saleRate: _buying ? 0 : r,
+                  purchaseRate: _buying ? r : 0,
+                );
+                if (ctx.mounted) Navigator.pop(ctx, newId);
+              },
+              child: Text(t('save')),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (id == null || !mounted) return;
+    items = await app.stock.list();
+    final it = items.where((i) => i.id == id).firstOrNull;
+    if (it != null && mounted) {
+      _addItem(it);
+      toast(context, '${t('saved')} · ${it.name}');
+    }
+  }
+
   void _addItem(Item it) {
     setState(() {
       lines.add(
@@ -1229,6 +1387,27 @@ class _VoucherScreenState extends State<VoucherScreen> {
     child: ListView(
       scrollDirection: Axis.horizontal,
       children: [
+        // find any item by name (many small plumbing items) …
+        Padding(
+          padding: const EdgeInsets.only(right: 6),
+          child: ActionChip(
+            key: const Key('item_search'),
+            avatar: const Icon(Icons.search, size: 18),
+            label: Text(app.t('item_search')),
+            onPressed: _searchItem,
+          ),
+        ),
+        // … or make a new one without leaving the bill (owner)
+        if (app.actor.isOwner)
+          Padding(
+            padding: const EdgeInsets.only(right: 6),
+            child: ActionChip(
+              key: const Key('item_new'),
+              avatar: const Icon(Icons.add, size: 18),
+              label: Text(app.t('new_item')),
+              onPressed: () => _newItem(),
+            ),
+          ),
         for (final it in items)
           Padding(
             padding: const EdgeInsets.only(right: 6),
