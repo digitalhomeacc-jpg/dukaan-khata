@@ -59,6 +59,8 @@ Khata → ⋮ → **नवीन बुकिंग** (or **अधिक → ब
 booking – one tap adds the item at the booked rate. Sale bills (customer) / purchase bills (supplier) of the
 item from the booking date on count as delivered, oldest booking first. **बुकिंग** report: customer and
 supplier tabs with booked / delivered / left; close a booking that won't be completed.
+A booking dated before the books start (owner) is a note only: no receipt / payment, no khata or stock change –
+the advance is already in the opening balance. Enter only the goods still to deliver.
 
 ## व्याज (interest on overdue balances)
 

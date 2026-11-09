@@ -1,6 +1,7 @@
 import 'package:sqlite_async/sqlite_async.dart';
 
 import '../core/ids.dart';
+import '../core/money.dart';
 import 'models.dart';
 import 'voucher_service.dart';
 
@@ -39,6 +40,8 @@ class Booking {
   int get value => lines.fold(0, (s, l) => s + l.value);
   bool get done => lines.every((l) => l.remaining == 0);
   bool get open => !closed && !done;
+  /// Dated before the books start: a note only (advance already in the opening balance).
+  bool get old => Books.isHistory(date);
 }
 
 class BookingService {
@@ -154,7 +157,9 @@ class BookingService {
       actor,
       existingId: existingId,
     );
-    if (advance > 0 && existingId == null) {
+    // before the books start the advance is already in the opening balance:
+    // the booking is only a note, no receipt / payment is made
+    if (advance > 0 && existingId == null && !Books.isHistory(date)) {
       await vs.save(
         VoucherInput(
           type: customer ? VoucherType.receipt : VoucherType.payment,

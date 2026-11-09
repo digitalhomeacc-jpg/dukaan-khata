@@ -76,6 +76,7 @@ class _BookingScreenState extends State<BookingScreen> {
   }
 
   int get total => rows.fold(0, (s, r) => s + (r.q * r.r).round());
+  bool get old => Books.isHistory(date);
 
   Future<void> _pickParty() async {
     final l = await pickLedger(context,
@@ -172,8 +173,25 @@ class _BookingScreenState extends State<BookingScreen> {
                   const SizedBox(height: 8),
                   SizedBox(
                     width: 220,
-                    child: DateField(date: date, label: t('date'), first: Books.start, onChanged: (d) => setState(() => date = d)),
+                    child: DateField(
+                      date: date,
+                      label: t('date'),
+                      // the owner may note a booking taken before the books start
+                      first: app.actor.isOwner ? null : Books.start,
+                      onChanged: (d) => setState(() => date = d),
+                    ),
                   ),
+                  if (old)
+                    Container(
+                      margin: const EdgeInsets.only(top: 8),
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(color: AppColors.haldi.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(10)),
+                      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        const Icon(Icons.history_edu, size: 20, color: AppColors.haldi),
+                        const SizedBox(width: 8),
+                        Expanded(child: Text(t('booking_old_help').replaceAll('{date}', shortDate(Books.start)))),
+                      ]),
+                    ),
                   SectionTitle(t('booking_items')),
                   for (var i = 0; i < rows.length; i++)
                     Card(
@@ -212,7 +230,7 @@ class _BookingScreenState extends State<BookingScreen> {
                                 controller: rows[i].qty,
                                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
                                 decoration: InputDecoration(
-                                    labelText: '${t('qty')}${rows[i].item == null ? '' : ' (${t('unit_${rows[i].item!.unit}')})'}', isDense: true),
+                                    labelText: '${t(old ? 'booking_qty_left' : 'qty')}${rows[i].item == null ? '' : ' (${t('unit_${rows[i].item!.unit}')})'}', isDense: true),
                                 onChanged: (_) => setState(() {}),
                               ),
                             ),
@@ -255,13 +273,13 @@ class _BookingScreenState extends State<BookingScreen> {
                   ),
                   if (editing == null) ...[
                     SectionTitle(t(customer ? 'booking_advance_in' : 'booking_advance_out')),
-                    AmountField(controller: advance, label: t('booking_advance'), onChanged: (_) => setState(() {})),
-                    if ((Money.parse(advance.text) ?? 0) > 0) ...[
+                    AmountField(controller: advance, label: t(old ? 'booking_advance_old' : 'booking_advance'), onChanged: (_) => setState(() {})),
+                    if ((Money.parse(advance.text) ?? 0) > 0 && !old) ...[
                       const SizedBox(height: 8),
                       PayModeChips(accounts: moneyAccounts, selected: payId, allowCredit: false, onSelected: (id) => setState(() => payId = id)),
                     ],
                     const SizedBox(height: 6),
-                    Text(t(customer ? 'booking_advance_help_in' : 'booking_advance_help_out'),
+                    Text(t(old ? 'booking_advance_help_old' : customer ? 'booking_advance_help_in' : 'booking_advance_help_out'),
                         style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
                   ] else if (editing!.advance > 0)
                     Padding(
@@ -395,6 +413,7 @@ class BookingCard extends StatelessWidget {
             Text(
               [
                 shortDate(b.date),
+                if (b.old) t('booking_old_tag'),
                 '${t('booking_value')} ₹${Money.fmt(b.value)}',
                 if (b.advance > 0) '${t('booking_advance')} ₹${Money.fmt(b.advance)}',
                 if (b.note != null) b.note!,

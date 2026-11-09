@@ -292,6 +292,9 @@ class VoucherService {
       if (!Books.isHistory(v.date)) {
         throw ArgumentError('err_old_date');
       }
+    } else if (v.type == VoucherType.booking && Books.isHistory(v.date)) {
+      // a booking from before the books start is only a note (it posts nothing anyway)
+      if (!actor.isOwner) throw PermissionDenied('err_owner_old');
     } else if (Books.isHistory(v.date)) {
       throw ArgumentError('err_before_books');
     }

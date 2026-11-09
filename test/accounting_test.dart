@@ -408,6 +408,31 @@ void main() {
     expect(await lr.unbalanced(), isEmpty);
   });
 
+  test('booking before the books start is a note only: no receipt, no balance change', () async {
+    final bs = BookingService(db, biz);
+    final cust = await lr.create(name: 'Old Builder', group: LedgerGroup.customer, openingBalance: -rs(10000)); // advance in opening
+    final u = items['U']!;
+    final cash0 = await lr.balanceAt(vs.sys('cash'));
+    const before = '1999-12-01'; // tests' books start is 2000-01-01
+    expect(
+        () => bs.save(vs, staff, date: before, partyId: cust, customer: true, items: [ItemLine(u.id, 80, rs(270))]),
+        throwsA(isA<PermissionDenied>()));
+    final id = await bs.save(vs, owner, date: before, partyId: cust, customer: true,
+        items: [ItemLine(u.id, 80, rs(270))], advance: rs(10000), advanceLedgerId: vs.sys('cash'));
+    expect(await lr.balanceAt(cust), -rs(10000)); // unchanged
+    expect(await lr.balanceAt(vs.sys('cash')), cash0); // no receipt
+    expect(await lr.unbalanced(), isEmpty);
+    var b = (await bs.list(customer: true)).single;
+    expect(b.id, id);
+    expect(b.old, isTrue);
+    expect(b.advance, rs(10000)); // shown for reference
+    // bills after the books start count against it
+    await vs.save(VoucherInput(type: VoucherType.sale, date: '2026-11-05', partyId: cust, items: [ItemLine(u.id, 30, rs(270))]), owner);
+    b = (await bs.list(customer: true)).single;
+    expect(b.lines.single.delivered, 30);
+    expect(b.lines.single.remaining, 50);
+  });
+
   test('रोख मोजणी: short and extra cash go to रोख फरक, books then match the count', () async {
     const day = '2026-11-07';
     final cash = vs.sys('cash');
