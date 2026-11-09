@@ -357,7 +357,8 @@ class _RegisterSimple extends StatelessWidget {
                             ),
                             const SizedBox(width: 8),
                             Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                              Text('₹${Money.fmt(r.amount)}',
+                              if (!r.type.isGoodsLoan)
+                                Text('₹${Money.fmt(r.amount)}',
                                   style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15, fontFeatures: num)),
                               const SizedBox(height: 3),
                               _payPill(context, r),
@@ -415,15 +416,17 @@ class _RegisterGrid extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final muted = TextStyle(color: scheme.onSurfaceVariant, fontSize: 11);
     const num = [FontFeature.tabularFigures()];
-    final line = BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.6));
+    // ruled like a paper register: every row and column has a line (prints clearly)
+    final grid = BorderSide(color: scheme.outline.withValues(alpha: 0.55), width: 0.8);
     final headBg = scheme.surfaceContainerHigh;
+    final head = TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: scheme.onSurface);
 
     Widget pad(Widget c, {Alignment a = Alignment.centerRight}) =>
         Padding(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 9), child: Align(alignment: a, child: c));
     Widget qty(double v, {Color? color, bool bold = true, String sign = ''}) => pad(Text(v == 0 ? '' : '$sign${fmtQty(v)}',
         style: TextStyle(fontWeight: bold ? FontWeight.w700 : FontWeight.w500, fontSize: 14, color: color, fontFeatures: num)));
     TableRow summary(String label, double Function(Item) f, {Color? color, String sign = '', Color? bg, Widget? last}) => TableRow(
-          decoration: BoxDecoration(color: bg, border: Border(top: line)),
+          decoration: BoxDecoration(color: bg),
           children: [
             const SizedBox(),
             pad(Text(label, style: TextStyle(fontWeight: FontWeight.w700, color: color)), a: Alignment.centerLeft),
@@ -437,17 +440,25 @@ class _RegisterGrid extends StatelessWidget {
     final saleTotal = reg.rows.where((r) => r.type == VoucherType.sale).fold(0, (s, r) => s + r.amount);
     final table = Table(
       defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+      border: TableBorder(
+        top: grid,
+        bottom: grid,
+        left: grid,
+        right: grid,
+        horizontalInside: grid,
+        verticalInside: grid,
+      ),
       columnWidths: {
         0: const FixedColumnWidth(36),
         1: const FixedColumnWidth(150),
         for (var n = 0; n < items.length; n++) n + 2: const FixedColumnWidth(78),
         items.length + 2: const FixedColumnWidth(92),
-        items.length + 3: const FixedColumnWidth(96),
+        items.length + 3: const IntrinsicColumnWidth(),
       },
       children: [
         TableRow(decoration: BoxDecoration(color: headBg), children: [
-          pad(Text('#', style: muted), a: Alignment.center),
-          pad(Text(t('party'), style: muted), a: Alignment.centerLeft),
+          pad(Text('#', style: head), a: Alignment.center),
+          pad(Text(t('party'), style: head), a: Alignment.centerLeft),
           for (final i in items)
             pad(
               Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
@@ -456,15 +467,14 @@ class _RegisterGrid extends StatelessWidget {
                 Text(t('unit_${i.unit}'), style: muted),
               ]),
             ),
-          pad(Text(t('amount'), style: muted)),
-          pad(Text('', style: muted)),
+          pad(Text(t('amount'), style: head)),
+          pad(Text(t('pay_mode'), style: head), a: Alignment.centerLeft),
         ]),
         summary(t('opening'), (i) => reg.opening[i.id] ?? 0, color: scheme.onSurfaceVariant),
         for (final r in reg.rows)
           TableRow(
             decoration: BoxDecoration(
               color: r.isIn ? AppColors.paid.withValues(alpha: 0.06) : null,
-              border: Border(top: line),
             ),
             children: [
               tap(r, pad(Text('${r.serial}', style: muted.copyWith(fontSize: 13)), a: Alignment.center)),
@@ -497,7 +507,7 @@ class _RegisterGrid extends StatelessWidget {
                           if ((r.rate[i.id] ?? 0) > 0) Text('@${Money.fmt(r.rate[i.id]!)}', style: muted),
                         ])),
                 ),
-              tap(r, pad(Text(Money.fmt(r.amount), style: const TextStyle(fontWeight: FontWeight.w600, fontFeatures: num)))),
+              tap(r, pad(Text(r.type.isGoodsLoan ? '' : Money.fmt(r.amount), style: const TextStyle(fontWeight: FontWeight.w600, fontFeatures: num)))),
               tap(r, pad(_payPill(context, r), a: Alignment.centerLeft)),
             ],
           ),
