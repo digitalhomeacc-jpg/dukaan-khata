@@ -67,17 +67,32 @@ self.addEventListener('fetch', (e) => {
     );
     return;
   }
-  e.respondWith(
-    caches.match(req).then(
-      (hit) =>
-        hit ||
-        fetch(req).then((res) => {
-          if (res.ok && res.type === 'basic') {
-            const copy = res.clone();
-            caches.open(CACHE).then((c) => c.put(req, copy));
-          }
-          return res;
-        }),
-    ),
-  );
+  // Big files that never change between versions (engine, database, PDF reader,
+  // text fonts) and files whose name carries ?v=<build>: straight from the phone.
+  const p = url.pathname.slice(scope.pathname.length);
+  const fixed = url.search.includes('v=') || /^(canvaskit\/|pdfjs\/|icons\/|sqlite3\.wasm|assets\/assets\/fonts\/|assets\/fonts\/fallback\/|favicon)/.test(p);
+  const save = (res) => {
+    if (res.ok && res.type === 'basic') {
+      const copy = res.clone();
+      caches.open(CACHE).then((c) => c.put(req, copy));
+    }
+    return res;
+  };
+  if (fixed) {
+    e.respondWith(caches.match(req).then((hit) => hit || fetch(req).then(save)));
+    return;
+  }
+  // Small files that can change with an update (icon font, asset lists, workers):
+  // ask the site first so an update never shows blank icons; use the saved copy
+  // when offline or when the network is too slow.
+  e.respondWith((async () => {
+    const net = fetch(req, { cache: 'no-cache' }).then(save);
+    const slow = new Promise((r) => setTimeout(r, 4000));
+    try {
+      const res = await Promise.race([net, slow.then(() => null)]);
+      if (res) return res;
+    } catch (_) { /* offline */ }
+    const hit = await caches.match(req);
+    return hit || net;
+  })());
 });
