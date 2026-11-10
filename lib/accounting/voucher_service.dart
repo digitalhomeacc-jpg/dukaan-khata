@@ -296,7 +296,9 @@ class VoucherService {
       if (v.date != Books.start) throw ArgumentError('err_opening_goods_date');
     }
     final today = todayIso();
-    if (!actor.isOwner && v.date.compareTo(today) < 0) {
+    // staff work on today's entries – and may also write old khata entries
+    // (जुनी नोंद), which are reference only and change no figure
+    if (!actor.isOwner && v.date.compareTo(today) < 0 && v.type != VoucherType.history) {
       throw PermissionDenied('err_staff_today');
     }
     if (v.type == VoucherType.history) {
@@ -307,7 +309,6 @@ class VoucherService {
       throw ArgumentError('err_amount');
     }
     if (v.type == VoucherType.history) {
-      if (!actor.isOwner) throw PermissionDenied('err_owner_old');
       if (!Books.isHistory(v.date)) {
         throw ArgumentError('err_old_date');
       }
@@ -331,7 +332,14 @@ class VoucherService {
       Map<String, Object?>? before;
       if (existingId != null) {
         final old = await tx.get('SELECT * FROM vouchers WHERE id = ?', [existingId]);
-        _checkEditable(actor, old['vdate'] as String, deleting: false);
+        if (old['vtype'] == 'history' && !actor.isOwner) {
+          // staff may correct an old entry on the day they wrote it
+          if (!enteredToday(old['created_at'] as String?) || v.type != VoucherType.history) {
+            throw PermissionDenied('err_owner_edit_old');
+          }
+        } else {
+          _checkEditable(actor, old['vdate'] as String, deleting: false);
+        }
         before = await entrySummary(tx, existingId); // बदल इतिहास: what it was
         await tx.execute('DELETE FROM voucher_lines WHERE voucher_id = ?', [existingId]);
         await tx.execute('DELETE FROM inventory_lines WHERE voucher_id = ?', [existingId]);
@@ -443,6 +451,15 @@ class VoucherService {
 
   static bool canEdit(Actor actor, String vdate) =>
       actor.isOwner || vdate.compareTo(todayIso()) >= 0;
+
+  /// Was this entry typed in today (India time)? created_at is stored in UTC.
+  static bool enteredToday(String? createdAt) {
+    final c = createdAt == null ? null : DateTime.tryParse(createdAt);
+    if (c == null) return false;
+    final ist = c.toUtc().add(const Duration(hours: 5, minutes: 30));
+    final now = DateTime.now().toUtc().add(const Duration(hours: 5, minutes: 30));
+    return ist.year == now.year && ist.month == now.month && ist.day == now.day;
+  }
 
   void _checkEditable(Actor actor, String vdate, {required bool deleting}) {
     if (actor.isOwner) return;

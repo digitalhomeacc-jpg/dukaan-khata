@@ -642,6 +642,23 @@ void main() {
     expect(d.firstWhere((x) => x.$1 == 'pay_mode').$2, 'फोनपे (H)');
   });
 
+  test('staff: may write old entries and fix them the same day, not delete or back-date bills', () async {
+    final cust = await lr.create(name: 'Old Khata', group: LedgerGroup.customer, openingBalance: rs(5000));
+    const old = '1999-12-01'; // before the tests' books start
+    final id = await vs.save(VoucherInput(type: VoucherType.history, date: old, partyId: cust, amount: rs(1200), narration: 'M 4×300'), staff);
+    expect(await lr.balanceAt(cust), rs(5000)); // still reference only
+    await vs.save(VoucherInput(type: VoucherType.history, date: old, partyId: cust, amount: rs(1500), narration: 'M 5×300'), staff, existingId: id);
+    expect((await vs.load(id)).$1.amount, rs(1500));
+    // an old entry typed in on an earlier day: owner only
+    await db.execute("UPDATE vouchers SET created_at = '2020-01-01T00:00:00.000Z' WHERE id = ?", [id]);
+    expect(() => vs.save(VoucherInput(type: VoucherType.history, date: old, partyId: cust, amount: rs(9)), staff, existingId: id),
+        throwsA(isA<PermissionDenied>()));
+    expect(() => vs.delete(id, staff), throwsA(isA<PermissionDenied>()));
+    // back-dated real bills stay owner-only
+    expect(() => vs.save(VoucherInput(type: VoucherType.sale, date: '2026-01-01', partyId: cust, amount: rs(10)), staff), throwsA(isA<PermissionDenied>()));
+    expect(VoucherService.enteredToday(DateTime.now().toUtc().toIso8601String()), isTrue);
+  });
+
   test('रोख मोजणी: short and extra cash go to रोख फरक, books then match the count', () async {
     const day = '2026-11-07';
     final cash = vs.sys('cash');

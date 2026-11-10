@@ -123,8 +123,10 @@ void main() {
           throwsArgumentError);
       expect(() => vs.save(VoucherInput(type: VoucherType.history, date: '2026-11-08', partyId: c, amount: rs(10)), owner),
           throwsArgumentError);
-      expect(() => vs.save(VoucherInput(type: VoucherType.history, date: '2026-10-01', partyId: c, amount: rs(10)), staff),
-          throwsA(isA<PermissionDenied>()));
+      // staff may write old entries now, but still only before the books start
+      expect(() => vs.save(VoucherInput(type: VoucherType.history, date: '2026-11-08', partyId: c, amount: rs(10)), staff),
+          throwsA(anything));
+      expect(await vs.save(VoucherInput(type: VoucherType.history, date: '2026-10-01', partyId: c, amount: rs(10)), staff), isNotEmpty);
     });
 
     test('financial year start month is configurable', () {

@@ -522,7 +522,7 @@ class _KhataScreenState extends State<KhataScreen> {
                     PopupMenuItem(value: 'goods_out', child: Text(t('goods_out'))),
                     PopupMenuItem(value: 'goods_in', child: Text(t('goods_in'))),
                   ],
-                  if (app.actor.isOwner && l.group.isParty) PopupMenuItem(value: 'old', child: Text(t('old_entry_add'))),
+                  if (l.group.isParty) PopupMenuItem(value: 'old', child: Text(t('old_entry_add'))),
                   PopupMenuItem(value: 'range', child: Text('${t('from')} – ${t('to')}')),
                   PopupMenuItem(value: 'pdf', child: Text('${t('statement')} PDF')),
                   PopupMenuItem(value: 'xls', child: Text('${t('statement')} Excel')),

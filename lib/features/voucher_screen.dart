@@ -661,7 +661,10 @@ class _VoucherScreenState extends State<VoucherScreen> {
     final app = App.of(context);
     final t = app.t;
     if (loading) return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    final canEdit = editing == null || VoucherService.canEdit(app.actor, editing!.date);
+    final canEdit = editing == null ||
+        VoucherService.canEdit(app.actor, editing!.date) ||
+        // staff: an old entry they wrote today
+        (isHistory && VoucherService.enteredToday(editing!.createdAt));
     return Scaffold(
       appBar: AppBar(
         title: Text(_title(app)),
@@ -700,7 +703,8 @@ class _VoucherScreenState extends State<VoucherScreen> {
                   width: 210,
                   child: DateField(
                     date: date,
-                    enabled: app.actor.isOwner && !goodsOpening,
+                    // staff pick the date of an old entry (always before the books start)
+                    enabled: (app.actor.isOwner || isHistory) && !goodsOpening,
                     autofocus: isHistory && editing == null,
                     // old entries: any date before the books start; others: from the books start
                     first: isHistory ? null : Books.start,

@@ -256,6 +256,7 @@ class Voucher {
   final String? refNo;
   final bool gstBillNeeded;
   final String? createdBy;
+  final String? createdAt; // when it was typed in (UTC ISO)
   final bool deleted;
   final int version;
   // joined for display
@@ -284,6 +285,7 @@ class Voucher {
     this.refNo,
     this.gstBillNeeded = false,
     this.createdBy,
+    this.createdAt,
     this.deleted = false,
     this.version = 1,
     this.partyName,
@@ -311,6 +313,7 @@ class Voucher {
         refNo: r['ref_no'] as String?,
         gstBillNeeded: (r['gst_bill_needed'] as int?) == 1,
         createdBy: r['created_by'] as String?,
+        createdAt: r['created_at'] as String?,
         deleted: (r['deleted'] as int?) == 1,
         version: (r['version'] as int?) ?? 1,
         partyName: r['party_name'] as String?,
