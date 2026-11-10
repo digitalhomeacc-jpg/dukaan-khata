@@ -383,9 +383,14 @@ class LedgerRepo {
       final paid = (r['paid'] as int?) ?? 0;
       var kind = ((r['pay_ledger_id'] as String?) ?? '').replaceFirst('hist:', '');
       // entries saved before the kind was stored: money only = received, else goods given
-      if (!const {'sale', 'purchase', 'received', 'paid'}.contains(kind)) kind = amount == 0 && paid > 0 ? 'received' : 'sale';
+      if (!const {'sale', 'purchase', 'received', 'paid', 'opening', 'opening_cr'}.contains(kind)) {
+        kind = amount == 0 && paid > 0 ? 'received' : 'sale';
+      }
       final (int d, int c) = switch (kind) {
         'purchase' => (paid, amount),
+        // जुनी बाकी: the balance from an even older book – where the old ledger starts
+        'opening' => (amount, 0),
+        'opening_cr' => (0, amount),
         'received' => (0, amount == 0 ? paid : amount),
         'paid' => (amount, 0),
         _ => (amount, paid),

@@ -163,7 +163,7 @@ class _VoucherScreenState extends State<VoucherScreen> {
   // Old entry (before the books start): a full bill or a money entry that
   // only changes the party's khata – no stock, cash, hamali or profit.
   bool get isHistory => type == VoucherType.history;
-  late String hKind = widget.historyKind ?? 'sale'; // sale | purchase | received | paid
+  late String hKind = widget.historyKind ?? 'sale'; // sale | purchase | received | paid | opening | opening_cr
   bool get historyBill => isHistory && (hKind == 'sale' || hKind == 'purchase');
 
   bool get hasItems =>
@@ -299,6 +299,8 @@ class _VoucherScreenState extends State<VoucherScreen> {
       if (party == null && creditAllowed) payId = v.payLedgerId ?? app.vouchers.sys('cash');
     } else {
       if (widget.partyId != null) party = await app.ledgers.byId(widget.partyId!);
+      // an old entry is always before the books start – start on the day before
+      if (isHistory) date = isoDate(parseIso(Books.start).subtract(const Duration(days: 1)));
       if (widget.presetAmount != null && widget.presetAmount! > 0) amount.text = _plain(widget.presetAmount!);
       if (widget.presetNarration != null) narration.text = widget.presetNarration!;
       // sensible default payment account
@@ -783,7 +785,7 @@ class _VoucherScreenState extends State<VoucherScreen> {
               const SizedBox(height: 12),
               AmountField(
                 controller: amount,
-                label: t('amount'),
+                label: isHistory && hKind.startsWith('opening') ? t('old_opening_amount') : t('amount'),
                 autofocus: editing == null && party != null,
                 onChanged: (_) => setState(() {}),
               ),
@@ -977,17 +979,28 @@ class _VoucherScreenState extends State<VoucherScreen> {
           ),
         ),
         const SizedBox(height: 8),
-        SegmentedButton<String>(
-          showSelectedIcon: false,
-          segments: [
-            ButtonSegment(value: 'sale', label: Text(t('old_sale'))),
-            ButtonSegment(value: 'purchase', label: Text(t('old_purchase'))),
-            ButtonSegment(value: 'received', label: Text(t('old_received'))),
-            ButtonSegment(value: 'paid', label: Text(t('old_paid'))),
-          ],
-          selected: {hKind},
-          onSelectionChanged: (s) => setState(() => hKind = s.first),
-        ),
+        Wrap(spacing: 6, runSpacing: 6, children: [
+          for (final k in const ['sale', 'purchase', 'received', 'paid', 'opening'])
+            ChoiceChip(
+              label: Text(t('old_$k')),
+              selected: k == 'opening' ? hKind.startsWith('opening') : hKind == k,
+              onSelected: (_) => setState(() => hKind = k),
+            ),
+        ]),
+        // जुनी बाकी: balance carried from an even older book – they owe us, or we owe them
+        if (hKind.startsWith('opening')) ...[
+          const SizedBox(height: 8),
+          SegmentedButton<String>(
+            segments: [
+              ButtonSegment(value: 'opening', label: Text(t('old_opening_dr'))),
+              ButtonSegment(value: 'opening_cr', label: Text(t('old_opening_cr_label'))),
+            ],
+            selected: {hKind},
+            onSelectionChanged: (s) => setState(() => hKind = s.first),
+          ),
+          const SizedBox(height: 4),
+          Text(t('old_opening_help'), style: Theme.of(context).textTheme.bodySmall),
+        ],
       ]),
     );
   }

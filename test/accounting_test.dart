@@ -672,6 +672,27 @@ void main() {
     expect(st.closing, rs(12500));
   });
 
+  test('old ledger can start from a balance carried from an even older book', () async {
+    final cust = await lr.create(name: 'Older Book', group: LedgerGroup.customer, openingBalance: rs(31250));
+    final sup = await lr.create(name: 'Old Supplier', group: LedgerGroup.supplier, openingBalance: -rs(5000));
+    final w = items['W']!;
+    final stock0 = await sr.stockAt(w.id, '2026-11-10');
+    await vs.save(VoucherInput(type: VoucherType.history, date: '1999-04-01', partyId: cust, payLedgerId: 'hist:opening', amount: rs(25000)), owner);
+    await vs.save(VoucherInput(type: VoucherType.history, date: '1999-05-12', partyId: cust, items: [ItemLine(w.id, 40, rs(280))], paid: 0), owner);
+    await vs.save(VoucherInput(type: VoucherType.history, date: '1999-06-03', partyId: cust, payLedgerId: 'hist:received', amount: rs(4950)), owner);
+    final st = await lr.statement(cust);
+    expect(st.references.first.kind, 'opening');
+    expect(st.references.map((r) => r.balance), [rs(25000), rs(36200), rs(31250)]);
+    expect(st.references.last.balance, st.ledger.openingBalance); // ✓ matches
+    // nothing moved
+    expect(await lr.balanceAt(cust), rs(31250));
+    expect(await sr.stockAt(w.id, '2026-11-10'), stock0);
+    // we owed a supplier from an older book
+    await vs.save(VoucherInput(type: VoucherType.history, date: '1999-04-01', partyId: sup, payLedgerId: 'hist:opening_cr', amount: rs(5000)), owner);
+    expect((await lr.statement(sup)).references.single.balance, -rs(5000));
+    expect(await lr.balanceAt(sup), -rs(5000));
+  });
+
   test('रोख मोजणी: short and extra cash go to रोख फरक, books then match the count', () async {
     const day = '2026-11-07';
     final cash = vs.sys('cash');
