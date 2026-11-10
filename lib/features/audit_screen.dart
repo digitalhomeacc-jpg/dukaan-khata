@@ -63,175 +63,307 @@ const _labels = {
   'fy_start_month': 'fy_start',
 };
 
-/// What a new / deleted entry is described by (all fields would be too long).
-const _keyFields = ['date', 'party', 'amount', 'paid', 'pay_mode', 'items', 'hamali', 'narration'];
+/// Fields shown for a new / deleted entry, in this order (the rest only when
+/// one entry's own history is open).
+const _entryFields = ['date', 'party', 'items', 'amount', 'paid', 'pay_mode', 'hamali', 'transport', 'transporter', 'gst', 'ref', 'narration', 'haste'];
+
+/// One line of the history, read from audit_log.
+class _Ev {
+  final String id; // audit row
+  final String recordId; // entry / account / item … that changed
+  final String kind; // voucher | ledger | item | shop | user | bank
+  final String action; // create | edit | delete | status | hide | unhide | pin | restore
+  final DateTime? at; // phone time
+  final DateTime? server; // server time (can't be set by a phone)
+  final String user;
+  final String title;
+  final Map<String, dynamic>? before;
+  final Map<String, dynamic>? after;
+  final bool legacy;
+  final Map<String, Object?> row;
+  _Ev(this.id, this.recordId, this.kind, this.action, this.at, this.server, this.user, this.title, this.before, this.after,
+      this.legacy, this.row);
+  DateTime get when => at ?? server ?? DateTime(2000);
+}
 
 class _AuditScreenState extends State<AuditScreen> {
   String kind = 'all'; // all | voucher | ledger | item | other
+  bool onlyFixed = false; // only records that were later changed or deleted
   final q = TextEditingController();
+
+  bool get single => widget.voucherId != null;
+
+  Future<List<_Ev>> _load() async {
+    final app = App.read(context);
+    final rows = await app.db.getAll(
+      'SELECT a.*, v.vtype, v.vno, v.vdate, v.amount, v.deleted AS v_deleted, v.created_at AS v_created, v.created_by AS v_by, '
+      'p.name AS party FROM audit_log a LEFT JOIN vouchers v ON v.id = a.voucher_id LEFT JOIN ledgers p ON p.id = v.party_id '
+      'WHERE a.business_id = ? ${single ? 'AND a.voucher_id = ?' : ''} ORDER BY a.at DESC LIMIT 3000',
+      [app.businessId, if (single) widget.voucherId],
+    );
+    return [
+      for (final r in rows)
+        () {
+          final snap = r['snapshot'] == null ? <String, dynamic>{} : jsonDecode(r['snapshot'] as String) as Map<String, dynamic>;
+          final legacy = snap.containsKey('voucher'); // history written before the full log
+          return _Ev(
+            r['id'] as String,
+            (r['voucher_id'] as String?) ?? '',
+            legacy ? 'voucher' : (snap['kind'] as String? ?? 'voucher'),
+            r['action'] as String,
+            _time(r['at'] as String?),
+            _time(r['received_at'] as String?),
+            (r['user_name'] as String?) ?? '',
+            (snap['title'] as String?) ?? '',
+            legacy ? _legacyBefore(snap) : (snap['before'] as Map?)?.cast<String, dynamic>(),
+            (snap['after'] as Map?)?.cast<String, dynamic>(),
+            legacy,
+            Map<String, Object?>.from(r),
+          );
+        }(),
+    ];
+  }
 
   @override
   Widget build(BuildContext context) {
     final app = App.of(context);
     final t = app.t;
+    return Scaffold(
+      appBar: AppBar(title: Text(single ? t('audit_one') : t('audit'))),
+      body: LiveBuilder<List<_Ev>>(
+        tables: const ['audit_log', 'vouchers'],
+        reloadKey: kind,
+        load: _load,
+        builder: (context, all) {
+          // what happened to each record afterwards (for the badges)
+          final byRecord = <String, List<_Ev>>{};
+          for (final e in all) {
+            (byRecord[e.recordId] ??= []).add(e);
+          }
+          for (final l in byRecord.values) {
+            l.sort((a, b) => a.when.compareTo(b.when));
+          }
+          final search = normalizeDigits(q.text.trim()).toLowerCase();
+          var list = single ? (all.toList()..sort((a, b) => a.when.compareTo(b.when))) : all;
+          if (!single) {
+            list = list.where((e) {
+              final group = const {'voucher', 'ledger', 'item'}.contains(e.kind) ? e.kind : 'other';
+              if (kind != 'all' && kind != group) return false;
+              if (onlyFixed) {
+                final later = byRecord[e.recordId]!;
+                if (!later.any((x) => x.action == 'edit' || x.action == 'delete')) return false;
+              }
+              if (search.isEmpty) return true;
+              final text = '${e.user} ${_title(e, t)} ${jsonEncode(e.before ?? {})} ${jsonEncode(e.after ?? {})}';
+              return normalizeDigits(text).toLowerCase().contains(search);
+            }).toList();
+          }
+          return Column(children: [
+            if (!single) ...[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(8, 6, 8, 0),
+                child: TextField(
+                  controller: q,
+                  onChanged: (_) => setState(() {}),
+                  decoration: InputDecoration(prefixIcon: const Icon(Icons.search), hintText: t('audit_search'), isDense: true, border: const OutlineInputBorder()),
+                ),
+              ),
+              SizedBox(
+                height: 46,
+                child: ListView(scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6), children: [
+                  Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: FilterChip(
+                      avatar: const Icon(Icons.warning_amber_rounded, size: 16),
+                      label: Text(t('audit_only_fixed')),
+                      selected: onlyFixed,
+                      onSelected: (v) => setState(() => onlyFixed = v),
+                    ),
+                  ),
+                  for (final (k, l) in [('all', 'all'), ('voucher', 'entries'), ('ledger', 'audit_accounts'), ('item', 'items'), ('other', 'audit_other')])
+                    Padding(
+                      padding: const EdgeInsets.only(right: 6),
+                      child: ChoiceChip(label: Text(t(l)), selected: kind == k, onSelected: (_) => setState(() => kind = k)),
+                    ),
+                ]),
+              ),
+            ],
+            Expanded(
+              child: list.isEmpty
+                  ? Center(child: Text(t('no_entries')))
+                  : ListView.builder(
+                      padding: const EdgeInsets.fromLTRB(8, 4, 8, 40),
+                      itemCount: list.length,
+                      itemBuilder: (_, i) => _card(list[i], byRecord[list[i].recordId]!, app),
+                    ),
+            ),
+          ]);
+        },
+      ),
+    );
+  }
+
+  /// "विक्री #12 · सुरेश जाधव" / "खाते · सुरेश जाधव"
+  String _title(_Ev e, String Function(String) t) {
+    if (e.kind == 'voucher') {
+      final parts = e.title.split('|');
+      final type = parts.isNotEmpty && parts[0].isNotEmpty ? parts[0] : e.row['vtype'] as String?;
+      final vno = parts.length > 1 && parts[1].isNotEmpty ? parts[1] : '${e.row['vno'] ?? ''}';
+      final party = parts.length > 2 && parts[2].isNotEmpty ? parts[2] : (e.row['party'] as String? ?? '');
+      return '${type == null ? '' : t('vt_$type')} #$vno${party.isEmpty ? '' : ' · $party'}';
+    }
+    return '${t('audit_kind_${e.kind}')} · ${e.title}';
+  }
+
+  Widget _card(_Ev e, List<_Ev> story, AppController app) {
+    final t = app.t;
     final scheme = Theme.of(context).colorScheme;
     String label(String k) => _labels[k] == null ? k : t(_labels[k]!);
-    String show(String k, String? v) {
-      if (v == null || v.isEmpty) return '–';
-      if (k == 'date' || k == 'books_start') return shortDate(v);
-      if (k == 'type') return t('vt_$v');
-      if (k == 'group') return t('grp_$v');
-      if (k == 'category') return t('cat_$v');
-      if (k == 'unit') return t('unit_$v');
-      return v;
+    String show(String k, Object? v) {
+      final s = v?.toString() ?? '';
+      if (s.isEmpty) return '–';
+      if (k == 'date' || k == 'books_start') return shortDate(s);
+      if (k == 'type') return t('vt_$s');
+      if (k == 'group') return t('grp_$s');
+      if (k == 'category') return t('cat_$s');
+      if (k == 'unit') return t('unit_$s');
+      if (k == 'status') return t('audit_st_$s') == 'audit_st_$s' ? s : t('audit_st_$s');
+      return s;
     }
 
-    return Scaffold(
-      appBar: AppBar(title: Text(t('audit'))),
-      body: Column(children: [
-        if (widget.voucherId == null) ...[
+    final (Color color, IconData icon) = switch (e.action) {
+      'create' => (AppColors.paid, Icons.add_circle),
+      'delete' => (AppColors.due, Icons.delete),
+      'edit' => (AppColors.haldi, Icons.edit),
+      'hide' => (AppColors.neutral, Icons.visibility_off),
+      _ => (scheme.primary, Icons.flag),
+    };
+    final actionText = t('audit_${e.action}') == 'audit_${e.action}' ? e.action : t('audit_${e.action}');
+    // what happened to this record after this line
+    final later = story.where((x) => x.when.isAfter(e.when) || (x.when == e.when && x.id != e.id && x.action == 'delete')).toList();
+    final deletedLater = e.action == 'delete' ? null : later.where((x) => x.action == 'delete').lastOrNull;
+    final editsLater = later.where((x) => x.action == 'edit').length;
+    final clockOff = e.at != null && e.server != null && e.server!.difference(e.at!).inMinutes.abs() > 10;
+
+    // details: a field table for new / deleted, a before | after table for changes
+    final rows = <TableRow>[];
+    final small = TextStyle(fontSize: 12, color: scheme.onSurfaceVariant);
+    const val = TextStyle(fontSize: 13.5);
+    if (e.action == 'create' || e.action == 'delete' || e.action == 'restore') {
+      final m = (e.action == 'delete' ? e.before : e.after) ?? {};
+      final keys = e.kind == 'voucher' ? [..._entryFields, if (single) 'postings'] : m.keys.toList();
+      for (final f in keys) {
+        if (m[f] == null || '${m[f]}'.isEmpty) continue;
+        rows.add(TableRow(children: [
+          Padding(padding: const EdgeInsets.only(right: 10, bottom: 3), child: Text(label(f), style: small)),
           Padding(
-            padding: const EdgeInsets.fromLTRB(8, 6, 8, 0),
-            child: TextField(
-              controller: q,
-              onChanged: (_) => setState(() {}),
-              decoration: InputDecoration(prefixIcon: const Icon(Icons.search), hintText: t('audit_search'), isDense: true, border: const OutlineInputBorder()),
-            ),
+            padding: const EdgeInsets.only(bottom: 3),
+            child: Text(show(f, m[f]),
+                style: e.action == 'delete' ? val.copyWith(decoration: TextDecoration.lineThrough, color: scheme.onSurfaceVariant) : val),
           ),
-          SizedBox(
-            height: 46,
-            child: ListView(scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6), children: [
-              for (final (k, l) in [('all', 'all'), ('voucher', 'entries'), ('ledger', 'audit_accounts'), ('item', 'items'), ('other', 'audit_other')])
-                Padding(
-                  padding: const EdgeInsets.only(right: 6),
-                  child: ChoiceChip(label: Text(t(l)), selected: kind == k, onSelected: (_) => setState(() => kind = k)),
-                ),
+        ]));
+      }
+    }
+    final diff = e.legacy
+        ? <(String, String?, String?)>[for (final f in e.before?.keys ?? const <String>[]) (f, '${e.before![f] ?? ''}', null)]
+        : AuditLog.diff(e.before, e.after);
+    final isChange = const {'edit', 'status', 'hide', 'unhide'}.contains(e.action);
+
+    Widget badge(String text, Color c, {IconData? i}) => Container(
+          margin: const EdgeInsets.only(top: 6, right: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+          decoration: BoxDecoration(color: c.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(20), border: Border.all(color: c.withValues(alpha: 0.5))),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            if (i != null) ...[Icon(i, size: 13, color: c), const SizedBox(width: 4)],
+            Flexible(child: Text(text, style: TextStyle(fontSize: 12, color: c, fontWeight: FontWeight.w700))),
+          ]),
+        );
+
+    final vdate = e.row['vdate'] as String? ?? (e.after ?? e.before)?['date'] as String?;
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: color.withValues(alpha: 0.35))),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        // the whole story of this entry / account / item
+        onTap: single ? null : () => Navigator.push(context, MaterialPageRoute(builder: (_) => AuditScreen(voucherId: e.recordId))),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            // action · who · exact time
+            Row(children: [
+              Icon(icon, size: 18, color: color),
+              const SizedBox(width: 6),
+              Text(actionText, style: TextStyle(color: color, fontWeight: FontWeight.w800)),
+              Text('  ·  ${e.user}', style: const TextStyle(fontWeight: FontWeight.w600)),
+              const Spacer(),
+              Text(_fmt(e.at), style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant, fontFeatures: const [FontFeature.tabularFigures()])),
             ]),
-          ),
-        ],
-        Expanded(
-          child: LiveBuilder<List<Map<String, Object?>>>(
-            tables: const ['audit_log'],
-            reloadKey: kind,
-            load: () async => (await app.db.getAll(
-              'SELECT a.*, v.vtype, v.vno, v.vdate, v.amount, v.created_at AS v_created, v.created_by AS v_by, p.name AS party FROM audit_log a '
-              'LEFT JOIN vouchers v ON v.id = a.voucher_id LEFT JOIN ledgers p ON p.id = v.party_id '
-              'WHERE a.business_id = ? ${widget.voucherId != null ? 'AND a.voucher_id = ?' : ''} ORDER BY a.at DESC LIMIT 1000',
-              [app.businessId, if (widget.voucherId != null) widget.voucherId],
-            ))
-                .map((r) => Map<String, Object?>.from(r))
-                .toList(),
-            builder: (context, rows) {
-              final search = normalizeDigits(q.text.trim()).toLowerCase();
-              final items = <Widget>[];
-              for (final r in rows) {
-                final snap = r['snapshot'] == null ? <String, dynamic>{} : jsonDecode(r['snapshot'] as String) as Map<String, dynamic>;
-                // old rows (before the full history) only kept the entry as it was
-                final legacy = snap.containsKey('voucher');
-                final k = legacy ? 'voucher' : (snap['kind'] as String? ?? 'voucher');
-                final group = const {'voucher', 'ledger', 'item'}.contains(k) ? k : 'other';
-                if (kind != 'all' && kind != group) continue;
-                final action = r['action'] as String;
-                final before = legacy ? _legacyBefore(snap) : snap['before'] as Map<String, dynamic>?;
-                final after = snap['after'] as Map<String, dynamic>?;
-                // what was changed
-                String what;
-                if (k == 'voucher') {
-                  final parts = ((snap['title'] as String?) ?? '').split('|');
-                  final type = parts.isNotEmpty && parts[0].isNotEmpty ? parts[0] : r['vtype'] as String?;
-                  final vno = parts.length > 1 && parts[1].isNotEmpty ? parts[1] : '${r['vno'] ?? ''}';
-                  final party = parts.length > 2 && parts[2].isNotEmpty ? parts[2] : (r['party'] as String? ?? '');
-                  what = '${type == null ? '' : t('vt_$type')} #$vno $party';
-                } else {
-                  what = '${t('audit_kind_$k')} · ${snap['title'] ?? ''}';
-                }
-                // the fields shown under it
-                final lines = <String>[];
-                if (legacy && action == 'edit') {
-                  // older history only kept the entry as it was before the change
-                  for (final f in before?.keys ?? const <String>[]) {
-                    if (before![f] != null && '${before[f]}'.isNotEmpty) lines.add('${t('before_change')} ${label(f)}: ${show(f, '${before[f]}')}');
-                  }
-                } else if (action == 'edit' || action == 'status' || action == 'hide' || action == 'unhide') {
-                  for (final (f, b, a) in AuditLog.diff(before, after)) {
-                    lines.add('${label(f)}: ${show(f, b)} → ${show(f, a)}');
-                  }
-                } else if (action == 'create' || action == 'delete') {
-                  final m = action == 'create' ? after : before;
-                  if (m != null) {
-                    for (final f in k == 'voucher' ? _keyFields : m.keys) {
-                      if (m[f] != null && '${m[f]}'.isNotEmpty) lines.add('${label(f)}: ${show(f, '${m[f]}')}');
-                    }
-                  }
-                }
-                final at = _time(r['at'] as String?);
-                final when = _fmt(at);
-                // the server's own time for this change (a phone clock can be wrong)
-                final server = _time(r['received_at'] as String?);
-                final clockOff = at != null && server != null && server.difference(at).inMinutes.abs() > 10;
-                // when and by whom the entry itself was first made
-                final made = k == 'voucher' && r['v_created'] != null
-                    ? '${t('audit_entry_made')}: ${_fmt(_time(r['v_created'] as String?))}${r['v_by'] != null ? ' · ${r['v_by']}' : ''}'
-                        '${r['vdate'] != null ? ' · ${t('date')} ${shortDate(r['vdate'] as String)}' : ''}'
-                    : null;
-                final head = '${r['user_name'] ?? ''} · ${t('audit_$action') == 'audit_$action' ? action : t('audit_$action')}';
-                if (search.isNotEmpty &&
-                    !normalizeDigits('$head $what ${lines.join(' ')}').toLowerCase().contains(search)) {
-                  continue;
-                }
-                final color = switch (action) {
-                  'create' => AppColors.paid,
-                  'delete' => AppColors.due,
-                  'edit' => AppColors.haldi,
-                  _ => scheme.primary,
-                };
-                items.add(InkWell(
-                  onTap: k == 'voucher' && r['vtype'] != null && action != 'delete'
-                      ? () => VoucherScreen.edit(context, r['voucher_id'] as String)
-                      : null,
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-                    child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Icon(
-                        switch (action) {
-                          'create' => Icons.add_circle_outline,
-                          'delete' => Icons.delete_outline,
-                          'edit' => Icons.edit_outlined,
-                          'hide' => Icons.visibility_off_outlined,
-                          'pin' => Icons.pin_outlined,
-                          _ => Icons.flag_outlined,
-                        },
-                        color: color,
-                        size: 22,
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          Row(children: [
-                            Expanded(child: Text(what, style: const TextStyle(fontWeight: FontWeight.w700))),
-                            Text(when, style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
-                          ]),
-                          Text(head, style: TextStyle(fontSize: 12, color: color, fontWeight: FontWeight.w600)),
-                          for (final l in lines) Text(l, style: const TextStyle(fontSize: 13)),
-                          if (made != null) Text(made, style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant)),
-                          if (server != null)
-                            Text(
-                              '${t('audit_server_time')}: ${_fmt(server)}${clockOff ? '  ⚠ ${t('audit_clock_off')}' : ''}',
-                              style: TextStyle(fontSize: 11, color: clockOff ? AppColors.due : scheme.onSurfaceVariant),
-                            ),
-                        ]),
-                      ),
-                    ]),
-                  ),
-                ));
-                items.add(const Divider(height: 1));
-              }
-              if (items.isEmpty) return Center(child: Text(t('no_entries')));
-              return ListView(padding: const EdgeInsets.only(bottom: 40), children: items);
-            },
-          ),
+            const SizedBox(height: 4),
+            Text(_title(e, t), style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15.5)),
+            if (e.kind == 'voucher' && vdate != null)
+              Text(
+                '${t('audit_bill_date')}: ${shortDate(vdate)}'
+                '${e.row['v_created'] != null ? '  ·  ${t('audit_entry_made')}: ${_fmt(_time(e.row['v_created'] as String?))}${e.row['v_by'] != null ? ' (${e.row['v_by']})' : ''}' : ''}',
+                style: small,
+              ),
+            if (rows.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Table(columnWidths: const {0: IntrinsicColumnWidth(), 1: FlexColumnWidth()}, children: rows),
+            ],
+            if (isChange && diff.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Table(
+                columnWidths: const {0: IntrinsicColumnWidth(), 1: FlexColumnWidth(), 2: FlexColumnWidth()},
+                border: TableBorder(horizontalInside: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.5))),
+                children: [
+                  TableRow(children: [
+                    const SizedBox(),
+                    Padding(padding: const EdgeInsets.only(bottom: 3), child: Text(t('audit_before'), style: small)),
+                    Padding(padding: const EdgeInsets.only(bottom: 3), child: Text(t('audit_after'), style: small)),
+                  ]),
+                  for (final (f, b, a) in diff)
+                    if (single || f != 'postings' || diff.length == 1)
+                      TableRow(children: [
+                        Padding(padding: const EdgeInsets.fromLTRB(0, 4, 10, 4), child: Text(label(f), style: small)),
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(0, 4, 8, 4),
+                          child: Text(show(f, b), style: val.copyWith(color: AppColors.due, decoration: e.legacy ? null : TextDecoration.lineThrough)),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          child: Text(e.legacy ? '' : show(f, a), style: val.copyWith(color: AppColors.paid, fontWeight: FontWeight.w700)),
+                        ),
+                      ]),
+                ],
+              ),
+            ],
+            // what happened later – right where the entry was made
+            Wrap(children: [
+              if (deletedLater != null)
+                badge('${t('audit_deleted_later')}: ${_fmt(deletedLater.at)} · ${deletedLater.user}', AppColors.due, i: Icons.delete),
+              if (editsLater > 0) badge(t('audit_edited_later').replaceAll('{n}', '$editsLater'), AppColors.haldi, i: Icons.edit),
+            ]),
+            if (e.server != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  '${t('audit_server_time')}: ${_fmt(e.server)}${clockOff ? '  ⚠ ${t('audit_clock_off')}' : ''}',
+                  style: TextStyle(fontSize: 11, color: clockOff ? AppColors.due : scheme.onSurfaceVariant),
+                ),
+              ),
+            if (single && e.kind == 'voucher' && e.action != 'delete' && e.row['v_deleted'] == 0 && e == story.last)
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  icon: const Icon(Icons.open_in_new, size: 16),
+                  label: Text(t('audit_open_entry')),
+                  onPressed: () => VoucherScreen.edit(context, e.recordId),
+                ),
+              ),
+          ]),
         ),
-      ]),
+      ),
     );
   }
 

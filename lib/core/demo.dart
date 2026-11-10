@@ -91,6 +91,14 @@ Future<void> loadDemoData(VoucherService vs, LedgerRepo lr, StockRepo sr) async 
   await RecurringService(vs.db, vs.businessId).savePayment(vs, owner,
       ledgerId: interestPaid, payFromId: vs.sys('cash'), startMonth: today.substring(0, 7), amount: rs(5000), note: 'रमेश पाटील – कर्ज व्याज');
 
+  // बदल इतिहास examples: a bill corrected later, and a wrong जमा deleted
+  const counter = Actor(userId: 'staff', name: 'Counter (staff)', isOwner: false);
+  final fixMe = await vs.save(VoucherInput(type: VoucherType.sale, date: today, partyId: ajay, items: [ItemLine(items['U']!.id, 5, rs(300))]), counter);
+  await vs.save(VoucherInput(type: VoucherType.sale, date: today, partyId: ajay, items: [ItemLine(items['U']!.id, 8, rs(295))], narration: 'पोती 8 – दुरुस्त'),
+      owner, existingId: fixMe);
+  final wrong = await vs.save(VoucherInput(type: VoucherType.receipt, date: today, partyId: ajay, payLedgerId: vs.sys('cash'), amount: rs(2000)), counter);
+  await vs.delete(wrong, owner);
+
   // कर्मचारी: Raju, ₹12,000 a month, took ₹5,000 advance
   final raju = await lr.create(name: 'राजू पवार', nameEn: 'Raju Pawar', group: LedgerGroup.staff, phone: '9800000044');
   await lr.setStaffPay(raju, salary: rs(12000), cut: rs(2000));
