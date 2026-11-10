@@ -77,9 +77,12 @@ class _Ev {
   final DateTime? server; // server time (can't be set by a phone)
   final String user;
   final String title;
-  final Map<String, dynamic>? before;
-  final Map<String, dynamic>? after;
+  Map<String, dynamic>? before;
+  Map<String, dynamic>? after;
   final bool legacy;
+  /// "after" (or a new entry's details) rebuilt from the next record /
+  /// the entry as it is now – for history saved before the full log.
+  bool rebuilt = false;
   final Map<String, Object?> row;
   _Ev(this.id, this.recordId, this.kind, this.action, this.at, this.server, this.user, this.title, this.before, this.after,
       this.legacy, this.row);
@@ -101,11 +104,20 @@ class _AuditScreenState extends State<AuditScreen> {
       'WHERE a.business_id = ? ${single ? 'AND a.voucher_id = ?' : ''} ORDER BY a.at DESC LIMIT 3000',
       [app.businessId, if (single) widget.voucherId],
     );
-    return [
+    // names for rebuilding older history (it saved ids, not names)
+    final ledgerNames = {
+      for (final l in await app.db.getAll('SELECT id, name FROM ledgers WHERE business_id = ?', [app.businessId])) l['id'] as String: l['name'] as String
+    };
+    final itemNames = {
+      for (final i in await app.db.getAll('SELECT id, name FROM items WHERE business_id = ?', [app.businessId])) i['id'] as String: i['name'] as String
+    };
+    final events = [
       for (final r in rows)
         () {
           final snap = r['snapshot'] == null ? <String, dynamic>{} : jsonDecode(r['snapshot'] as String) as Map<String, dynamic>;
-          final legacy = snap.containsKey('voucher'); // history written before the full log
+          // history written before the full log: a full "before" copy of the
+          // entry (edit / delete) or nothing at all (create)
+          final legacy = snap.containsKey('voucher') || (r['snapshot'] == null && !snap.containsKey('kind'));
           return _Ev(
             r['id'] as String,
             (r['voucher_id'] as String?) ?? '',
@@ -115,14 +127,40 @@ class _AuditScreenState extends State<AuditScreen> {
             _time(r['received_at'] as String?),
             (r['user_name'] as String?) ?? '',
             (snap['title'] as String?) ?? '',
-            legacy ? _legacyBefore(snap) : (snap['before'] as Map?)?.cast<String, dynamic>(),
+            snap.containsKey('voucher') ? AuditLog.legacySummary(snap, ledgerNames, itemNames) : (snap['before'] as Map?)?.cast<String, dynamic>(),
             (snap['after'] as Map?)?.cast<String, dynamic>(),
             legacy,
             Map<String, Object?>.from(r),
           );
         }(),
     ];
+    // Older history only kept "before". The state right after a change is
+    // the "before" of the next change – or the entry as it is now.
+    final byRecord = <String, List<_Ev>>{};
+    for (final e in events) {
+      if (e.kind == 'voucher') (byRecord[e.recordId] ??= []).add(e);
+    }
+    for (final story in byRecord.values) {
+      if (!story.any((e) => e.legacy)) continue;
+      story.sort((a, b) => a.when.compareTo(b.when));
+      for (var i = 0; i < story.length; i++) {
+        final e = story[i];
+        if (!e.legacy || e.action == 'delete' || e.after != null) continue;
+        final next = i + 1 < story.length ? story[i + 1] : null;
+        Map<String, dynamic>? after = next?.before;
+        if (next == null && story.first.row['v_deleted'] == 0) {
+          after = (await app.vouchers.entrySummary(app.db, e.recordId)).map((k, v) => MapEntry(k, v?.toString()));
+        }
+        if (after != null) {
+          e.after = after;
+          e.rebuilt = true;
+        }
+      }
+    }
+    return events;
   }
+
+
 
   @override
   Widget build(BuildContext context) {
@@ -264,9 +302,10 @@ class _AuditScreenState extends State<AuditScreen> {
         ]));
       }
     }
-    final diff = e.legacy
+    final oldOnly = e.legacy && !e.rebuilt; // nothing to compare with
+    final diff = oldOnly
         ? <(String, String?, String?)>[for (final f in e.before?.keys ?? const <String>[]) (f, '${e.before![f] ?? ''}', null)]
-        : AuditLog.diff(e.before, e.after);
+        : AuditLog.diff(_norm(e.before), _norm(e.after));
     final isChange = const {'edit', 'status', 'hide', 'unhide'}.contains(e.action);
 
     Widget badge(String text, Color c, {IconData? i}) => Container(
@@ -307,6 +346,8 @@ class _AuditScreenState extends State<AuditScreen> {
                 '${e.row['v_created'] != null ? '  ·  ${t('audit_entry_made')}: ${_fmt(_time(e.row['v_created'] as String?))}${e.row['v_by'] != null ? ' (${e.row['v_by']})' : ''}' : ''}',
                 style: small,
               ),
+            if (e.rebuilt)
+              Text(t('audit_rebuilt'), style: TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: scheme.onSurfaceVariant)),
             if (rows.isNotEmpty) ...[
               const SizedBox(height: 6),
               Table(columnWidths: const {0: IntrinsicColumnWidth(), 1: FlexColumnWidth()}, children: rows),
@@ -328,11 +369,11 @@ class _AuditScreenState extends State<AuditScreen> {
                         Padding(padding: const EdgeInsets.fromLTRB(0, 4, 10, 4), child: Text(label(f), style: small)),
                         Padding(
                           padding: const EdgeInsets.fromLTRB(0, 4, 8, 4),
-                          child: Text(show(f, b), style: val.copyWith(color: AppColors.due, decoration: e.legacy ? null : TextDecoration.lineThrough)),
+                          child: Text(show(f, b), style: val.copyWith(color: AppColors.due, decoration: oldOnly ? null : TextDecoration.lineThrough)),
                         ),
                         Padding(
                           padding: const EdgeInsets.symmetric(vertical: 4),
-                          child: Text(e.legacy ? '' : show(f, a), style: val.copyWith(color: AppColors.paid, fontWeight: FontWeight.w700)),
+                          child: Text(oldOnly ? '' : show(f, a), style: val.copyWith(color: AppColors.paid, fontWeight: FontWeight.w700)),
                         ),
                       ]),
                 ],
@@ -382,14 +423,9 @@ class _AuditScreenState extends State<AuditScreen> {
     return '${d.day}/${d.month}/${d.year % 100} ${two(d.hour)}:${two(d.minute)}:${two(d.second)}';
   }
 
-  /// Entries changed before the full history: their saved "before" copy.
-  static Map<String, dynamic> _legacyBefore(Map<String, dynamic> snap) {
-    final v = snap['voucher'] as Map<String, dynamic>;
-    return {
-      'date': v['vdate'],
-      'amount': (v['amount'] as int? ?? 0) == 0 ? '' : Money.fmt(v['amount'] as int),
-      'paid': (v['paid'] as int? ?? 0) == 0 ? '' : Money.fmt(v['paid'] as int),
-      'narration': v['narration'],
-    };
-  }
+  /// Drop empty values and ids so only real differences show.
+  static Map<String, dynamic>? _norm(Map<String, dynamic>? m) =>
+      m == null ? null : {for (final e in m.entries) if (e.key != 'vno' && e.key != 'type' && e.value != null && '${e.value}'.isNotEmpty) e.key: '${e.value}'};
+
+
 }

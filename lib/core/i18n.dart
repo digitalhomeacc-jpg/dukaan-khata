@@ -372,6 +372,7 @@ const Map<String, (String, String)> _s = {
   'audit_st_active': ('चालू', 'active'),
   'audit_st_matched': ('जुळले', 'matched'),
   'audit_st_ignored': ('दुर्लक्ष', 'ignored'),
+  'audit_rebuilt': ('(जुन्या इतिहासावरून पुन्हा जुळवले – पुढच्या बदलाच्या / आताच्या नोंदीवरून)', '(rebuilt from older history – using the next change / the entry as it is now)'),
   'reg_simple': ('सोपे', 'Simple'),
   'reg_grid': ('रजिस्टर', 'Register'),
   'reg_movement': ('मालाचा हिशोब', 'Stock movement'),

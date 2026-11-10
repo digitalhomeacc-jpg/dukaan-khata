@@ -610,6 +610,38 @@ void main() {
     expect(AuditLog.diff(l.last['before'], l.last['after']).single, ('status', 'open', 'done'));
   });
 
+  test('older history (before-copy only) rebuilds exactly like today\'s records', () async {
+    final cust = await lr.create(name: 'Old Format', group: LedgerGroup.customer);
+    final w = items['W']!;
+    final id = await vs.save(
+        VoucherInput(type: VoucherType.sale, date: todayIso(), partyId: cust, payLedgerId: vs.sys('upi_h'), items: [ItemLine(w.id, 10, rs(280))],
+            hamali: rs(30), paid: rs(1000), narration: 'test', haste: 'मुलगा'),
+        owner);
+    // the copy the old history kept: voucher row + lines + items
+    Future<Map<String, dynamic>> oldCopy() async => {
+          'voucher': Map<String, Object?>.from(await db.get('SELECT * FROM vouchers WHERE id = ?', [id])),
+          'lines': [for (final l in await db.getAll('SELECT ledger_id, debit, credit FROM voucher_lines WHERE voucher_id = ? AND deleted = 0 ORDER BY id', [id])) Map<String, Object?>.from(l)],
+          'items': [for (final i in await db.getAll('SELECT item_id, qty, rate, amount FROM inventory_lines WHERE voucher_id = ? AND deleted = 0 ORDER BY id', [id])) Map<String, Object?>.from(i)],
+        };
+    final ledgers = {for (final l in await db.getAll('SELECT id, name FROM ledgers')) l['id'] as String: l['name'] as String};
+    final itemNames = {for (final i in await db.getAll('SELECT id, name FROM items')) i['id'] as String: i['name'] as String};
+    Map<String, String> norm(Map<String, dynamic> m) =>
+        {for (final e in m.entries) if (e.key != 'vno' && e.key != 'type' && e.value != null && '${e.value}'.isNotEmpty) e.key: '${e.value}'};
+    final rebuilt = norm(AuditLog.legacySummary(await oldCopy(), ledgers, itemNames));
+    final today = norm(await vs.entrySummary(db, id));
+    expect(rebuilt, today); // same entry → no false "changes"
+    // a real change (pay mode + qty) shows up
+    final before = await oldCopy();
+    await vs.save(
+        VoucherInput(type: VoucherType.sale, date: todayIso(), partyId: cust, payLedgerId: vs.sys('cash'), items: [ItemLine(w.id, 12, rs(280))],
+            hamali: rs(30), paid: rs(1000), narration: 'test', haste: 'मुलगा'),
+        owner,
+        existingId: id);
+    final d = AuditLog.diff(norm(AuditLog.legacySummary(before, ledgers, itemNames)), norm(await vs.entrySummary(db, id)));
+    expect(d.map((x) => x.$1), containsAll(['pay_mode', 'items', 'amount', 'postings']));
+    expect(d.firstWhere((x) => x.$1 == 'pay_mode').$2, 'फोनपे (H)');
+  });
+
   test('रोख मोजणी: short and extra cash go to रोख फरक, books then match the count', () async {
     const day = '2026-11-07';
     final cash = vs.sys('cash');
