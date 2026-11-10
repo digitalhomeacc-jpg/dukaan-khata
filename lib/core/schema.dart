@@ -176,7 +176,8 @@ const List<TableDef> appTables = [
     ColDef.t('user_id'),
     ColDef.t('user_name'),
     ColDef.t('at'),
-    ColDef.t('snapshot'), // JSON of the voucher before the change
+    ColDef.t('snapshot'), // JSON: kind, title, before, after
+    ColDef.t('received_at'), // set by the server when the change reached it (can't be altered by a phone)
   ], indexes: {
     'audit_voucher': ['voucher_id'],
   }),

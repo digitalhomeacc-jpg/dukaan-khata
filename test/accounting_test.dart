@@ -587,6 +587,21 @@ void main() {
     l = await log(w.id);
     expect(AuditLog.diff(l.single['before'], l.single['after']).single, ('sale_rate', '280', '290'));
 
+    // changes that don't touch the amount field are still caught
+    final rc = await vs.save(VoucherInput(type: VoucherType.receipt, date: todayIso(), partyId: cust, payLedgerId: vs.sys('cash'), amount: rs(1000)), owner);
+    await vs.save(VoucherInput(type: VoucherType.receipt, date: todayIso(), partyId: cust, payLedgerId: vs.sys('cash'), amount: rs(1000), discount: rs(20)), owner,
+        existingId: rc);
+    l = await log(rc);
+    expect(l.map((e) => e['action']), ['create', 'edit']); // discount only → still recorded
+    expect(AuditLog.diff(l[1]['before'], l[1]['after']).map((d) => d.$1), contains('postings'));
+    expect(l[1]['after']['postings'], contains('सूट दिली +20'));
+    final sb = await vs.save(VoucherInput(type: VoucherType.sale, date: todayIso(), partyId: cust, items: [ItemLine(w.id, 1, rs(2243))]), owner);
+    await vs.save(VoucherInput(type: VoucherType.sale, date: todayIso(), partyId: cust, items: [ItemLine(w.id, 1, rs(2243))], roundOff: -rs(3)), owner,
+        existingId: sb);
+    l = await log(sb);
+    expect(l.length, 2); // round off only → recorded
+    expect(l[0]['after']['postings'], isNotEmpty);
+
     // promise kept
     final p = await vs.save(VoucherInput(type: VoucherType.promise, date: todayIso(), partyId: cust, amount: rs(500)), owner);
     await vs.setPromiseStatus(p, 'done');

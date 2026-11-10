@@ -1,5 +1,6 @@
 import 'package:sqlite_async/sqlite_async.dart';
 
+import '../core/audit.dart';
 import '../core/ids.dart';
 import '../core/money.dart';
 import '../shared/statement_parser.dart';
@@ -115,6 +116,7 @@ class BankRepo {
       );
       if (cand != null) {
         await db.execute("UPDATE bank_lines SET voucher_id = ?, status = 'matched' WHERE id = ?", [cand['voucher_id'], l.id]);
+        await _logLine(l, 'open', 'matched', voucherId: cand['voucher_id'] as String?);
         n++;
       }
     }
@@ -190,9 +192,23 @@ class BankRepo {
       actor,
     );
     await db.execute("UPDATE bank_lines SET voucher_id = ?, status = 'matched' WHERE id = ?", [id, line.id]);
+    await _logLine(line, line.status, 'matched', voucherId: id);
     return id;
   }
 
-  Future<void> setStatus(BankLine line, String status) => db.execute(
-      'UPDATE bank_lines SET status = ?, voucher_id = ${status == 'open' ? 'NULL' : 'voucher_id'} WHERE id = ?', [status, line.id]);
+  Future<void> setStatus(BankLine line, String status) async {
+    await db.execute(
+        'UPDATE bank_lines SET status = ?, voucher_id = ${status == 'open' ? 'NULL' : 'voucher_id'} WHERE id = ?', [status, line.id]);
+    await _logLine(line, line.status, status);
+  }
+
+  /// बदल इतिहास: a statement line matched / ignored / reopened.
+  Future<void> _logLine(BankLine line, String before, String after, {String? voucherId}) => AuditLog.write(db,
+      businessId: businessId,
+      recordId: line.id,
+      action: 'status',
+      kind: 'bank',
+      title: '${line.date} · ${line.isIn ? '+' : '−'}${Money.fmt(line.amount)} · ${line.description}',
+      before: {'status': before},
+      after: {'status': after, 'voucher': ?voucherId});
 }

@@ -474,6 +474,13 @@ class VoucherService {
     );
     String money(Object? p) => (p as int? ?? 0) == 0 ? '' : Money.fmt(p as int);
     String q(num x) => x == x.roundToDouble() ? '${x.toInt()}' : '$x';
+    // every account the entry touches, so no money change (discount, round
+    // off, वराई, transporter fare, GST …) can slip past the history
+    final postings = await tx.getAll(
+      'SELECT l.name, vl.debit, vl.credit FROM voucher_lines vl JOIN ledgers l ON l.id = vl.ledger_id '
+      'WHERE vl.voucher_id = ? AND vl.deleted = 0 ORDER BY vl.id',
+      [id],
+    );
     return {
       'type': v['vtype'],
       'vno': v['vno'],
@@ -493,6 +500,13 @@ class VoucherService {
       'narration': v['narration'],
       'haste': v['haste'],
       'status': v['status'],
+      'transporter_fare': money(v['transporter_fare']),
+      'gst_rate': (v['gst_rate'] as int? ?? 0) == 0 ? '' : '${(v['gst_rate'] as int) / 100}%',
+      'gst_bill': (v['gst_bill_needed'] as int? ?? 0) == 1 ? '✓' : '',
+      'postings': [
+        for (final p in postings)
+          '${p['name']} ${(p['debit'] as int) > 0 ? '+${Money.fmt(p['debit'] as int)}' : '−${Money.fmt(p['credit'] as int)}'}'
+      ].join(', '),
     };
   }
 

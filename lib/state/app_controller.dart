@@ -312,6 +312,7 @@ class AppController extends ChangeNotifier {
     _buildServices();
     await loadBooks();
     actor = Actor(userId: 'owner', name: ownerName, isOwner: true);
+    await _logChange('shop', id, 'restore', name);
     stage = Stage.ready;
     notifyListeners();
   }

@@ -30,6 +30,10 @@ const _labels = {
   'transport': 'transport',
   'transporter': 'transporter',
   'gst': 'GST',
+  'gst_rate': 'gst_rate_label',
+  'gst_bill': 'gst_bill_needed',
+  'transporter_fare': 'fare_to_transporter',
+  'postings': 'audit_postings',
   'ref': 'ref',
   'narration': 'narration',
   'haste': 'haste',
@@ -110,7 +114,7 @@ class _AuditScreenState extends State<AuditScreen> {
             tables: const ['audit_log'],
             reloadKey: kind,
             load: () async => (await app.db.getAll(
-              'SELECT a.*, v.vtype, v.vno, v.vdate, v.amount, p.name AS party FROM audit_log a '
+              'SELECT a.*, v.vtype, v.vno, v.vdate, v.amount, v.created_at AS v_created, v.created_by AS v_by, p.name AS party FROM audit_log a '
               'LEFT JOIN vouchers v ON v.id = a.voucher_id LEFT JOIN ledgers p ON p.id = v.party_id '
               'WHERE a.business_id = ? ${widget.voucherId != null ? 'AND a.voucher_id = ?' : ''} ORDER BY a.at DESC LIMIT 1000',
               [app.businessId, if (widget.voucherId != null) widget.voucherId],
@@ -160,8 +164,16 @@ class _AuditScreenState extends State<AuditScreen> {
                     }
                   }
                 }
-                final at = DateTime.parse(r['at'] as String).toLocal();
-                final when = '${at.day}/${at.month}/${at.year % 100} ${at.hour}:${at.minute.toString().padLeft(2, '0')}';
+                final at = _time(r['at'] as String?);
+                final when = _fmt(at);
+                // the server's own time for this change (a phone clock can be wrong)
+                final server = _time(r['received_at'] as String?);
+                final clockOff = at != null && server != null && server.difference(at).inMinutes.abs() > 10;
+                // when and by whom the entry itself was first made
+                final made = k == 'voucher' && r['v_created'] != null
+                    ? '${t('audit_entry_made')}: ${_fmt(_time(r['v_created'] as String?))}${r['v_by'] != null ? ' · ${r['v_by']}' : ''}'
+                        '${r['vdate'] != null ? ' · ${t('date')} ${shortDate(r['vdate'] as String)}' : ''}'
+                    : null;
                 final head = '${r['user_name'] ?? ''} · ${t('audit_$action') == 'audit_$action' ? action : t('audit_$action')}';
                 if (search.isNotEmpty &&
                     !normalizeDigits('$head $what ${lines.join(' ')}').toLowerCase().contains(search)) {
@@ -201,6 +213,12 @@ class _AuditScreenState extends State<AuditScreen> {
                           ]),
                           Text(head, style: TextStyle(fontSize: 12, color: color, fontWeight: FontWeight.w600)),
                           for (final l in lines) Text(l, style: const TextStyle(fontSize: 13)),
+                          if (made != null) Text(made, style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant)),
+                          if (server != null)
+                            Text(
+                              '${t('audit_server_time')}: ${_fmt(server)}${clockOff ? '  ⚠ ${t('audit_clock_off')}' : ''}',
+                              style: TextStyle(fontSize: 11, color: clockOff ? AppColors.due : scheme.onSurfaceVariant),
+                            ),
                         ]),
                       ),
                     ]),
@@ -215,6 +233,21 @@ class _AuditScreenState extends State<AuditScreen> {
         ),
       ]),
     );
+  }
+
+  /// ISO / Postgres time text → local time ("2026-11-10 03:05:12.1+00" too).
+  static DateTime? _time(String? s) {
+    if (s == null || s.isEmpty) return null;
+    var x = s.trim().replaceFirst(' ', 'T');
+    if (RegExp(r'[+-]\d\d$').hasMatch(x)) x = '$x:00';
+    return DateTime.tryParse(x)?.toLocal();
+  }
+
+  /// 10/11/26 08:25:43 – to the second.
+  static String _fmt(DateTime? d) {
+    if (d == null) return '';
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${d.day}/${d.month}/${d.year % 100} ${two(d.hour)}:${two(d.minute)}:${two(d.second)}';
   }
 
   /// Entries changed before the full history: their saved "before" copy.
