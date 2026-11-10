@@ -672,10 +672,28 @@ class _KhataTable extends StatelessWidget {
                 ),
                 cell(r.debit == 0 ? '' : Money.fmt(r.debit), a: TextAlign.right, style: small),
                 cell(r.credit == 0 ? '' : Money.fmt(r.credit), a: TextAlign.right, style: small),
-                cell('—', a: TextAlign.right, flex: 3, style: small),
+                // running balance of the old entries only (not counted anywhere)
+                cell(bal(r.balance), a: TextAlign.right, flex: 3, style: small?.copyWith(fontStyle: FontStyle.italic)),
               ]),
             ),
           ),
+        // does the old khata add up to the opening balance?
+        Builder(builder: (context) {
+          final oldTotal = st.references.last.balance;
+          final opening = st.ledger.openingBalance;
+          final diff = opening - oldTotal;
+          final ok = diff == 0;
+          return Container(
+            width: double.infinity,
+            color: (ok ? AppColors.paid : AppColors.haldi).withValues(alpha: 0.10),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            child: Text(
+              '${t('old_total')}: ${bal(oldTotal)}  ·  ${t('opening_balance')}: ${bal(opening)}  ·  '
+              '${ok ? '✓ ${t('old_matches')}' : '${t('old_diff')} ${bal(diff)}'}',
+              style: small?.copyWith(fontWeight: FontWeight.w700, color: ok ? AppColors.paid : AppColors.haldi),
+            ),
+          );
+        }),
       ],
       Row(children: [
         dateCell(st.from == null ? shortDate(Books.start) : shortDate(st.from!)),

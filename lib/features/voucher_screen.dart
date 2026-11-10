@@ -601,7 +601,14 @@ class _VoucherScreenState extends State<VoucherScreen> {
       await app.vouchers.save(input, app.actor, existingId: editing?.id);
       if (!mounted) return;
       var msg = t('saved');
-      if (party != null && party!.group.isParty) {
+      if (isHistory && party != null) {
+        // old entries change nothing – show how they add up towards the opening balance
+        final st = await app.ledgers.statement(party!.id);
+        final run = st.references.isEmpty ? 0 : st.references.last.balance;
+        String b(int x) => '₹${Money.fmt(x, abs: true)} ${x >= 0 ? t('they_owe') : t('we_owe')}';
+        msg += ' · ${t('old_total')}: ${b(run)} · ${t('opening_balance')}: ${b(st.ledger.openingBalance)}'
+            '${run == st.ledger.openingBalance ? ' ✓' : ''}';
+      } else if (party != null && party!.group.isParty) {
         final bal = await app.ledgers.balanceAt(party!.id);
         msg += ' · ${party!.name}: ${t('new_balance')} ₹${Money.fmt(bal, abs: true)} ${bal >= 0 ? t('they_owe') : t('we_owe')}';
       }

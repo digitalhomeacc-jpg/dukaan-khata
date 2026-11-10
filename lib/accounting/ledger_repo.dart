@@ -375,23 +375,29 @@ class LedgerRepo {
       [ledgerId],
     );
     final refs = <StatementRow>[];
+    // running balance of the old entries alone – shown to see how the
+    // opening balance came about; it is never added to any figure
+    var oldRun = 0;
     for (final r in refRows) {
-      final kind = ((r['pay_ledger_id'] as String?) ?? '').replaceFirst('hist:', '');
       final amount = (r['amount'] as int?) ?? 0;
       final paid = (r['paid'] as int?) ?? 0;
+      var kind = ((r['pay_ledger_id'] as String?) ?? '').replaceFirst('hist:', '');
+      // entries saved before the kind was stored: money only = received, else goods given
+      if (!const {'sale', 'purchase', 'received', 'paid'}.contains(kind)) kind = amount == 0 && paid > 0 ? 'received' : 'sale';
       final (int d, int c) = switch (kind) {
         'purchase' => (paid, amount),
         'received' => (0, amount == 0 ? paid : amount),
         'paid' => (amount, 0),
         _ => (amount, paid),
       };
+      oldRun += d - c;
       final items = _cleanItems(r['items'] as String?);
       final parts = [
         if (items != null) items,
         if ((r['narration'] as String?)?.isNotEmpty ?? false) r['narration'] as String,
       ];
       refs.add(StatementRow(r['id'] as String, r['vdate'] as String, VoucherType.history, (r['vno'] as int?) ?? 0,
-          parts.join(' · '), d, c, 0, null,
+          parts.join(' · '), d, c, oldRun, null,
           hamali: (r['hamali'] as int?) ?? 0, transport: (r['transport'] as int?) ?? 0, kind: kind,
           haste: r['haste'] as String?));
     }

@@ -659,6 +659,19 @@ void main() {
     expect(VoucherService.enteredToday(DateTime.now().toUtc().toIso8601String()), isTrue);
   });
 
+  test('old entries show their own running balance, matching the opening – and change nothing', () async {
+    final cust = await lr.create(name: 'Running', group: LedgerGroup.customer, openingBalance: rs(12500));
+    const d = '1999-10-01';
+    await vs.save(VoucherInput(type: VoucherType.history, date: d, partyId: cust, amount: rs(10000)), owner); // goods 10,000
+    await vs.save(VoucherInput(type: VoucherType.history, date: '1999-10-05', partyId: cust, amount: rs(5000), paid: rs(1000)), owner);
+    await vs.save(VoucherInput(type: VoucherType.history, date: '1999-10-09', partyId: cust, payLedgerId: 'hist:received', paid: rs(1500)), owner);
+    final st = await lr.statement(cust);
+    expect(st.references.map((r) => r.balance), [rs(10000), rs(14000), rs(12500)]);
+    expect(st.references.last.balance, st.ledger.openingBalance); // adds up to the opening
+    expect(await lr.balanceAt(cust), rs(12500)); // real balance untouched
+    expect(st.closing, rs(12500));
+  });
+
   test('रोख मोजणी: short and extra cash go to रोख फरक, books then match the count', () async {
     const day = '2026-11-07';
     final cash = vs.sys('cash');
