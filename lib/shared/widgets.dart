@@ -450,3 +450,79 @@ class SectionTitle extends StatelessWidget {
         child: Text(text, style: Theme.of(context).textTheme.titleSmall?.copyWith(color: Theme.of(context).colorScheme.primary)),
       );
 }
+
+/// क्लाउड जागा: how much of the free 500 MB database is used.
+class StorageMeter extends StatelessWidget {
+  final bool compact; // home-screen warning style
+  const StorageMeter({super.key, this.compact = false});
+
+  static String mb(int b) => b >= 1024 * 1024 ? '${(b / 1024 / 1024).toStringAsFixed(b < 10 * 1024 * 1024 ? 1 : 0)} MB' : '${(b / 1024).round()} KB';
+
+  @override
+  Widget build(BuildContext context) {
+    final app = App.of(context);
+    final t = app.t;
+    final s = app.storage;
+    final scheme = Theme.of(context).colorScheme;
+    final f = s?.fraction ?? 0;
+    final color = f >= 0.9 ? Colors.red.shade700 : f >= 0.7 ? Colors.orange.shade800 : Colors.green.shade700;
+    if (compact) {
+      return Material(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(14),
+        child: ListTile(
+          key: const Key('storage_warning'),
+          leading: Icon(Icons.storage, color: color),
+          title: Text(t('storage_warn').replaceAll('{p}', '${(f * 100).round()}'), style: const TextStyle(fontWeight: FontWeight.w700)),
+          subtitle: Text(t('storage_warn_sub')),
+        ),
+      );
+    }
+    return Card(
+      margin: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Icon(Icons.storage, color: color, size: 20),
+            const SizedBox(width: 8),
+            Expanded(child: Text(t('storage_title'), style: const TextStyle(fontWeight: FontWeight.w700))),
+            IconButton(
+              tooltip: t('refresh'),
+              icon: const Icon(Icons.refresh, size: 20),
+              onPressed: () => app.refreshStorage(),
+            ),
+          ]),
+          if (s == null)
+            TextButton(onPressed: () => app.refreshStorage(), child: Text(t('storage_check')))
+          else ...[
+            ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: LinearProgressIndicator(
+                value: f.clamp(0.0, 1.0),
+                minHeight: 12,
+                color: color,
+                backgroundColor: scheme.surfaceContainerHighest,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              '${mb(s.usedBytes)} / 500 MB  ·  ${(f * 100).toStringAsFixed(f < 0.1 ? 1 : 0)}%${s.exact ? '' : '  (${t('storage_estimate')})'}',
+              style: TextStyle(fontWeight: FontWeight.w700, color: color),
+            ),
+            Text(
+              t('storage_detail')
+                  .replaceAll('{entries}', '${s.entries}')
+                  .replaceAll('{hist}', '${s.historyRows}')
+                  .replaceAll('{hsize}', mb(s.historyBytes)),
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            if (!s.exact && app.cloud)
+              Text(t('storage_need_sql'), style: Theme.of(context).textTheme.bodySmall?.copyWith(fontStyle: FontStyle.italic)),
+            if (f >= 0.7) Text(t('storage_warn_sub'), style: TextStyle(fontSize: 12, color: color, fontWeight: FontWeight.w600)),
+          ],
+        ]),
+      ),
+    );
+  }
+}

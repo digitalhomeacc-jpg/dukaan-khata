@@ -61,6 +61,11 @@ class HomeScreen extends StatelessWidget {
                 ),
               ),
             ],
+            // free database 70 % full: warn the owner well in advance
+            if (app.actor.isOwner && (app.storage?.fraction ?? 0) >= 0.7) ...[
+              const SizedBox(height: 10),
+              const StorageMeter(compact: true),
+            ],
             if (monthly > 0) ...[
               const SizedBox(height: 10),
               Material(

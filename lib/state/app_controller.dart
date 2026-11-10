@@ -319,6 +319,34 @@ class AppController extends ChangeNotifier {
 
   Future<Uint8List> exportBackup() => Backup.export(db, businessId!);
 
+  // ---------------- storage meter (free plan: 500 MB database) ----------------
+  static const freeDbBytes = 500 * 1024 * 1024;
+  StorageInfo? storage;
+
+  /// Database size: exact from the server (migration 0009), else an estimate
+  /// from this device's copy. Kept for the session; the home screen warns at 70 %.
+  Future<StorageInfo> refreshStorage() async {
+    int? server;
+    if (cloud) {
+      try {
+        server = ((await _sb.rpc('db_size')) as num).toInt();
+      } catch (_) {/* SQL 0009 not run yet, or offline */}
+    }
+    final pages = (await db.get('PRAGMA page_count'))['page_count'] as int? ?? 0;
+    final pageSize = (await db.get('PRAGMA page_size'))['page_size'] as int? ?? 4096;
+    final hist = await db.get('SELECT COUNT(*) AS n, COALESCE(SUM(LENGTH(snapshot)), 0) AS b FROM audit_log');
+    final entries = await db.get('SELECT COUNT(*) AS n FROM vouchers WHERE deleted = 0');
+    storage = StorageInfo(
+      serverBytes: server,
+      localBytes: pages * pageSize,
+      historyBytes: (hist['b'] as num).toInt(),
+      historyRows: hist['n'] as int,
+      entries: entries['n'] as int,
+    );
+    notifyListeners();
+    return storage!;
+  }
+
   /// PIN unlock. Local mode: owner PIN → owner, staff PIN → staff.
   /// Cloud mode: device PIN only (role comes from the server membership).
   bool unlock(String pin) {
@@ -477,6 +505,12 @@ class AppController extends ChangeNotifier {
 
   Future<void> _connectSync() async {
     await db.connect(connector: SupabaseConnector(_sb));
+    // storage meter: check once a session, after the first sync has settled
+    Future.delayed(const Duration(seconds: 30), () async {
+      try {
+        if (businessId != null) await refreshStorage();
+      } catch (_) {}
+    });
     _statusSub ??= db.statusStream.listen((s) {
       syncStatus = s;
       notifyListeners();
@@ -524,4 +558,20 @@ class App extends InheritedNotifier<AppController> {
 
   static AppController of(BuildContext context) => context.dependOnInheritedWidgetOfExactType<App>()!.notifier!;
   static AppController read(BuildContext context) => context.getInheritedWidgetOfExactType<App>()!.notifier!;
+}
+
+/// How full the free database is.
+class StorageInfo {
+  final int? serverBytes; // exact, from Supabase
+  final int localBytes; // this device's copy
+  final int historyBytes; // the change history's share (text size)
+  final int historyRows;
+  final int entries;
+  StorageInfo({this.serverBytes, required this.localBytes, required this.historyBytes, required this.historyRows, required this.entries});
+
+  /// Postgres keeps rows and indexes larger than SQLite, and a fresh Supabase
+  /// project already uses ~30 MB for its own tables – so the estimate is generous.
+  int get usedBytes => serverBytes ?? (localBytes * 2 + 30 * 1024 * 1024);
+  bool get exact => serverBytes != null;
+  double get fraction => usedBytes / AppController.freeDbBytes;
 }

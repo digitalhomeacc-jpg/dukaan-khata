@@ -63,6 +63,8 @@ class SettingsScreen extends StatelessWidget {
           onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ReportsScreen())),
         ),
         const Divider(),
+        // क्लाउड जागा – the free database fills slowly over the years
+        if (owner && app.cloud) const StorageMeter(),
         SectionTitle(t('settings')),
         ListTile(
           leading: const Icon(Icons.translate),
