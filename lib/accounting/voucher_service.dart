@@ -1,7 +1,7 @@
-import 'dart:convert';
 
 import 'package:sqlite_async/sqlite_async.dart';
 
+import '../core/audit.dart';
 import '../core/ids.dart';
 import '../core/money.dart';
 import '../core/seed.dart';
@@ -328,10 +328,11 @@ class VoucherService {
       final now = nowIso();
       String id;
       int version = 1;
+      Map<String, Object?>? before;
       if (existingId != null) {
         final old = await tx.get('SELECT * FROM vouchers WHERE id = ?', [existingId]);
         _checkEditable(actor, old['vdate'] as String, deleting: false);
-        await _audit(tx, existingId, 'edit', actor, old);
+        before = await entrySummary(tx, existingId); // बदल इतिहास: what it was
         await tx.execute('DELETE FROM voucher_lines WHERE voucher_id = ?', [existingId]);
         await tx.execute('DELETE FROM inventory_lines WHERE voucher_id = ?', [existingId]);
         version = ((old['version'] as int?) ?? 1) + 1;
@@ -362,7 +363,6 @@ class VoucherService {
             _paidFor(v, total), v.narration, v.refNo, v.gstBillNeeded ? 1 : 0, ..._charges(v), actor.name, now, now
           ],
         );
-        await _audit(tx, id, 'create', actor, null);
       }
       // Line ids are derived from the voucher id, so an edit made on two
       // devices at once replaces the same rows instead of adding duplicates.
@@ -390,6 +390,17 @@ class VoucherService {
           ['$id:I${n++}', businessId, id, it.itemId, it.qty.abs(), goodsLoan ? 0 : it.rate, goodsLoan ? 0 : it.amount.abs(), d, v.date],
         );
       }
+      // बदल इतिहास: every new entry and every edit, field by field
+      final after = await entrySummary(tx, id);
+      await AuditLog.write(tx,
+          businessId: businessId,
+          recordId: id,
+          action: before == null ? 'create' : 'edit',
+          kind: 'voucher',
+          title: _entryTitle(after),
+          before: before,
+          after: after,
+          by: actor);
       return id;
     });
   }
@@ -421,7 +432,9 @@ class VoucherService {
     await db.writeTransaction((tx) async {
       final old = await tx.get('SELECT * FROM vouchers WHERE id = ?', [id]);
       _checkEditable(actor, old['vdate'] as String, deleting: true);
-      await _audit(tx, id, 'delete', actor, old);
+      final before = await entrySummary(tx, id);
+      await AuditLog.write(tx,
+          businessId: businessId, recordId: id, action: 'delete', kind: 'voucher', title: _entryTitle(before), before: before, by: actor);
       await tx.execute('UPDATE vouchers SET deleted = 1, updated_at = ? WHERE id = ?', [nowIso(), id]);
       await tx.execute('UPDATE voucher_lines SET deleted = 1 WHERE voucher_id = ?', [id]);
       await tx.execute('UPDATE inventory_lines SET deleted = 1 WHERE voucher_id = ?', [id]);
@@ -445,31 +458,62 @@ class VoucherService {
     return (r['n'] as int) + 1;
   }
 
-  Future<void> _audit(SqliteWriteContext tx, String voucherId, String action, Actor actor,
-      Map<String, Object?>? snapshot) async {
-    String? snap;
-    if (snapshot != null) {
-      final lines = await tx.getAll(
-          'SELECT ledger_id, debit, credit FROM voucher_lines WHERE voucher_id = ?', [voucherId]);
-      final items = await tx.getAll(
-          'SELECT item_id, qty, rate, amount FROM inventory_lines WHERE voucher_id = ?', [voucherId]);
-      snap = jsonEncode({
-        'voucher': Map<String, Object?>.from(snapshot),
-        'lines': [for (final l in lines) Map<String, Object?>.from(l)],
-        'items': [for (final i in items) Map<String, Object?>.from(i)],
-      });
-    }
-    await tx.execute(
-      'INSERT INTO audit_log (id, business_id, voucher_id, action, user_id, user_name, at, snapshot) '
-      'VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      [newId(), businessId, voucherId, action, actor.userId, actor.name, nowIso(), snap],
+  /// Readable summary of an entry for the change history (field → text).
+  Future<Map<String, Object?>> entrySummary(SqliteReadContext tx, String id) async {
+    final v = await tx.getOptional(
+      'SELECT v.*, p.name AS party_name, pl.name AS pay_name, tr.name AS transporter_name FROM vouchers v '
+      'LEFT JOIN ledgers p ON p.id = v.party_id LEFT JOIN ledgers pl ON pl.id = v.pay_ledger_id '
+      'LEFT JOIN ledgers tr ON tr.id = v.transporter_id WHERE v.id = ?',
+      [id],
     );
+    if (v == null) return {};
+    final items = await tx.getAll(
+      'SELECT i.name, il.qty, il.rate, il.amount FROM inventory_lines il JOIN items i ON i.id = il.item_id '
+      'WHERE il.voucher_id = ? AND il.deleted = 0 ORDER BY il.id',
+      [id],
+    );
+    String money(Object? p) => (p as int? ?? 0) == 0 ? '' : Money.fmt(p as int);
+    String q(num x) => x == x.roundToDouble() ? '${x.toInt()}' : '$x';
+    return {
+      'type': v['vtype'],
+      'vno': v['vno'],
+      'date': v['vdate'],
+      'party': v['party_name'],
+      'amount': money(v['amount']),
+      'paid': money(v['paid']),
+      'pay_mode': v['pay_name'],
+      'items': [
+        for (final i in items) '${i['name']} ${q(i['qty'] as num)}${(i['rate'] as int) > 0 ? '×${Money.fmt(i['rate'] as int)}' : ''}'
+      ].join(', '),
+      'hamali': money(v['hamali']),
+      'transport': money(v['transport']),
+      'transporter': v['transporter_name'],
+      'gst': money(v['gst']),
+      'ref': v['ref_no'],
+      'narration': v['narration'],
+      'haste': v['haste'],
+      'status': v['status'],
+    };
   }
+
+  static String _entryTitle(Map<String, Object?> s) => '${s['type'] ?? ''}|${s['vno'] ?? ''}|${s['party'] ?? ''}';
+
 
   /// Loads a voucher with its item lines (for editing / bill view).
   /// Payment promise kept / broken / reopened. Anyone may record the outcome.
-  Future<void> setPromiseStatus(String id, String status) => db.execute(
-      "UPDATE vouchers SET status = ?, updated_at = ? WHERE id = ? AND vtype = 'promise'", [status, nowIso(), id]);
+  Future<void> setPromiseStatus(String id, String status) => setStatusLogged(id, status, onlyType: 'promise');
+
+  /// Changes an entry's status (promise kept, booking closed, month charged …)
+  /// and writes it to the change history.
+  Future<void> setStatusLogged(String id, String status, {String? onlyType}) async {
+    final before = await entrySummary(db, id);
+    await db.execute(
+        'UPDATE vouchers SET status = ?, updated_at = ? WHERE id = ?${onlyType == null ? '' : ' AND vtype = ?'}',
+        [status, nowIso(), id, if (onlyType != null) onlyType]);
+    final after = await entrySummary(db, id);
+    await AuditLog.write(db,
+        businessId: businessId, recordId: id, action: 'status', kind: 'voucher', title: _entryTitle(after), before: before, after: after);
+  }
 
   /// Old entries used to move the khata; now they are reference only.
   /// Detaches any lines such entries still have (run by the owner).

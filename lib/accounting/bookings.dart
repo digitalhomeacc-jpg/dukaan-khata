@@ -1,6 +1,5 @@
 import 'package:sqlite_async/sqlite_async.dart';
 
-import '../core/ids.dart';
 import '../core/money.dart';
 import 'models.dart';
 import 'voucher_service.dart';
@@ -175,6 +174,6 @@ class BookingService {
     return id;
   }
 
-  Future<void> setClosed(String id, bool closed) => db.execute(
-      "UPDATE vouchers SET status = ?, updated_at = ? WHERE id = ? AND vtype = 'booking'", [closed ? 'closed' : 'open', nowIso(), id]);
+  Future<void> setClosed(String id, bool closed) =>
+      VoucherService(db, businessId).setStatusLogged(id, closed ? 'closed' : 'open', onlyType: 'booking');
 }

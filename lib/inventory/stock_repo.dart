@@ -2,7 +2,9 @@ import 'package:sqlite_async/sqlite_async.dart';
 
 import '../accounting/models.dart';
 import '../accounting/voucher_service.dart' show goodsOpeningMarker;
+import '../core/audit.dart';
 import '../core/ids.dart';
+import '../core/money.dart';
 
 class StockMove {
   final String voucherId;
@@ -117,18 +119,49 @@ class StockRepo {
         [newIdV, businessId, name.trim(), n(nameEn), category, unit, n(shortCode)?.toUpperCase(), saleRate, purchaseRate,
           openingQty, openingRate, lowStock, order['o'], nowIso()],
       );
+      await _log(newIdV, 'create', null, await _snap(newIdV));
       return newIdV;
     }
+    final before = await _snap(id);
     await db.execute(
       'UPDATE items SET name=?, name_en=?, category=?, unit=?, short_code=?, sale_rate=?, purchase_rate=?, '
       'opening_qty=?, opening_rate=?, low_stock=? WHERE id=?',
       [name.trim(), n(nameEn), category, unit, n(shortCode)?.toUpperCase(), saleRate, purchaseRate, openingQty,
         openingRate, lowStock, id],
     );
+    await _log(id, 'edit', before, await _snap(id));
     return id;
   }
 
-  Future<void> setArchived(String id, bool v) => db.execute('UPDATE items SET archived = ? WHERE id = ?', [v ? 1 : 0, id]);
+  Future<void> setArchived(String id, bool v) async {
+    final before = await _snap(id);
+    await db.execute('UPDATE items SET archived = ? WHERE id = ?', [v ? 1 : 0, id]);
+    await _log(id, v ? 'hide' : 'unhide', before, await _snap(id));
+  }
+
+  // ---- बदल इतिहास for items
+  Future<Map<String, Object?>> _snap(String id) async {
+    final r = await db.getOptional('SELECT * FROM items WHERE id = ?', [id]);
+    if (r == null) return {};
+    String m(Object? p) => (p as int? ?? 0) == 0 ? '' : Money.fmt(p as int);
+    String q(Object? x) => (x as num? ?? 0) == 0 ? '' : '$x';
+    return {
+      'name': r['name'],
+      'name_en': r['name_en'],
+      'category': r['category'],
+      'unit': r['unit'],
+      'short_code': r['short_code'],
+      'sale_rate': m(r['sale_rate']),
+      'purchase_rate': m(r['purchase_rate']),
+      'opening_qty': q(r['opening_qty']),
+      'opening_rate': m(r['opening_rate']),
+      'low_stock': q(r['low_stock']),
+      'hidden': (r['archived'] as int? ?? 0) == 1 ? '✓' : '',
+    };
+  }
+
+  Future<void> _log(String id, String action, Map<String, Object?>? before, Map<String, Object?>? after) => AuditLog.write(db,
+      businessId: businessId, recordId: id, action: action, kind: 'item', title: '${(after ?? before)?['name'] ?? ''}', before: before, after: after);
 
   Future<double> stockAt(String itemId, String date, {bool before = false}) async {
     final r = await db.get(

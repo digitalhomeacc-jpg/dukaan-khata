@@ -269,7 +269,7 @@ class Reports {
       for (final r in book.rows) {
         rows.add([
           shortDate(book.date),
-          '${r.particulars.isNotEmpty ? r.particulars : tr(r.type == VoucherType.sale ? 'cash_sale' : 'vt_${r.type.code}')}${r.narration != null && r.narration != r.particulars ? ' · ${r.narration}' : ''}',
+          '${r.varhai ? '${tr('varhai')}${r.particulars.isNotEmpty ? ' · ${r.particulars}' : ''}' : r.particulars.isNotEmpty ? r.particulars : tr(r.type == VoucherType.sale ? 'cash_sale' : r.type == VoucherType.purchase ? 'cash_purchase' : 'vt_${r.type.code}')}${r.narration != null && r.narration != r.particulars ? ' · ${r.narration}' : ''}',
           r.code ?? '',
           r.inflow == 0 ? '' : Money.fmt(r.inflow),
           r.outflow == 0 ? '' : Money.fmt(r.outflow),

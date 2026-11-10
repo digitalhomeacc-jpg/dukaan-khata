@@ -126,9 +126,8 @@ class RecurringService {
     return id;
   }
 
-  Future<void> setStopped(String id, bool stopped, {String? lastCharged}) => db.execute(
-      'UPDATE vouchers SET status = ?, updated_at = ? WHERE id = ?',
-      [stopped ? 'stopped' : (lastCharged == null ? 'active' : 'active:$lastCharged'), nowIso(), id]);
+  Future<void> setStopped(String id, bool stopped, {String? lastCharged}) =>
+      VoucherService(db, businessId).setStatusLogged(id, stopped ? 'stopped' : (lastCharged == null ? 'active' : 'active:$lastCharged'));
 
   /// Puts one month's charge on the khata (a sale bill on credit, dated the
   /// 1st of that month) and marks the month done.
@@ -179,6 +178,5 @@ class RecurringService {
   }
 
   /// Skip a month without charging (e.g. shop closed).
-  Future<void> skip(Recurring r, String month) =>
-      db.execute("UPDATE vouchers SET status = ?, updated_at = ? WHERE id = ?", ['active:$month', nowIso(), r.id]);
+  Future<void> skip(Recurring r, String month) => VoucherService(db, businessId).setStatusLogged(r.id, 'active:$month');
 }

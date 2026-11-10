@@ -15,6 +15,7 @@ import '../accounting/interest.dart';
 import '../accounting/recurring.dart';
 import '../accounting/reports.dart';
 import '../accounting/voucher_service.dart';
+import '../core/audit.dart';
 import '../core/backup.dart';
 import '../core/config.dart';
 import '../core/demo.dart';
@@ -38,7 +39,13 @@ class AppController extends ChangeNotifier {
 
   String? businessId;
   String businessName = '';
-  Actor actor = const Actor(userId: 'local', name: '', isOwner: false);
+  Actor _actor = const Actor(userId: 'local', name: '', isOwner: false);
+  Actor get actor => _actor;
+  /// Whoever unlocked the app – every change in the history is signed with it.
+  set actor(Actor a) {
+    _actor = a;
+    AuditLog.actor = a;
+  }
   SyncStatus? syncStatus;
   StreamSubscription<SyncStatus>? _statusSub;
 
@@ -213,13 +220,36 @@ class AppController extends ChangeNotifier {
     required String booksStart,
     required int fyStartMonth,
   }) async {
+    final before = await _shopSnap();
     await db.execute(
       'UPDATE businesses SET name = ?, name_en = ?, address = ?, phone = ?, gstin = ?, books_start = ?, fy_start_month = ? WHERE id = ?',
       [name, nameEn.trim().isEmpty ? null : nameEn.trim(), address, phone, gstin.toUpperCase(), booksStart, fyStartMonth, businessId],
     );
     await _prefs.setString('business_name', name);
     businessName = name;
+    await AuditLog.write(db,
+        businessId: businessId!, recordId: businessId!, action: 'edit', kind: 'shop', title: name, before: before, after: await _shopSnap());
     await loadBooks();
+  }
+
+  Future<Map<String, Object?>> _shopSnap() async {
+    final r = await db.getOptional('SELECT * FROM businesses WHERE id = ?', [businessId]);
+    if (r == null) return {};
+    return {
+      'name': r['name'],
+      'name_en': r['name_en'],
+      'address': r['address'],
+      'phone': r['phone'],
+      'gstin': r['gstin'],
+      'books_start': r['books_start'],
+      'fy_start_month': r['fy_start_month'],
+    };
+  }
+
+  /// One-line history note for changes that are not entries / accounts / items.
+  Future<void> _logChange(String kind, String recordId, String action, String what) async {
+    if (businessId == null) return;
+    await AuditLog.write(db, businessId: businessId!, recordId: recordId, action: action, kind: kind, title: what);
   }
 
   void _setActorFromPrefs({required bool owner}) {
@@ -314,6 +344,15 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> setPins({String? ownerPin, String? staffPin, String? staffName, String? devicePin}) async {
+    // the history notes that a PIN changed – never the PIN itself
+    if (businessId != null && [ownerPin, staffPin, devicePin].any((p) => p != null && p.isNotEmpty) || staffName != null) {
+      await _logChange('user', businessId ?? '', 'pin', [
+        if (ownerPin?.isNotEmpty ?? false) 'owner PIN',
+        if (staffPin?.isNotEmpty ?? false) 'staff PIN',
+        if (devicePin?.isNotEmpty ?? false) 'device PIN',
+        if (staffName != null) 'staff name: $staffName',
+      ].join(', '));
+    }
     if (ownerPin != null && ownerPin.isNotEmpty) await _prefs.setString('owner_pin', ownerPin);
     if (staffPin != null) {
       staffPin.isEmpty ? await _prefs.remove('staff_pin') : await _prefs.setString('staff_pin', staffPin);
@@ -327,6 +366,7 @@ class AppController extends ChangeNotifier {
   bool get hasStaffPin => _prefs.getString('staff_pin') != null;
 
   Future<void> renameBusiness(String name) async {
+    await _logChange('shop', businessId ?? '', 'edit', '$businessName → $name');
     await db.execute('UPDATE businesses SET name = ? WHERE id = ?', [name, businessId]);
     await _prefs.setString('business_name', name);
     businessName = name;
@@ -409,6 +449,7 @@ class AppController extends ChangeNotifier {
       'name': name,
       'role': role == 'owner' ? 'owner' : 'staff',
     });
+    await _logChange('user', email.trim().toLowerCase(), 'create', '$name (${email.trim().toLowerCase()}) · $role');
   }
 
   Future<void> inviteStaff(String email, String name) => inviteMember(email, name);
@@ -420,12 +461,18 @@ class AppController extends ChangeNotifier {
       if ((owners as List).length <= 1 && owners.any((o) => o['id'] == id)) throw PermissionDenied('err_last_owner');
     }
     await _sb.from('members').update({'role': role}).eq('id', id);
+    final m = await _sb.from('members').select('name, email').eq('id', id).maybeSingle();
+    await _logChange('user', id, 'edit', '${m?['name'] ?? ''} (${m?['email'] ?? ''}) → $role');
   }
 
   Future<List<Map<String, dynamic>>> listMembers() async =>
       List<Map<String, dynamic>>.from(await _sb.from('members').select().eq('business_id', businessId!));
 
-  Future<void> removeMember(String id) => _sb.from('members').delete().eq('id', id);
+  Future<void> removeMember(String id) async {
+    final m = await _sb.from('members').select('name, email').eq('id', id).maybeSingle();
+    await _sb.from('members').delete().eq('id', id);
+    await _logChange('user', id, 'delete', '${m?['name'] ?? ''} (${m?['email'] ?? ''})');
+  }
 
   Future<void> _connectSync() async {
     await db.connect(connector: SupabaseConnector(_sb));

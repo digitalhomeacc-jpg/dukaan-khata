@@ -666,7 +666,7 @@ class _VoucherScreenState extends State<VoucherScreen> {
       appBar: AppBar(
         title: Text(_title(app)),
         actions: [
-          if (editing != null)
+          if (editing != null && app.actor.isOwner)
             IconButton(
               icon: const Icon(Icons.history),
               tooltip: t('history'),

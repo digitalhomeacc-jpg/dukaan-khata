@@ -83,12 +83,13 @@ class HomeScreen extends StatelessWidget {
               _Figure(t('today_sales'), d['sales']!, AppColors.sale),
               _Figure(t('today_collection'), d['collections']!, AppColors.paid),
             ]),
-            _Panel(title: t('balances'), children: [
+            // shop-wide totals (balances, total udhaari) are for owners only
+            if (app.actor.isOwner) _Panel(title: t('balances'), children: [
               _Figure(t('cash_in_hand'), d['cash']!, scheme.onSurface),
               _Figure(t('upi_balance'), d['upi']!, scheme.onSurface),
               _Figure(t('bank_balance'), d['bank']!, scheme.onSurface),
             ]),
-            _Panel(title: t('dues'), children: [
+            if (app.actor.isOwner) _Panel(title: t('dues'), children: [
               _Figure(t('receivable'), d['receivable']!, AppColors.due),
               _Figure(t('payable'), d['payable']!, AppColors.haldi),
             ]),

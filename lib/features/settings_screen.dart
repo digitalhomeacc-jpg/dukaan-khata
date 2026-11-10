@@ -37,7 +37,8 @@ class SettingsScreen extends StatelessWidget {
           title: Text(t('suppliers')),
           onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PartiesScreen(group: LedgerGroup.supplier))),
         ),
-        ListTile(
+        if (owner)
+          ListTile(
           leading: const Icon(Icons.badge_outlined),
           title: Text(t('staff')),
           subtitle: Text(t('staff_sub')),

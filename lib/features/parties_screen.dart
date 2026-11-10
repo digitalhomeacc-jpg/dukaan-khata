@@ -118,8 +118,11 @@ class _PartiesScreenState extends State<PartiesScreen> {
                   child: Row(children: [
                     Text('${list.length} ${isCust ? t('customers') : t('suppliers')}'),
                     const Spacer(),
-                    Text('${t('total')}: '),
-                    BalanceText(total, supplier: !isCust, size: 15),
+                    // total udhaari / देणे: owners only
+                    if (app.actor.isOwner) ...[
+                      Text('${t('total')}: '),
+                      BalanceText(total, supplier: !isCust, size: 15),
+                    ],
                   ]),
                 ),
                 Expanded(

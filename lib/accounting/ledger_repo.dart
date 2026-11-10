@@ -1,5 +1,6 @@
 import 'package:sqlite_async/sqlite_async.dart';
 
+import '../core/audit.dart';
 import '../core/ids.dart';
 import '../core/money.dart';
 import 'models.dart';
@@ -72,8 +73,10 @@ class CashRow {
   final String? code;
   final bool gstBillNeeded;
   final String? narration;
+  /// Cash the company's driver handed over with a purchase (वराई).
+  final bool varhai;
   CashRow(this.voucherId, this.type, this.particulars, this.inflow, this.outflow, this.code,
-      this.gstBillNeeded, this.narration);
+      this.gstBillNeeded, this.narration, {this.varhai = false});
 }
 
 class CashBook {
@@ -204,6 +207,7 @@ class LedgerRepo {
       [id, businessId, name.trim(), _n(nameEn), group.code, _n(phone), _n(address), _n(pageNo), _n(shortCode),
         _n(gstin)?.toUpperCase(), openingBalance, creditLimit, nowIso()],
     );
+    await _log(id, 'create', null, await _snap(id));
     return id;
   }
 
@@ -218,6 +222,7 @@ class LedgerRepo {
       required int openingBalance,
       int creditLimit = 0,
       LedgerGroup? group}) async {
+    final before = await _snap(id);
     await db.execute(
       'UPDATE ledgers SET name=?, name_en=?, phone=?, address=?, page_no=?, short_code=?, gstin=?, opening_balance=?, '
       'credit_limit=?${group != null ? ', grp=?' : ''} WHERE id=?',
@@ -225,15 +230,53 @@ class LedgerRepo {
         openingBalance, creditLimit,
         if (group != null) group.code, id],
     );
+    await _log(id, 'edit', before, await _snap(id));
   }
 
+  // ---- बदल इतिहास for accounts
+  Future<Map<String, Object?>> _snap(String id) async {
+    final r = await db.getOptional('SELECT * FROM ledgers WHERE id = ?', [id]);
+    if (r == null) return {};
+    String m(Object? p) => (p as int? ?? 0) == 0 ? '' : Money.fmt(p as int);
+    return {
+      'name': r['name'],
+      'name_en': r['name_en'],
+      'group': r['grp'],
+      'page_no': r['page_no'],
+      'phone': r['phone'],
+      'address': r['address'],
+      'gstin': r['gstin'],
+      'opening_balance': m(r['opening_balance']),
+      'credit_limit': m(r['credit_limit']),
+      'interest_rate': (r['interest_rate'] as int? ?? 0) == 0 ? '' : '${(r['interest_rate'] as int) / 100}%',
+      'salary': m(r['salary']),
+      'salary_cut': m(r['salary_cut']),
+      'hidden': (r['archived'] as int? ?? 0) == 1 ? '✓' : '',
+    };
+  }
+
+  Future<void> _log(String id, String action, Map<String, Object?>? before, Map<String, Object?>? after) => AuditLog.write(db,
+      businessId: businessId,
+      recordId: id,
+      action: action,
+      kind: 'ledger',
+      title: '${(after ?? before)?['name'] ?? ''}',
+      before: before,
+      after: after);
+
   /// Staff: monthly salary and advance recovered per month (paise).
-  Future<void> setStaffPay(String id, {required int salary, required int cut}) =>
-      db.execute('UPDATE ledgers SET salary = ?, salary_cut = ? WHERE id = ?', [salary, cut, id]);
+  Future<void> setStaffPay(String id, {required int salary, required int cut}) async {
+    final before = await _snap(id);
+    await db.execute('UPDATE ledgers SET salary = ?, salary_cut = ? WHERE id = ?', [salary, cut, id]);
+    await _log(id, 'edit', before, await _snap(id));
+  }
 
   /// Interest rate for a party (% per month × 100; 0 = no interest).
-  Future<void> setInterestRate(String id, int rate) =>
-      db.execute('UPDATE ledgers SET interest_rate = ? WHERE id = ?', [rate, id]);
+  Future<void> setInterestRate(String id, int rate) async {
+    final before = await _snap(id);
+    await db.execute('UPDATE ledgers SET interest_rate = ? WHERE id = ?', [rate, id]);
+    await _log(id, 'edit', before, await _snap(id));
+  }
 
   /// How many entries use this account (including deleted ones kept for history).
   Future<int> usageCount(String id) async {
@@ -252,7 +295,9 @@ class LedgerRepo {
   Future<bool> deleteOrHide(Ledger l) async {
     if (l.isCore) throw ArgumentError('err_core_ledger');
     if (!l.system && await usageCount(l.id) == 0) {
+      final before = await _snap(l.id);
       await db.execute('DELETE FROM ledgers WHERE id = ?', [l.id]);
+      await _log(l.id, 'delete', before, null);
       return true;
     }
     await setArchived(l.id, true);
@@ -266,8 +311,11 @@ class LedgerRepo {
           .map(Ledger.fromRow)
           .toList();
 
-  Future<void> setArchived(String id, bool archived) =>
-      db.execute('UPDATE ledgers SET archived = ? WHERE id = ?', [archived ? 1 : 0, id]);
+  Future<void> setArchived(String id, bool archived) async {
+    final before = await _snap(id);
+    await db.execute('UPDATE ledgers SET archived = ? WHERE id = ?', [archived ? 1 : 0, id]);
+    await _log(id, archived ? 'hide' : 'unhide', before, await _snap(id));
+  }
 
   String? _n(String? s) => (s == null || s.trim().isEmpty) ? null : s.trim();
 
@@ -470,15 +518,26 @@ class LedgerRepo {
     for (final r in rows) {
       final d = (r['d'] as num).toInt();
       final c = (r['c'] as num).toInt();
+      final type = VoucherType.fromCode(r['vtype'] as String);
+      // a bill is titled by its party; without one it is a cash sale / purchase –
+      // never by the hamali / transport / service income on it
+      final bill = const {VoucherType.sale, VoucherType.salesReturn, VoucherType.purchase, VoucherType.purchaseReturn}.contains(type);
+      final particulars = (r['party_name'] as String?) ??
+          (bill ? null : r['other'] as String?) ??
+          (bill ? null : r['narration'] as String?) ??
+          '';
+      final code = r['code'] as String?;
+      final gst = (r['gst_bill_needed'] as int?) == 1;
+      final narration = r['narration'] as String?;
+      if (type == VoucherType.purchase && d > 0) {
+        // money coming in on a purchase is वराई: its own row, not netted with the payment
+        out.add(CashRow(r['id'] as String, type, particulars, d, 0, code, gst, narration, varhai: true));
+        if (c > 0) out.add(CashRow(r['id'] as String, type, particulars, 0, c, code, gst, narration));
+        continue;
+      }
       final net = d - c;
       if (net == 0) continue;
-      final type = VoucherType.fromCode(r['vtype'] as String);
-      final particulars = (r['party_name'] as String?) ??
-          (r['other'] as String?) ??
-          (r['narration'] as String?) ??
-          '';
-      out.add(CashRow(r['id'] as String, type, particulars, net > 0 ? net : 0, net < 0 ? -net : 0,
-          r['code'] as String?, (r['gst_bill_needed'] as int?) == 1, r['narration'] as String?));
+      out.add(CashRow(r['id'] as String, type, particulars, net > 0 ? net : 0, net < 0 ? -net : 0, code, gst, narration));
     }
     return CashBook(date, (o['b'] as num).toInt(), out);
   }

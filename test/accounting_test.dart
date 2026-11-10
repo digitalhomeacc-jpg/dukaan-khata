@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:dukaan_khata/accounting/bookings.dart';
 import 'package:dukaan_khata/accounting/interest.dart';
 import 'package:dukaan_khata/accounting/ledger_repo.dart';
@@ -5,6 +7,7 @@ import 'package:dukaan_khata/accounting/recurring.dart';
 import 'package:dukaan_khata/accounting/models.dart';
 import 'package:dukaan_khata/accounting/reports.dart';
 import 'package:dukaan_khata/accounting/voucher_service.dart';
+import 'package:dukaan_khata/core/audit.dart';
 import 'package:dukaan_khata/core/money.dart';
 import 'package:dukaan_khata/core/seed.dart';
 import 'package:dukaan_khata/inventory/stock_repo.dart';
@@ -515,6 +518,81 @@ void main() {
     expect(await lr.balanceAt(vs.sys('cash')), cash0 - rs(5000));
     expect(await rec.due('2026-11-30'), isEmpty);
     expect(() => rec.pay(vs, staff, r, '2026-12', amount: 1, payFromId: vs.sys('cash'), narration: 'x'), throwsA(isA<PermissionDenied>()));
+  });
+
+  test('rojmal: cash sale with hamali stays a cash sale; वराई is its own row', () async {
+    final w = items['W']!;
+    const day = '2026-11-08';
+    // walk-in cash bill: 2,240 goods + 30 hamali = 2,270
+    await vs.save(VoucherInput(type: VoucherType.sale, date: day, payLedgerId: vs.sys('cash'), items: [ItemLine(w.id, 8, rs(280))], hamali: rs(30)), owner);
+    // company truck: paid 10,000 cash on the bill, driver gave 500 वराई
+    final wonder = await lr.create(name: 'Wonder Cement', group: LedgerGroup.supplier);
+    await vs.save(
+        VoucherInput(type: VoucherType.purchase, date: day, partyId: wonder, payLedgerId: vs.sys('cash'), items: [ItemLine(w.id, 40, rs(250))],
+            paid: rs(10000), varhai: rs(500)),
+        owner);
+    // another walk-in bill rounded down: 2,243 → 2,240
+    await vs.save(
+        VoucherInput(type: VoucherType.sale, date: day, payLedgerId: vs.sys('cash'), items: [ItemLine(w.id, 1, rs(2243))], roundOff: -rs(3)),
+        owner);
+    final book = await lr.cashBook([vs.sys('cash')], day);
+    final sales = book.rows.where((r) => r.type == VoucherType.sale).toList();
+    expect(sales.map((r) => r.particulars), ['', '']); // both "रोख विक्री", not हमाली / राउंड ऑफ
+    expect(sales.map((r) => r.inflow), [rs(2270), rs(2240)]);
+    final sale = sales.first;
+    final varhai = book.rows.where((r) => r.varhai).single;
+    expect(varhai.inflow, rs(500));
+    expect(varhai.particulars, 'Wonder Cement');
+    final paid = book.rows.where((r) => r.type == VoucherType.purchase && !r.varhai).single;
+    expect(paid.outflow, rs(10000)); // not netted with the वराई
+    expect(sale.inflow, rs(2270));
+    expect(book.totalIn - book.totalOut, rs(2270 + 2240 + 500 - 10000));
+  });
+
+  test('history: every entry, account, item and status change is recorded before → after', () async {
+    Future<List<Map<String, dynamic>>> log(String id) async => [
+          for (final r in await db.getAll('SELECT * FROM audit_log WHERE voucher_id = ? ORDER BY at, rowid', [id]))
+            {'action': r['action'], 'user': r['user_name'], ...jsonDecode(r['snapshot'] as String) as Map<String, dynamic>}
+        ];
+    final cust = await lr.create(name: 'Mahesh', group: LedgerGroup.customer, pageNo: '12');
+    final w = items['W']!;
+    // a staff bill, then the owner corrects qty and adds hamali
+    final id = await vs.save(VoucherInput(type: VoucherType.sale, date: todayIso(), partyId: cust, items: [ItemLine(w.id, 10, rs(280))]), staff);
+    await vs.save(VoucherInput(type: VoucherType.sale, date: todayIso(), partyId: cust, items: [ItemLine(w.id, 12, rs(280))], hamali: rs(50)), owner,
+        existingId: id);
+    // saving again with no change adds nothing
+    await vs.save(VoucherInput(type: VoucherType.sale, date: todayIso(), partyId: cust, items: [ItemLine(w.id, 12, rs(280))], hamali: rs(50)), owner,
+        existingId: id);
+    await vs.delete(id, owner);
+    var l = await log(id);
+    expect(l.map((e) => e['action']), ['create', 'edit', 'delete']);
+    expect(l[0]['user'], 'Staff');
+    expect(l[0]['after']['amount'], '2,800');
+    final diff = AuditLog.diff(l[1]['before'], l[1]['after']);
+    expect(diff.map((d) => d.$1), containsAll(['amount', 'items', 'hamali']));
+    expect(diff.firstWhere((d) => d.$1 == 'items').$2, 'W सिमेंट 10×280');
+    expect(diff.firstWhere((d) => d.$1 == 'items').$3, 'W सिमेंट 12×280');
+    expect(l[2]['before']['amount'], '3,410');
+
+    // account: opening balance and interest rate
+    await lr.update(cust, name: 'Mahesh', pageNo: '12', openingBalance: rs(500));
+    await lr.setInterestRate(cust, 150);
+    l = await log(cust);
+    expect(l.map((e) => e['action']), ['create', 'edit', 'edit']);
+    expect(AuditLog.diff(l[1]['before'], l[1]['after']).single, ('opening_balance', null, '500'));
+    expect(AuditLog.diff(l[2]['before'], l[2]['after']).single.$3, '1.5%');
+
+    // item rate
+    await sr.save(id: w.id, name: w.name, nameEn: w.nameEn, category: w.category, unit: w.unit, shortCode: w.shortCode, saleRate: rs(290));
+    l = await log(w.id);
+    expect(AuditLog.diff(l.single['before'], l.single['after']).single, ('sale_rate', '280', '290'));
+
+    // promise kept
+    final p = await vs.save(VoucherInput(type: VoucherType.promise, date: todayIso(), partyId: cust, amount: rs(500)), owner);
+    await vs.setPromiseStatus(p, 'done');
+    l = await log(p);
+    expect(l.last['action'], 'status');
+    expect(AuditLog.diff(l.last['before'], l.last['after']).single, ('status', 'open', 'done'));
   });
 
   test('रोख मोजणी: short and extra cash go to रोख फरक, books then match the count', () async {

@@ -256,21 +256,23 @@ class _ReportsScreenState extends State<ReportsScreen> {
       (Icons.today, t('r_daybook'), () => open(() => r.dayBook(from, to)), false),
       (Icons.payments, t('r_cashbook'), () => moneyBook([LedgerGroup.cash], t('r_cashbook')), false),
       (Icons.calculate_outlined, t('r_cash_diff'), () => open(() => r.ledgerStatement(app.vouchers.sys('cash_diff'), from: from, to: to)), false),
-      (Icons.account_balance, t('r_upibook'), () => moneyBook([LedgerGroup.upi, LedgerGroup.bank], t('r_upibook')), false),
-      (Icons.people, t('r_receivable'), () => open(() => r.outstanding(LedgerGroup.customer), ledgers: true), false),
-      (Icons.local_shipping, t('r_payable'), () => open(() => r.outstanding(LedgerGroup.supplier), ledgers: true), false),
+      (Icons.account_balance, t('r_upibook'), () => moneyBook([LedgerGroup.upi, LedgerGroup.bank], t('r_upibook')), true),
+      (Icons.people, t('r_receivable'), () => open(() => r.outstanding(LedgerGroup.customer), ledgers: true), true),
+      (Icons.local_shipping, t('r_payable'), () => open(() => r.outstanding(LedgerGroup.supplier), ledgers: true), true),
       (Icons.inventory_2_outlined, t('r_goods_owed'), () => open(() => r.goodsOwed(), ledgers: true), false),
       (Icons.percent, t('interest_list'), () => InterestListScreen.open(context), true),
       (Icons.bookmark_added_outlined, t('bookings'), () => BookingsScreen.open(context), false),
-      (Icons.badge_outlined, t('r_staff_advance'), () => StaffScreen.open(context), false),
+      (Icons.badge_outlined, t('r_staff_advance'), () => StaffScreen.open(context), true),
       (Icons.menu_book, t('r_ledger'), () async {
-        final l = await pickLedger(context, groups: LedgerGroup.values);
+        // staff: one party's khata only – not bank, capital or expense totals
+        final l = await pickLedger(context,
+            groups: owner ? LedgerGroup.values : const [LedgerGroup.customer, LedgerGroup.supplier, LedgerGroup.transporter]);
         if (l != null) open(() => r.ledgerStatement(l.id, from: from, to: to));
       }, false),
-      (Icons.inventory_2, t('r_stock'), () => open(() => r.stockSummary()), false),
-      (Icons.point_of_sale, t('r_sales'), () => open(() => r.register(VoucherType.sale, from, to)), false),
-      (Icons.shopping_cart, t('r_purchases'), () => open(() => r.register(VoucherType.purchase, from, to)), false),
-      (Icons.receipt_long, t('r_expenses'), () => open(() => r.expenseSummary(from, to), ledgers: true), false),
+      (Icons.inventory_2, t('r_stock'), () => open(() => r.stockSummary()), true),
+      (Icons.point_of_sale, t('r_sales'), () => open(() => r.register(VoucherType.sale, from, to)), true),
+      (Icons.shopping_cart, t('r_purchases'), () => open(() => r.register(VoucherType.purchase, from, to)), true),
+      (Icons.receipt_long, t('r_expenses'), () => open(() => r.expenseSummary(from, to), ledgers: true), true),
       (Icons.receipt, t('r_gst_bills'), () => open(() => r.gstBillsNeeded(from, to)), true),
       (Icons.percent, t('r_gst_summary'), () => open(() => r.gstSummary(from, to)), true),
       (Icons.request_quote, t('r_gst'), () => open(() => r.gstLedger(from, to)), true),

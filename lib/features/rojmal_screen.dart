@@ -134,7 +134,11 @@ class _RojmalScreenState extends State<RojmalScreen> {
         ListTile(
           dense: true,
           leading: r.code == null ? null : CircleAvatar(radius: 14, child: Text(r.code!, style: const TextStyle(fontSize: 11))),
-          title: Text(r.particulars.isNotEmpty ? r.particulars : App.of(context).t(r.type == VoucherType.sale ? 'cash_sale' : 'vt_${r.type.code}')),
+          title: Text(r.varhai
+              ? '${App.of(context).t('varhai')}${r.particulars.isNotEmpty ? ' · ${r.particulars}' : ''}'
+              : r.particulars.isNotEmpty
+                  ? r.particulars
+                  : App.of(context).t(r.type == VoucherType.sale ? 'cash_sale' : r.type == VoucherType.purchase ? 'cash_purchase' : 'vt_${r.type.code}')),
           subtitle: Text([App.of(context).t('vt_${r.type.code}'), if (r.narration != null && r.narration != r.particulars) r.narration!].join(' · ')),
           trailing: Row(mainAxisSize: MainAxisSize.min, children: [
             if (r.gstBillNeeded) const Padding(padding: EdgeInsets.only(right: 4), child: Chip(label: Text('GST'), visualDensity: VisualDensity.compact)),
