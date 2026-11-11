@@ -801,6 +801,14 @@ void main() {
     final (v, _) = await vs.load(st.rows.last.voucherId);
     expect(v.transporterFare, rs(700));
     expect(v.amount, rs(2850 + 100 + 800));
+    // our report names the vehicle; the copy sent to the customer does not
+    final rep = Reports(db, biz, (k) => k);
+    final ours = (await rep.ledgerStatement(cust)).rows.map((r) => r[1]).join(' ');
+    final theirs = (await rep.ledgerStatement(cust, forCustomer: true)).rows.map((r) => r[1]).join(' ');
+    expect(ours, contains('Ganesh Transport'));
+    expect(theirs, isNot(contains('Ganesh')));
+    expect(theirs, isNot(contains('own_vehicle')));
+    expect(theirs, contains('transport ${Money.fmt(rs(800))}'));
   });
 
   test('search: words in any order, page no., phone, amount, bill no.', () async {

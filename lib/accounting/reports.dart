@@ -83,7 +83,8 @@ class Reports {
     );
   }
 
-  Future<ReportTable> ledgerStatement(String ledgerId, {String? from, String? to}) async {
+  /// [forCustomer]: the copy sent to the party – no names of whose vehicle went.
+  Future<ReportTable> ledgerStatement(String ledgerId, {String? from, String? to, bool forCustomer = false}) async {
     final st = await ledgers.statement(ledgerId, from: from, to: to);
     return ReportTable(
       title: st.ledger.name,
@@ -106,7 +107,8 @@ class Reports {
             [
               '${vtypeLabel(r.type, tr)}${r.payCode != null && r.credit > 0 ? ' (${r.payCode})' : ''} ${r.details}',
               if (r.hamali != 0) '+ ${tr('hamali')} ${Money.fmt(r.hamali)}',
-              if (r.transport != 0) '+ ${tr('transport')} ${Money.fmt(r.transport)} (${r.transporterName ?? tr('own_vehicle')})',
+              if (r.transport != 0)
+                '+ ${tr('transport')} ${Money.fmt(r.transport)}${forCustomer ? '' : ' (${r.transporterName ?? tr('own_vehicle')})'}',
               if (r.haste != null) '· ${tr('haste')}: ${r.haste}',
             ].join(' '),
             r.debit == 0 ? '' : Money.fmt(r.debit),

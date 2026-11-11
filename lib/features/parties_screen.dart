@@ -415,11 +415,17 @@ class _KhataScreenState extends State<KhataScreen> {
   String? from;
   String? to;
 
+  bool _sharing = false; // drawing the customer's copy (no vehicle names)
+
   Future<void> _shareImage(Statement st) async {
     final app = App.read(context);
+    setState(() => _sharing = true);
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
     final boundary = _shotKey.currentContext!.findRenderObject() as RenderRepaintBoundary;
     final img = await boundary.toImage(pixelRatio: 2.5);
     final bytes = (await img.toByteData(format: ui.ImageByteFormat.png))!.buffer.asUint8List();
+    if (mounted) setState(() => _sharing = false);
     final msg = app.t('reminder_msg')
         .replaceAll('{name}', st.ledger.name)
         .replaceAll('{shop}', app.businessName)
@@ -463,11 +469,11 @@ class _KhataScreenState extends State<KhataScreen> {
                   final rep = app.reports;
                   switch (v) {
                     case 'pdf':
-                      await Exporter.sharePdf(await app.pdfTable(() => app.reports.ledgerStatement(l.id, from: from, to: to)), shop: app.pdfShopName);
+                      await Exporter.sharePdf(await app.pdfTable(() => app.reports.ledgerStatement(l.id, from: from, to: to, forCustomer: true)), shop: app.pdfShopName);
                     case 'xls':
-                      await Exporter.shareExcel([await rep.ledgerStatement(l.id, from: from, to: to)], l.name);
+                      await Exporter.shareExcel([await rep.ledgerStatement(l.id, from: from, to: to, forCustomer: true)], l.name);
                     case 'print':
-                      await Exporter.printPdf(await app.pdfTable(() => app.reports.ledgerStatement(l.id, from: from, to: to)), shop: app.pdfShopName);
+                      await Exporter.printPdf(await app.pdfTable(() => app.reports.ledgerStatement(l.id, from: from, to: to, forCustomer: true)), shop: app.pdfShopName);
                     case 'v_sale':
                       if (context.mounted) await VoucherScreen.open(context, VoucherType.sale, partyId: l.id);
                     case 'v_receipt':
@@ -568,7 +574,7 @@ class _KhataScreenState extends State<KhataScreen> {
                   key: _shotKey,
                   child: Container(
                     color: Theme.of(context).colorScheme.surface,
-                    child: _KhataTable(st: st, shop: app.pdfShopName),
+                    child: _KhataTable(st: st, shop: app.pdfShopName, forCustomer: _sharing),
                   ),
                 ),
               ),
@@ -605,7 +611,8 @@ class _KhataScreenState extends State<KhataScreen> {
 class _KhataTable extends StatelessWidget {
   final Statement st;
   final String shop;
-  const _KhataTable({required this.st, required this.shop});
+  final bool forCustomer; // the shared copy: no vehicle names
+  const _KhataTable({required this.st, required this.shop, this.forCustomer = false});
 
   @override
   Widget build(BuildContext context) {
@@ -665,7 +672,7 @@ class _KhataTable extends StatelessWidget {
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       Text(t('old_${r.kind ?? 'sale'}'), style: small),
                       if (r.details.isNotEmpty) Text(r.details, style: small),
-                      if (r.hamali != 0 || r.transport != 0) Text(chargesText(t, r.hamali, r.transport, null), style: small),
+                      if (r.hamali != 0 || r.transport != 0) Text(chargesText(t, r.hamali, r.transport, null, hideVehicle: forCustomer), style: small),
                       if (r.haste != null) Text('${t('haste')}: ${r.haste}', style: small),
                     ]),
                   ),
@@ -718,7 +725,7 @@ class _KhataTable extends StatelessWidget {
                     Text('${t('vt_${r.type.code}')}${r.payCode != null && r.credit > 0 ? ' (${r.payCode})' : ''}', style: small),
                     if (r.details.isNotEmpty) Text(r.details),
                     if (r.hamali != 0 || r.transport != 0)
-                      Text(chargesText(t, r.hamali, r.transport, r.transporterName), style: small),
+                      Text(chargesText(t, r.hamali, r.transport, forCustomer ? null : r.transporterName, hideVehicle: forCustomer), style: small),
                     if (r.haste != null) Text('${t('haste')}: ${r.haste}', style: small),
                   ]),
                 ),
@@ -744,9 +751,9 @@ class _KhataTable extends StatelessWidget {
 }
 
 /// "हमाली 300 · गाडी भाडे 500 (आपली गाडी)"
-String chargesText(String Function(String) t, int hamali, int transport, String? transporter) => [
+String chargesText(String Function(String) t, int hamali, int transport, String? transporter, {bool hideVehicle = false}) => [
       if (hamali != 0) '${t('hamali')} ${Money.fmt(hamali)}',
-      if (transport != 0) '${t('transport')} ${Money.fmt(transport)} (${transporter ?? t('own_vehicle')})',
+      if (transport != 0) '${t('transport')} ${Money.fmt(transport)}${hideVehicle ? '' : ' (${transporter ?? t('own_vehicle')})'}',
     ].join(' · ');
 
 /// Banner on the khata: the promise(s) this customer has given.

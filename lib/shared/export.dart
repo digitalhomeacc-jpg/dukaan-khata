@@ -192,7 +192,6 @@ extension BillPdf on Exporter {
     String itemName(String id) => items.where((i) => i.id == id).map((i) => l(i.display(true))).firstOrNull ?? '?';
     String unit(String id) => items.where((i) => i.id == id).map((i) => t('unit_${i.unit}')).firstOrNull ?? '';
     final goods = lines.fold<int>(0, (s, l) => s + l.amount);
-    final transporter = transporters.where((x) => x.id == v.transporterId).map((x) => l(x.nameEn ?? x.name)).firstOrNull;
     pw.Widget cell(String s, {bool bold = false, pw.Alignment align = pw.Alignment.centerLeft}) => pw.Container(
           alignment: align,
           padding: const pw.EdgeInsets.all(4),
@@ -261,7 +260,8 @@ extension BillPdf on Exporter {
                 sumRow('SGST ${v.gstRate / 200}%', v.gst - v.gst ~/ 2),
               ],
               if (v.hamali != 0) sumRow(t('hamali'), v.hamali),
-              if (v.transport != 0) sumRow('${t('transport')} (${transporter ?? t('own_vehicle')})', v.transport),
+              // the bill goes to the customer: whose vehicle went is ours to know
+              if (v.transport != 0) sumRow(t('transport'), v.transport),
               if (lines.isNotEmpty && v.amount - goods - v.hamali - v.transport - v.gst != 0)
                 sumRow(t('round_off'), v.amount - goods - v.hamali - v.transport - v.gst),
               pw.Divider(),
