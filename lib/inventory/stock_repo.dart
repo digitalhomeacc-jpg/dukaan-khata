@@ -108,15 +108,16 @@ class StockRepo {
     double openingQty = 0,
     int openingRate = 0,
     double lowStock = 0,
+    String? subcategory, // null = leave as it is; '' = none
   }) async {
     String? n(String? s) => (s == null || s.trim().isEmpty) ? null : s.trim();
     if (id == null) {
       final newIdV = newId();
       final order = await db.get('SELECT COALESCE(MAX(sort_order),0)+1 AS o FROM items WHERE business_id = ?', [businessId]);
       await db.execute(
-        'INSERT INTO items (id, business_id, name, name_en, category, unit, short_code, sale_rate, purchase_rate, '
-        'opening_qty, opening_rate, low_stock, sort_order, archived, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)',
-        [newIdV, businessId, name.trim(), n(nameEn), category, unit, n(shortCode)?.toUpperCase(), saleRate, purchaseRate,
+        'INSERT INTO items (id, business_id, name, name_en, category, subcategory, unit, short_code, sale_rate, purchase_rate, '
+        'opening_qty, opening_rate, low_stock, sort_order, archived, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)',
+        [newIdV, businessId, name.trim(), n(nameEn), category, n(subcategory), unit, n(shortCode)?.toUpperCase(), saleRate, purchaseRate,
           openingQty, openingRate, lowStock, order['o'], nowIso()],
       );
       await _log(newIdV, 'create', null, await _snap(newIdV));
@@ -125,13 +126,51 @@ class StockRepo {
     final before = await _snap(id);
     await db.execute(
       'UPDATE items SET name=?, name_en=?, category=?, unit=?, short_code=?, sale_rate=?, purchase_rate=?, '
-      'opening_qty=?, opening_rate=?, low_stock=? WHERE id=?',
+      'opening_qty=?, opening_rate=?, low_stock=?${subcategory != null ? ', subcategory=?' : ''} WHERE id=?',
       [name.trim(), n(nameEn), category, unit, n(shortCode)?.toUpperCase(), saleRate, purchaseRate, openingQty,
-        openingRate, lowStock, id],
+        openingRate, lowStock, if (subcategory != null) n(subcategory), id],
     );
     await _log(id, 'edit', before, await _snap(id));
     return id;
   }
+
+  /// Several items at once (stock tab, multi-select): only the given fields
+  /// change; every item gets its own line in the change history.
+  Future<void> bulkUpdate(List<String> ids, {String? category, String? subcategory, String? unit, bool? archived}) async {
+    for (final id in ids) {
+      final before = await _snap(id);
+      final sets = <String>[], args = <Object?>[];
+      void set(String col, Object? v) {
+        sets.add('$col = ?');
+        args.add(v);
+      }
+
+      if (category != null) set('category', category);
+      if (subcategory != null) set('subcategory', subcategory.trim().isEmpty ? null : subcategory.trim());
+      if (unit != null) set('unit', unit);
+      if (archived != null) set('archived', archived ? 1 : 0);
+      if (sets.isEmpty) return;
+      await db.execute('UPDATE items SET ${sets.join(', ')} WHERE id = ?', [...args, id]);
+      await _log(id, archived == true ? 'hide' : 'edit', before, await _snap(id));
+    }
+  }
+
+  /// Subcategories already used (for suggestions), optionally within a category.
+  /// Units in use (the standard ones plus any the shop made).
+  Future<List<String>> units(List<String> standard) async => [
+        ...standard,
+        for (final r in await db.getAll(
+            "SELECT DISTINCT unit FROM items WHERE business_id = ? AND unit IS NOT NULL AND unit <> '' ORDER BY unit", [businessId]))
+          if (!standard.contains(r['unit'])) r['unit'] as String,
+      ];
+
+  Future<List<String>> subcategories({String? category}) async => [
+        for (final r in await db.getAll(
+            "SELECT DISTINCT subcategory FROM items WHERE business_id = ? AND COALESCE(subcategory, '') <> '' "
+            "${category != null ? 'AND category = ? ' : ''}ORDER BY subcategory",
+            [businessId, if (category != null) category]))
+          r['subcategory'] as String
+      ];
 
   Future<void> setArchived(String id, bool v) async {
     final before = await _snap(id);
@@ -149,6 +188,7 @@ class StockRepo {
       'name': r['name'],
       'name_en': r['name_en'],
       'category': r['category'],
+      'subcategory': r['subcategory'],
       'unit': r['unit'],
       'short_code': r['short_code'],
       'sale_rate': m(r['sale_rate']),

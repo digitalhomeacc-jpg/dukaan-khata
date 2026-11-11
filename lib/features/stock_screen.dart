@@ -79,54 +79,313 @@ class StockScreen extends StatelessWidget {
   }
 }
 
-class _ItemList extends StatelessWidget {
+/// Asks for a unit the standard list doesn't have (रेती: ट्रिप …).
+Future<String?> askNewUnit(BuildContext context) {
+  final t = App.read(context).t;
+  final c = TextEditingController();
+  return showDialog<String>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: Text(t('unit_new')),
+      content: TextField(
+          key: const Key('new_unit'),
+          controller: c,
+          autofocus: true,
+          decoration: InputDecoration(hintText: t('unit_new_hint')),
+          onSubmitted: (v) => Navigator.pop(ctx, v.trim())),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx), child: Text(t('cancel'))),
+        FilledButton(onPressed: () => Navigator.pop(ctx, c.text.trim()), child: Text(t('save'))),
+      ],
+    ),
+  ).then((v) => v == null || v.isEmpty ? null : v);
+}
+
+/// Unit dropdown: standard units, the shop's own, and "+ new unit".
+class UnitField extends StatefulWidget {
+  final String value;
+  final ValueChanged<String> onChanged;
+  final InputDecoration decoration;
+  const UnitField({super.key, required this.value, required this.onChanged, required this.decoration});
+  @override
+  State<UnitField> createState() => _UnitFieldState();
+}
+
+class _UnitFieldState extends State<UnitField> {
+  List<String> units = itemUnits;
+
+  @override
+  void initState() {
+    super.initState();
+    App.read(context).stock.units(itemUnits).then((u) {
+      if (mounted) setState(() => units = u);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = App.of(context).t;
+    final all = [...units, if (!units.contains(widget.value)) widget.value];
+    return DropdownButtonFormField<String>(
+      key: ValueKey('unit_${widget.value}_${all.length}'),
+      initialValue: widget.value,
+      isExpanded: true,
+      decoration: widget.decoration,
+      items: [
+        for (final u in all) DropdownMenuItem(value: u, child: Text(t('unit_$u'))),
+        DropdownMenuItem(value: '+', child: Text(t('unit_new'), style: TextStyle(color: Theme.of(context).colorScheme.primary))),
+      ],
+      onChanged: (v) async {
+        if (v != '+') return widget.onChanged(v!);
+        final n = await askNewUnit(context);
+        if (n != null) {
+          setState(() => units = [...units, if (!units.contains(n)) n]);
+          widget.onChanged(n);
+        } else {
+          setState(() {}); // back to the old value
+        }
+      },
+    );
+  }
+}
+
+/// Stock list: search, grouped by category → optional subcategory; the owner
+/// can long-press to select several items and change them together.
+class _ItemList extends StatefulWidget {
   const _ItemList();
+  @override
+  State<_ItemList> createState() => _ItemListState();
+}
+
+class _ItemListState extends State<_ItemList> {
+  final q = TextEditingController();
+  final selected = <String>{};
+
+  bool get selecting => selected.isNotEmpty;
+
   @override
   Widget build(BuildContext context) {
     final app = App.of(context);
     final t = app.t;
+    final scheme = Theme.of(context).colorScheme;
     return LiveBuilder<List<Item>>(
       load: () => app.stock.list(),
-      builder: (context, items) {
-        String? lastCat;
+      builder: (context, all) {
+        final s = normalizeDigits(q.text.trim()).toLowerCase();
+        final items = all
+            .where((i) =>
+                s.isEmpty ||
+                i.name.toLowerCase().contains(s) ||
+                (i.nameEn ?? '').toLowerCase().contains(s) ||
+                (i.subcategory ?? '').toLowerCase().contains(s) ||
+                (i.shortCode ?? '').toLowerCase() == s)
+            .toList()
+          ..sort((a, b) {
+            final c = itemCategories.indexOf(a.category).compareTo(itemCategories.indexOf(b.category));
+            if (c != 0) return c;
+            // items without a subcategory first, then subcategories A–Z
+            final sa = a.subcategory ?? '', sb = b.subcategory ?? '';
+            if (sa != sb) return sa.isEmpty ? -1 : sb.isEmpty ? 1 : sa.compareTo(sb);
+            return a.sortOrder.compareTo(b.sortOrder);
+          });
+        String? lastCat, lastSub;
         final children = <Widget>[];
-        for (final i in items..sort((a, b) => itemCategories.indexOf(a.category).compareTo(itemCategories.indexOf(b.category)))) {
+        for (final i in items) {
           if (i.category != lastCat) {
-            children.add(SectionTitle(t('cat_${i.category}')));
+            final group = items.where((x) => x.category == i.category).map((x) => x.id).toList();
+            children.add(_groupHeader(t('cat_${i.category}'), group, big: true));
             lastCat = i.category;
+            lastSub = null;
+          }
+          if (i.subcategory != null && i.subcategory != lastSub) {
+            final group = items.where((x) => x.category == i.category && x.subcategory == i.subcategory).map((x) => x.id).toList();
+            children.add(_groupHeader(i.subcategory!, group));
+            lastSub = i.subcategory;
           }
           final low = i.lowStock > 0 && i.stock <= i.lowStock;
+          final sel = selected.contains(i.id);
           children.add(ListTile(
-            leading: CircleAvatar(
-              backgroundColor: low ? Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.5) : null,
-              child: Text(i.shortCode ?? '', style: const TextStyle(fontSize: 12)),
-            ),
+            selected: sel,
+            selectedTileColor: scheme.primaryContainer.withValues(alpha: 0.45),
+            contentPadding: EdgeInsets.only(left: i.subcategory != null ? 28 : 16, right: 16),
+            leading: selecting
+                ? Checkbox(value: sel, onChanged: (_) => _toggle(i.id))
+                : CircleAvatar(
+                    backgroundColor: low ? scheme.outlineVariant.withValues(alpha: 0.5) : null,
+                    // short code, else the name's first letter
+                    child: Text(i.shortCode ?? (i.display(app.english).isEmpty ? '' : i.display(app.english).characters.first),
+                        style: const TextStyle(fontSize: 12)),
+                  ),
             title: Text(i.display(app.english)),
             subtitle: Text('${t('sale_rate')} ₹${Money.fmt(i.saleRate)}${i.isService ? ' / ${t('unit_${i.unit}')}' : ''}'),
             // a service has no stock
             trailing: i.isService
-                ? Text(t('no_stock'), style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant))
+                ? Text(t('no_stock'), style: TextStyle(color: scheme.onSurfaceVariant))
                 : Text(
                     '${fmtQty(i.stock)} ${t('unit_${i.unit}')}',
                     style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: low || i.stock < 0 ? Colors.red.shade700 : null),
                   ),
-            onTap: () async {
-              final to = todayIso();
-              final from = fyStart(to);
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => ReportView(
-                    load: () => app.reports.itemMovement(i.id, from, to),
-                    onEdit: app.actor.isOwner ? () => ItemForm.open(context, existing: i) : null,
-                  ),
-                ),
-              );
-            },
+            onLongPress: app.actor.isOwner ? () => _toggle(i.id) : null,
+            onTap: selecting
+                ? () => _toggle(i.id)
+                : () {
+                    final to = todayIso();
+                    final from = fyStart(to);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => ReportView(
+                          load: () => app.reports.itemMovement(i.id, from, to),
+                          onEdit: app.actor.isOwner ? () => ItemForm.open(context, existing: i) : null,
+                        ),
+                      ),
+                    );
+                  },
           ));
         }
-        return ListView(padding: const EdgeInsets.only(bottom: 90), children: children);
+        return Column(children: [
+          if (selecting)
+            Material(
+              color: scheme.primaryContainer,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(4, 4, 8, 4),
+                child: Row(children: [
+                  IconButton(tooltip: t('cancel'), icon: const Icon(Icons.close), onPressed: () => setState(selected.clear)),
+                  Text(t('n_selected').replaceAll('{n}', '${selected.length}'), style: const TextStyle(fontWeight: FontWeight.w700)),
+                  const Spacer(),
+                  PopupMenuButton<String>(
+                    key: const Key('bulk_menu'),
+                    tooltip: t('bulk_change'),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      child: Row(mainAxisSize: MainAxisSize.min, children: [
+                        const Icon(Icons.edit_note),
+                        const SizedBox(width: 4),
+                        Text(t('bulk_change'), style: const TextStyle(fontWeight: FontWeight.w700)),
+                        const Icon(Icons.arrow_drop_down),
+                      ]),
+                    ),
+                    onSelected: (v) => _bulk(v, all),
+                    itemBuilder: (_) => [
+                      PopupMenuItem(value: 'category', child: Text(t('bulk_category'))),
+                      PopupMenuItem(value: 'subcategory', child: Text(t('bulk_subcategory'))),
+                      PopupMenuItem(value: 'unit', child: Text(t('bulk_unit'))),
+                      PopupMenuItem(value: 'hide', child: Text(t('bulk_hide'))),
+                    ],
+                  ),
+                ]),
+              ),
+            )
+          else
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+              child: TextField(
+                controller: q,
+                onChanged: (_) => setState(() {}),
+                decoration: InputDecoration(
+                  prefixIcon: const Icon(Icons.search),
+                  hintText: t(app.actor.isOwner ? 'stock_search_hint_owner' : 'stock_search_hint'),
+                  isDense: true,
+                  border: const OutlineInputBorder(),
+                ),
+              ),
+            ),
+          Expanded(child: ListView(padding: const EdgeInsets.only(bottom: 90), children: children)),
+        ]);
       },
+    );
+  }
+
+  void _toggle(String id) => setState(() => selected.contains(id) ? selected.remove(id) : selected.add(id));
+
+  /// Category / subcategory heading; in selection mode a tap selects the whole group.
+  Widget _groupHeader(String text, List<String> ids, {bool big = false}) {
+    final scheme = Theme.of(context).colorScheme;
+    final all = ids.every(selected.contains);
+    return InkWell(
+      onTap: selecting ? () => setState(() => all ? selected.removeAll(ids) : selected.addAll(ids)) : null,
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(big ? 16 : 28, big ? 14 : 8, 16, 4),
+        child: Row(children: [
+          if (selecting) ...[Icon(all ? Icons.check_box : Icons.check_box_outline_blank, size: 18, color: scheme.primary), const SizedBox(width: 6)],
+          Expanded(
+            child: Text(big ? text : '› $text',
+                style: (big ? Theme.of(context).textTheme.titleSmall : Theme.of(context).textTheme.labelLarge)
+                    ?.copyWith(color: big ? scheme.primary : scheme.onSurfaceVariant, fontWeight: FontWeight.w700)),
+          ),
+          Text('${ids.length}', style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
+        ]),
+      ),
+    );
+  }
+
+  Future<void> _bulk(String what, List<Item> all) async {
+    final app = App.read(context);
+    final t = app.t;
+    final ids = selected.toList();
+    String? category, subcategory, unit;
+    bool? archived;
+    switch (what) {
+      case 'category':
+        category = await _pick(t('bulk_category'), [for (final c in itemCategories) (c, t('cat_$c'))]);
+        if (category == null) return;
+      case 'unit':
+        unit = await _pick(t('bulk_unit'), [for (final u in await app.stock.units(itemUnits)) (u, t('unit_$u')), ('+', t('unit_new'))]);
+        if (unit == '+' && mounted) unit = await askNewUnit(context);
+        if (unit == null) return;
+      case 'subcategory':
+        final cats = all.where((i) => ids.contains(i.id)).map((i) => i.category).toSet();
+        subcategory = await _askSubcategory(await app.stock.subcategories(category: cats.length == 1 ? cats.first : null));
+        if (subcategory == null) return;
+      case 'hide':
+        if (!await confirm(context, t('bulk_hide_q').replaceAll('{n}', '${ids.length}'))) return;
+        archived = true;
+    }
+    await app.stock.bulkUpdate(ids, category: category, subcategory: subcategory, unit: unit, archived: archived);
+    if (!mounted) return;
+    toast(context, '${t('saved')} · ${ids.length}');
+    setState(selected.clear);
+  }
+
+  Future<String?> _pick(String title, List<(String, String)> options) => showModalBottomSheet<String>(
+        context: context,
+        showDragHandle: true,
+        builder: (ctx) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(title, style: Theme.of(ctx).textTheme.titleMedium),
+              const SizedBox(height: 10),
+              Wrap(spacing: 8, runSpacing: 8, children: [
+                for (final (v, l) in options) ActionChip(label: Text(l), onPressed: () => Navigator.pop(ctx, v)),
+              ]),
+            ]),
+          ),
+        ),
+      );
+
+  /// Type a subcategory or tap an existing one; "none" removes it ('').
+  Future<String?> _askSubcategory(List<String> existing) {
+    final t = App.read(context).t;
+    final c = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(t('bulk_subcategory')),
+        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          TextField(controller: c, autofocus: true, decoration: InputDecoration(hintText: t('subcategory_hint'))),
+          if (existing.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Wrap(spacing: 6, runSpacing: 6, children: [
+              for (final e in existing) ActionChip(label: Text(e), onPressed: () => Navigator.pop(ctx, e)),
+            ]),
+          ],
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, ''), child: Text(t('subcategory_none'))),
+          FilledButton(onPressed: () => Navigator.pop(ctx, c.text.trim()), child: Text(t('save'))),
+        ],
+      ),
     );
   }
 }
@@ -589,6 +848,19 @@ class _ItemFormState extends State<ItemForm> {
   late final low = TextEditingController(text: e == null || e!.lowStock == 0 ? '' : fmtQty(e!.lowStock));
   late String category = e?.category ?? 'cement';
   late String unit = e?.unit ?? 'bag';
+  late final sub = TextEditingController(text: e?.subcategory);
+  List<String> subs = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSubs();
+  }
+
+  Future<void> _loadSubs() async {
+    final l = await App.read(context).stock.subcategories(category: category);
+    if (mounted) setState(() => subs = l);
+  }
 
   Future<void> _save() async {
     final app = App.read(context);
@@ -605,6 +877,7 @@ class _ItemFormState extends State<ItemForm> {
       openingQty: category == serviceCategory ? 0 : double.tryParse(normalizeDigits(oq.text)) ?? 0,
       openingRate: Money.parse(orate.text) ?? 0,
       lowStock: category == serviceCategory ? 0 : double.tryParse(normalizeDigits(low.text)) ?? 0,
+      subcategory: sub.text.trim(),
     );
     if (mounted) Navigator.pop(context);
   }
@@ -636,12 +909,7 @@ class _ItemFormState extends State<ItemForm> {
           Expanded(child: TextField(controller: code, textCapitalization: TextCapitalization.characters, decoration: d(t('short_code')))),
           const SizedBox(width: 12),
           Expanded(
-            child: DropdownButtonFormField<String>(
-              initialValue: unit,
-              decoration: d(t('unit')),
-              items: [for (final u in itemUnits) DropdownMenuItem(value: u, child: Text(t('unit_$u')))],
-              onChanged: (v) => setState(() => unit = v!),
-            ),
+            child: UnitField(value: unit, decoration: d(t('unit')), onChanged: (v) => setState(() => unit = v)),
           ),
         ]),
         const SizedBox(height: 12),
@@ -651,9 +919,30 @@ class _ItemFormState extends State<ItemForm> {
           items: [for (final c in itemCategories) DropdownMenuItem(value: c, child: Text(t('cat_$c')))],
           onChanged: (v) => setState(() {
             category = v!;
+            _loadSubs();
             if (v == serviceCategory && const ['bag', 'kg'].contains(unit)) unit = 'job';
           }),
         ),
+        const SizedBox(height: 12),
+        // optional: टाकी, पाईप … – leave empty if not needed
+        TextField(
+          key: const Key('item_subcategory'),
+          controller: sub,
+          onChanged: (_) => setState(() {}),
+          decoration: d(t('subcategory_opt')).copyWith(hintText: t('subcategory_hint')),
+        ),
+        if (subs.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Wrap(spacing: 6, runSpacing: 4, children: [
+              for (final x in subs)
+                ChoiceChip(
+                  label: Text(x),
+                  selected: sub.text.trim() == x,
+                  onSelected: (on) => setState(() => sub.text = on ? x : ''),
+                ),
+            ]),
+          ),
         const SizedBox(height: 12),
         Row(children: [
           Expanded(child: TextField(controller: sale, keyboardType: TextInputType.number, decoration: d('${t('sale_rate')} ₹'))),

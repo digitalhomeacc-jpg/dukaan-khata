@@ -8,6 +8,7 @@ import '../accounting/voucher_service.dart';
 import '../core/money.dart';
 import '../core/theme.dart';
 import '../shared/export.dart';
+import '../shared/item_match.dart';
 import '../shared/shortcode_parser.dart';
 import '../shared/widgets.dart';
 import '../state/app_controller.dart';
@@ -16,7 +17,7 @@ import 'booking_screen.dart';
 import 'books_screens.dart';
 import 'parties_screen.dart';
 import 'recurring_screen.dart';
-import 'stock_screen.dart' show itemUnits;
+import 'stock_screen.dart' show UnitField;
 
 /// One screen for every kind of entry. Shows only the fields the type needs.
 class VoucherScreen extends StatefulWidget {
@@ -363,6 +364,7 @@ class _VoucherScreenState extends State<VoucherScreen> {
                 s.isEmpty ||
                 i.name.toLowerCase().contains(s) ||
                 (i.nameEn ?? '').toLowerCase().contains(s) ||
+                (i.subcategory ?? '').toLowerCase().contains(s) ||
                 (i.shortCode ?? '').toLowerCase() == s)
             .toList();
         return Padding(
@@ -387,7 +389,7 @@ class _VoucherScreenState extends State<VoucherScreen> {
                     ListTile(
                       dense: true,
                       title: Text(i.display(app.english)),
-                      subtitle: Text(i.isService ? '${t('cat_service')} · ${t('unit_${i.unit}')}' : '${t('cat_${i.category}')} · ${t('stock')} ${fmtQty(i.stock)} ${t('unit_${i.unit}')}'),
+                      subtitle: Text(i.isService ? '${t('cat_service')} · ${t('unit_${i.unit}')}' : '${t('cat_${i.category}')}${i.subcategory == null ? '' : ' › ${i.subcategory}'} · ${t('stock')} ${fmtQty(i.stock)} ${t('unit_${i.unit}')}'),
                       trailing: Text('₹${Money.fmt(_buying ? i.purchaseRate : i.saleRate)}'),
                       onTap: () => Navigator.pop(ctx, i),
                     ),
@@ -441,12 +443,8 @@ class _VoucherScreenState extends State<VoucherScreen> {
               const SizedBox(height: 8),
               Row(children: [
                 Expanded(
-                  child: DropdownButtonFormField<String>(
-                    initialValue: unit,
-                    decoration: InputDecoration(labelText: t('unit')),
-                    items: [for (final u in itemUnits) DropdownMenuItem(value: u, child: Text(t('unit_$u')))],
-                    onChanged: (v) => setD(() => unit = v!),
-                  ),
+                  child: UnitField(
+                      key: ValueKey(unit), value: unit, decoration: InputDecoration(labelText: t('unit')), onChanged: (v) => setD(() => unit = v)),
                 ),
                 const SizedBox(width: 8),
                 Expanded(
@@ -505,10 +503,10 @@ class _VoucherScreenState extends State<VoucherScreen> {
     }
   }
 
-  void _addItem(Item it) {
+  void _addItem(Item it, [double q = 1]) {
     setState(() {
       lines.add(
-        _LineCtl(it, 1, type == VoucherType.purchase || type == VoucherType.purchaseReturn ? it.purchaseRate : it.saleRate),
+        _LineCtl(it, q, type == VoucherType.purchase || type == VoucherType.purchaseReturn ? it.purchaseRate : it.saleRate),
       );
       _syncPaid();
     });
@@ -541,7 +539,14 @@ class _VoucherScreenState extends State<VoucherScreen> {
             .replaceAll(RegExp(r'\s+(rupaye|rupees|रुपये)', caseSensitive: false), '');
         if (r.finalResult) {
           setState(() => _listening = false);
-          if (quick.text.trim().isNotEmpty) _addParsed(quick.text);
+          final m = matchItems(items, quick.text);
+          if (m.length == 1) {
+            final qty = itemQty(quick.text, m.first);
+            quick.clear();
+            _addItem(m.first, qty ?? 1);
+          } else if (m.isEmpty && quick.text.trim().isNotEmpty) {
+            _addParsed(quick.text);
+          }
         }
       },
     );
@@ -1382,34 +1387,103 @@ class _VoucherScreenState extends State<VoucherScreen> {
     return id;
   }
 
+  /// Item box: matching items drop down while typing (Marathi, English or
+  /// either spelling – "reti" finds रेती); tap one to put it on the bill.
+  /// A number typed with the name is the quantity ("reti 3"). Enter still
+  /// understands short codes like "M 5×273".
+  String _typed = ''; // the item box text before a pick clears it
   Widget _quickEntry(AppController app) {
-    return TextField(
-      controller: quick,
+    final t = app.t;
+    return RawAutocomplete<Object>(
+      textEditingController: quick,
       focusNode: quickFocus,
-      autofocus: editing == null && party != null,
-      textInputAction: TextInputAction.done,
-      onSubmitted: (s) {
-        if (s.trim().isNotEmpty) _addParsed(s);
+      displayStringForOption: (_) => '',
+      optionsBuilder: (v) {
+        if (v.text.isNotEmpty) _typed = v.text;
+        final q = v.text.trim();
+        if (q.isEmpty) return const [];
+        final found = matchItems(items, q);
+        final name = itemWords(q);
+        return [
+          ...found.take(8),
+          if (app.actor.isOwner && found.isEmpty && name.isNotEmpty) 'new:$name',
+        ];
       },
-      decoration: InputDecoration(
-        labelText: app.t('quick_entry'),
-        border: const OutlineInputBorder(),
-        prefixIcon: const Icon(Icons.bolt),
-        suffixIcon: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            IconButton(
-              icon: Icon(_listening ? Icons.mic : Icons.mic_none, color: _listening ? Colors.red : null),
-              tooltip: app.t('voice'),
-              onPressed: _voice,
-            ),
-            IconButton(
-              icon: const Icon(Icons.add_circle),
-              onPressed: () => quick.text.trim().isEmpty ? null : _addParsed(quick.text),
-            ),
-          ],
+      onSelected: (o) {
+        final qty = o is Item ? itemQty(_typed, o) : null;
+        quick.clear();
+        if (o is Item) {
+          _addItem(o, qty ?? 1);
+          WidgetsBinding.instance.addPostFrameCallback((_) => lines.last.focus.requestFocus());
+        } else if (o is String) {
+          _newItem(o.substring(4));
+        }
+      },
+      fieldViewBuilder: (context, c, f, submit) => TextField(
+        key: const Key('quick_entry'),
+        controller: c,
+        focusNode: f,
+        autofocus: editing == null && party != null,
+        textInputAction: TextInputAction.done,
+        onSubmitted: (s) {
+          if (s.trim().isEmpty) return;
+          // one clear match: take it; else try the short-code style
+          final m = matchItems(items, s);
+          if (m.length == 1 || (m.isNotEmpty && !RegExp(r'[×x*@]').hasMatch(s))) {
+            final qty = itemQty(s, m.first);
+            quick.clear();
+            _addItem(m.first, qty ?? 1);
+          } else {
+            _addParsed(s);
+          }
+        },
+        decoration: InputDecoration(
+          labelText: t('item_type'),
+          hintText: t('item_type_hint'),
+          border: const OutlineInputBorder(),
+          prefixIcon: const Icon(Icons.search),
+          suffixIcon: IconButton(
+            icon: Icon(_listening ? Icons.mic : Icons.mic_none, color: _listening ? Colors.red : null),
+            tooltip: t('voice'),
+            onPressed: _voice,
+          ),
         ),
       ),
+      optionsViewBuilder: (context, onSelected, options) {
+        final scheme = Theme.of(context).colorScheme;
+        return Align(
+          alignment: Alignment.topLeft,
+          child: Material(
+            elevation: 6,
+            borderRadius: BorderRadius.circular(10),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: 320, maxWidth: MediaQuery.of(context).size.width - 32),
+              child: ListView(shrinkWrap: true, padding: EdgeInsets.zero, children: [
+                for (final o in options)
+                  if (o is Item)
+                    ListTile(
+                      dense: true,
+                      title: Text(o.display(app.english)),
+                      subtitle: Text([
+                        t('cat_${o.category}'),
+                        ?o.subcategory,
+                        if (!o.isService) '${t('stock')} ${fmtQty(o.stock)} ${t('unit_${o.unit}')}',
+                      ].join(' · ')),
+                      trailing: Text('₹${Money.fmt(_buying ? o.purchaseRate : o.saleRate)}'),
+                      onTap: () => onSelected(o),
+                    )
+                  else
+                    ListTile(
+                      dense: true,
+                      leading: Icon(Icons.add_circle_outline, color: scheme.primary),
+                      title: Text('${t('new_item')}: "${(o as String).substring(4)}"'),
+                      onTap: () => onSelected(o),
+                    ),
+              ]),
+            ),
+          ),
+        );
+      },
     );
   }
 

@@ -6,7 +6,8 @@ class Strings {
 
   String t(String key) {
     final e = _s[key];
-    if (e == null) return key;
+    // a unit the shop made itself (ट्रिप, गाडी …) shows as typed
+    if (e == null) return key.startsWith('unit_') ? key.substring(5) : key;
     return english ? e.$2 : e.$1;
   }
 
@@ -498,6 +499,22 @@ const Map<String, (String, String)> _s = {
   'cat_plumbing': ('प्लंबिंग', 'Plumbing'),
   'cat_sand': ('वाळू / खडी', 'Sand / Aggregate'),
   'cat_other': ('इतर', 'Other'),
+  'subcategory_opt': ('उपवर्ग (हवा असल्यास)', 'Subcategory (optional)'),
+  'subcategory_hint': ('उदा. टाकी, पाईप', 'e.g. Tank, Pipe'),
+  'subcategory_none': ('उपवर्ग काढा', 'Remove subcategory'),
+  'item_type': ('वस्तू टाइप करा', 'Type an item'),
+  'item_type_hint': ('उदा. रेती 3, pipe, सिमेंट', 'e.g. reti 3, pipe, cement'),
+  'unit_new': ('+ नवीन युनिट', '+ New unit'),
+  'unit_new_hint': ('उदा. ट्रिप, गाडी, फूट', 'e.g. trip, truck, foot'),
+  'n_selected': ('{n} निवडले', '{n} selected'),
+  'bulk_change': ('निवडलेले बदला', 'Change selected'),
+  'bulk_category': ('वर्ग बदला', 'Change category'),
+  'bulk_subcategory': ('उपवर्ग बदला', 'Change subcategory'),
+  'bulk_unit': ('युनिट बदला', 'Change unit'),
+  'bulk_hide': ('लपवा', 'Hide'),
+  'bulk_hide_q': ('{n} वस्तू लपवायच्या? (हिशोब तसाच राहील)', 'Hide {n} items? (accounts stay as they are)'),
+  'stock_search_hint': ('वस्तू शोधा', 'Search items'),
+  'stock_search_hint_owner': ('वस्तू शोधा · अनेक निवडायला दाबून ठेवा', 'Search · long-press to select many'),
   // settings
   'language': ('भाषा', 'Language'),
   'marathi': ('मराठी', 'Marathi'),

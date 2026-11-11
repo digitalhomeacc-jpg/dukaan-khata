@@ -175,6 +175,7 @@ class Item {
   final int sortOrder;
   final bool archived;
   final double stock; // computed
+  final String? subcategory; // optional group inside the category (टाकी, पाईप …)
 
   Item({
     required this.id,
@@ -191,6 +192,7 @@ class Item {
     this.sortOrder = 0,
     this.archived = false,
     this.stock = 0,
+    this.subcategory,
   });
 
   factory Item.fromRow(Map<String, Object?> r) => Item(
@@ -208,6 +210,7 @@ class Item {
         sortOrder: (r['sort_order'] as int?) ?? 0,
         archived: (r['archived'] as int?) == 1,
         stock: (r['stock'] as num?)?.toDouble() ?? 0,
+        subcategory: (r['subcategory'] as String?)?.trim().isEmpty ?? true ? null : (r['subcategory'] as String).trim(),
       );
 
   String display(bool english) =>

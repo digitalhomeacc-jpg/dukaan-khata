@@ -303,4 +303,25 @@ Txn Date,Value Date,Description,Ref No./Cheque No.,Debit,Credit,Balance
           throwsA(isA<StatementFormatException>().having((e) => e.message, 'message', 'pdf_scanned')));
     });
   });
+
+  test('item subcategory + bulk change: logged per item, stock untouched', () async {
+    final a = items['M']!, b = items.values.firstWhere((x) => x.id != a.id);
+    final before = await sr.stockAt(a.id, '2026-12-31');
+    await sr.bulkUpdate([a.id, b.id], category: 'plumbing', subcategory: ' टाकी ', unit: 'nos');
+    final after = {for (final i in await sr.list()) i.id: i};
+    expect(after[a.id]!.category, 'plumbing');
+    expect(after[b.id]!.subcategory, 'टाकी');
+    expect(after[a.id]!.unit, 'nos');
+    expect(await sr.stockAt(a.id, '2026-12-31'), before);
+    expect(await sr.subcategories(category: 'plumbing'), ['टाकी']);
+    // an item edit without a subcategory keeps it; '' removes it
+    await sr.save(id: a.id, name: after[a.id]!.name, category: 'plumbing', unit: 'nos');
+    expect((await sr.list()).firstWhere((x) => x.id == a.id).subcategory, 'टाकी');
+    await sr.bulkUpdate([a.id], subcategory: '');
+    expect((await sr.list()).firstWhere((x) => x.id == a.id).subcategory, isNull);
+    final log = await db.getAll("SELECT action FROM audit_log WHERE voucher_id IN (?, ?)", [a.id, b.id]);
+    expect(log.length, greaterThanOrEqualTo(3));
+    await sr.bulkUpdate([b.id], archived: true);
+    expect((await sr.list()).any((x) => x.id == b.id), isFalse);
+  });
 }

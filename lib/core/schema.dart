@@ -75,6 +75,7 @@ const List<TableDef> appTables = [
     ColDef.t('name'),
     ColDef.t('name_en'),
     ColDef.t('category'), // cement | steel | blocks | plumbing | other
+    ColDef.t('subcategory'), // optional: टाकी, पाईप, लिक्विड … under plumbing
     ColDef.t('unit'), // bag | kg | nos | ft | ton | brass
     ColDef.t('short_code'), // U, A, M, 8MM …
     ColDef.i('sale_rate'), // paise per unit
