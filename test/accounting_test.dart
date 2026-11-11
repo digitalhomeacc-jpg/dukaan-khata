@@ -464,6 +464,12 @@ void main() {
     expect(await lr.balanceAt(vs.sys('service_cost')), rs(4000));
     expect(await sr.stockAt(work, day), 0);
     expect(await lr.unbalanced(), isEmpty);
+    // tapping the service in Stock lists every bill it was on
+    final rep = await Reports(db, biz, (k) => k).itemMovement(work, '2026-11-01', '2026-11-30');
+    expect(rep.rows.length, 2);
+    expect(rep.rows.first[1], contains('Home Owner'));
+    expect(rep.totals![4], Money.fmt(rs(6000)));
+    expect(rep.totals![5], Money.fmt(rs(4000)));
   });
 
   test('monthly charges: due from the 1st, charged as a credit bill, missed months caught up', () async {

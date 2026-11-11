@@ -650,8 +650,52 @@ class Reports {
     );
   }
 
+  /// A service has no stock card: list every bill it was on.
+  Future<ReportTable> _serviceEntries(Item item, String from, String to) async {
+    final rows = await db.getAll(
+      'SELECT v.id, v.vdate, v.vtype, p.name AS party_name, p.page_no, il.qty, il.rate, il.amount '
+      'FROM inventory_lines il JOIN vouchers v ON v.id = il.voucher_id LEFT JOIN ledgers p ON p.id = v.party_id '
+      "WHERE il.item_id = ? AND il.deleted = 0 AND v.deleted = 0 AND v.vtype IN ('sale', 'sales_return', 'purchase', 'purchase_return') "
+      'AND il.vdate BETWEEN ? AND ? ORDER BY il.vdate, v.created_at',
+      [item.id, from, to],
+    );
+    var sold = 0, bought = 0;
+    final out = <List<String>>[];
+    for (final r in rows) {
+      final vt = r['vtype'] as String;
+      final ret = vt.endsWith('_return');
+      final buy = vt.startsWith('purchase');
+      final amt = ((r['amount'] as int?) ?? ((r['qty'] as num) * (r['rate'] as int)).round()) * (ret ? -1 : 1);
+      buy ? bought += amt : sold += amt;
+      out.add([
+        shortDate(r['vdate'] as String),
+        '${vtypeLabel(VoucherType.fromCode(vt), tr)} ${r['party_name'] ?? ''}${r['page_no'] != null ? ' (${r['page_no']})' : ''}',
+        fmtQty((r['qty'] as num).toDouble() * (ret ? -1 : 1)),
+        Money.fmt(r['rate'] as int),
+        buy ? '' : Money.fmt(amt),
+        buy ? Money.fmt(amt) : '',
+      ]);
+    }
+    return ReportTable(
+      title: item.name,
+      subtitle: _range(from, to),
+      columns: [
+        ReportColumn(tr('date'), flex: 2),
+        ReportColumn(tr('particulars'), flex: 4),
+        ReportColumn.num(tr('qty')),
+        ReportColumn.num(tr('rate')),
+        ReportColumn.num(tr('sales')),
+        ReportColumn.num(tr('purchase')),
+      ],
+      rows: out,
+      totals: ['', tr('total'), '', '', Money.fmt(sold), bought == 0 ? '' : Money.fmt(bought)],
+      rowRefs: [for (final r in rows) r['id'] as String],
+    );
+  }
+
   Future<ReportTable> itemMovement(String itemId, String from, String to) async {
     final item = (await stock.byId(itemId))!;
+    if (item.isService) return _serviceEntries(item, from, to);
     final mv = await stock.movements(itemId, from: from, to: to);
     final opening = await stock.stockAt(itemId, from, before: true);
     return ReportTable(
