@@ -261,8 +261,9 @@ class _DayEndCard extends StatelessWidget {
         key: PageStorageKey('dayend_${c.date}'),
         leading: const Icon(Icons.fact_check_outlined),
         title: Text(t('day_end')),
+        // taken / given, for both
         subtitle: Text('${t('hamali')}: ${Money.fmt(c.hamaliToPay)} / ${Money.fmt(c.hamaliPaid)}'
-            '${owedTotal > 0 ? ' · ${t('transporters')}: ₹${Money.fmt(owedTotal)}' : ''}'),
+            '${c.hasTransport ? ' · ${t('transport')}: ${Money.fmt(c.transportCharged)} / ${Money.fmt(c.transportPaid)}' : ''}'),
         childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
         children: [
           Row(children: [Expanded(child: Text(t('hamali_charged'))), money(c.hamaliCharged)]),
@@ -298,32 +299,64 @@ class _DayEndCard extends StatelessWidget {
                   partyId: '${app.businessId}:hamali', expense: true, amount: pending > 0 ? pending : null),
             ),
           ]),
-          if (c.ownTransport != 0)
-            Row(children: [Expanded(child: Text(t('transport_income'))), money(c.ownTransport, color: Colors.green.shade700)]),
-          if (c.transporters.isNotEmpty) ...[
-            const Divider(),
+          if (c.hasTransport) ...[
+            const Divider(height: 20, thickness: 1.2),
+            // गाडी भाडे, the same way as hamali: taken on bills → drivers' share → ours
+            Row(children: [Expanded(child: Text(t('transport_charged'))), money(c.transportCharged)]),
+            if (c.driversEarned != 0)
+              Row(children: [Expanded(child: Text('− ${t('drivers_share')}')), money(c.driversEarned)]),
+            const Divider(height: 12),
             Row(children: [
-              Expanded(flex: 3, child: Text(t('transporter'), style: Theme.of(context).textTheme.bodySmall)),
-              Expanded(flex: 2, child: Text(t('earned_today'), textAlign: TextAlign.right, style: Theme.of(context).textTheme.bodySmall)),
-              Expanded(flex: 2, child: Text(t('owed_total'), textAlign: TextAlign.right, style: Theme.of(context).textTheme.bodySmall)),
-              const SizedBox(width: 88),
+              Expanded(child: Text(t('transport_ours'), style: const TextStyle(fontWeight: FontWeight.bold))),
+              money(c.ownTransport, color: c.ownTransport >= 0 ? Colors.green.shade700 : Colors.red.shade700, bold: true),
             ]),
-            for (final d in c.transporters)
+            if (c.driversPaid != 0) Row(children: [Expanded(child: Text(t('drivers_paid_today'))), money(c.driversPaid)]),
+            if (owedTotal > 0)
               Row(children: [
-                Expanded(flex: 3, child: Text(d.transporter.display(app.english))),
-                Expanded(flex: 2, child: Align(alignment: Alignment.centerRight, child: money(d.earnedToday))),
-                Expanded(flex: 2, child: Align(alignment: Alignment.centerRight, child: money(d.owed, color: d.owed > 0 ? Colors.red.shade700 : null, bold: true))),
-                SizedBox(
-                  width: 88,
-                  child: d.owed > 0
-                      ? TextButton(
-                          onPressed: () => VoucherScreen.open(context, VoucherType.payment,
-                              partyId: d.transporter.id, amount: d.owed),
-                          child: Text(t('pay_now')),
-                        )
-                      : const SizedBox(),
-                ),
+                Expanded(child: Text(t('drivers_owed'), style: const TextStyle(fontWeight: FontWeight.bold))),
+                money(owedTotal, color: Colors.red.shade700, bold: true),
               ]),
+            if (c.transporters.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Row(children: [
+                Expanded(flex: 3, child: Text(t('transporter'), style: Theme.of(context).textTheme.bodySmall)),
+                Expanded(flex: 2, child: Text(t('earned_today'), textAlign: TextAlign.right, style: Theme.of(context).textTheme.bodySmall)),
+                Expanded(flex: 2, child: Text(t('paid_today'), textAlign: TextAlign.right, style: Theme.of(context).textTheme.bodySmall)),
+                Expanded(flex: 2, child: Text(t('owed_total'), textAlign: TextAlign.right, style: Theme.of(context).textTheme.bodySmall)),
+              ]),
+              for (final d in c.transporters)
+                InkWell(
+                  // tap a driver who is owed to pay him
+                  onTap: d.owed > 0
+                      ? () => VoucherScreen.open(context, VoucherType.payment, partyId: d.transporter.id, amount: d.owed)
+                      : null,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Row(children: [
+                      Expanded(flex: 3, child: Text(d.transporter.display(app.english))),
+                      Expanded(flex: 2, child: Align(alignment: Alignment.centerRight, child: money(d.earnedToday))),
+                      Expanded(flex: 2, child: Align(alignment: Alignment.centerRight, child: money(d.paidToday))),
+                      Expanded(
+                          flex: 2,
+                          child: Align(
+                              alignment: Alignment.centerRight,
+                              child: money(d.owed, color: d.owed > 0 ? Colors.red.shade700 : null, bold: true))),
+                    ]),
+                  ),
+                ),
+              if (owedTotal > 0)
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: Text(t('tap_driver_to_pay'), style: Theme.of(context).textTheme.bodySmall),
+                ),
+            ],
+            if (c.freightPaid != 0) ...[
+              const SizedBox(height: 8),
+              Row(children: [
+                Expanded(child: Text(t('freight_paid_today'), style: Theme.of(context).textTheme.bodySmall)),
+                Text(Money.fmt(c.freightPaid), style: Theme.of(context).textTheme.bodySmall),
+              ]),
+            ],
           ],
         ],
       ),

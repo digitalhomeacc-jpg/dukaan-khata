@@ -42,11 +42,22 @@ class DayCharges {
   final int ownTransport; // own vehicle income + margin on outside trips
   final List<TransporterDue> transporters;
   final int varhai; // वराई: hamali money the company's driver handed over
-  DayCharges(this.date, this.hamaliCharged, this.hamaliPaid, this.ownTransport, this.transporters, {this.varhai = 0});
+  final int transportCharged; // गाडी भाडे taken from customers on today's bills
+  final int freightPaid; // other भाडे paid today as an expense (not to a transporter's khata)
+  DayCharges(this.date, this.hamaliCharged, this.hamaliPaid, this.ownTransport, this.transporters,
+      {this.varhai = 0, this.transportCharged = 0, this.freightPaid = 0});
+  /// Outside drivers' share of today's fares / what they were paid today / still owed (all days).
+  int get driversEarned => transporters.fold(0, (s, d) => s + d.earnedToday);
+  int get driversPaid => transporters.fold(0, (s, d) => s + d.paidToday);
+  int get driversOwed => transporters.fold(0, (s, d) => s + (d.owed > 0 ? d.owed : 0));
+  /// Delivery fares paid out today (to drivers). Other भाडे – e.g. freight on
+  /// goods coming in – is shown on its own, not mixed with the bills' fares.
+  int get transportPaid => driversPaid;
+  bool get hasTransport => transportCharged != 0 || ownTransport != 0 || transporters.isNotEmpty || freightPaid != 0;
   /// What the labourers get today: hamali taken on bills + वराई.
   int get hamaliToPay => hamaliCharged + varhai;
   int get hamaliProfit => hamaliToPay - hamaliPaid;
-  bool get isEmpty => hamaliCharged == 0 && hamaliPaid == 0 && varhai == 0 && ownTransport == 0 && transporters.isEmpty;
+  bool get isEmpty => hamaliCharged == 0 && hamaliPaid == 0 && varhai == 0 && !hasTransport;
 }
 
 class Statement {
@@ -505,7 +516,20 @@ class LedgerRepo {
           TransporterDue(Ledger.fromRow(r), (r['earned'] as num).toInt(), (r['paid'] as num).toInt(),
               -(r['balance'] as num).toInt()),
     ];
-    return DayCharges(date, hamaliCharged, hamaliPaid, ownTransport, dues, varhai: varhai);
+    final transportCharged = ((await db.get(
+      "SELECT COALESCE(SUM(transport),0) AS s FROM vouchers WHERE business_id = ? AND vtype = 'sale' AND vdate = ? AND deleted = 0",
+      [businessId, date],
+    ))['s'] as num)
+        .toInt();
+    // भाडे paid out today (a payment entry), not the bills' own fare-margin postings
+    final freightPaid = ((await db.get(
+      'SELECT COALESCE(SUM(vl.debit - vl.credit),0) AS s FROM voucher_lines vl JOIN vouchers v ON v.id = vl.voucher_id '
+      "WHERE vl.ledger_id = ? AND vl.vdate = ? AND vl.deleted = 0 AND v.vtype = 'payment'",
+      ['$businessId:freight', date],
+    ))['s'] as num)
+        .toInt();
+    return DayCharges(date, hamaliCharged, hamaliPaid, ownTransport, dues,
+        varhai: varhai, transportCharged: transportCharged, freightPaid: freightPaid);
   }
 
   /// "M 12.0×285.0" → "M 12×285"

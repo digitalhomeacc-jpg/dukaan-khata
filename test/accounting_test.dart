@@ -787,11 +787,25 @@ void main() {
     expect(dc.ownTransport, rs(600));
     expect(dc.transporters.single.owed, rs(700));
     expect(dc.transporters.single.earnedToday, rs(700));
+    // transport like hamali: 1,300 taken on bills − 700 Ganesh's share = 600 ours
+    expect(dc.transportCharged, rs(500 + 800));
+    expect(dc.driversEarned, rs(700));
+    expect(dc.transportCharged - dc.driversEarned, dc.ownTransport);
+    expect(dc.driversOwed, rs(700));
+    expect(dc.transportPaid, 0);
     await vs.save(
         VoucherInput(type: VoucherType.payment, date: day, partyId: ganesh, payLedgerId: vs.sys('cash'), amount: rs(700)),
         owner);
     dc = await lr.dayCharges(day);
     expect(dc.transporters.single.owed, 0);
+    expect(dc.driversPaid, rs(700));
+    // other भाडे (freight on goods coming in) is shown apart, not as fares paid
+    await vs.save(
+        VoucherInput(type: VoucherType.payment, date: day, partyId: vs.sys('freight'), payLedgerId: vs.sys('cash'), amount: rs(250)),
+        owner);
+    dc = await lr.dayCharges(day);
+    expect(dc.freightPaid, rs(250));
+    expect(dc.transportPaid, rs(700));
 
     // khata line shows the charges; edit keeps them
     final st = await lr.statement(cust);
