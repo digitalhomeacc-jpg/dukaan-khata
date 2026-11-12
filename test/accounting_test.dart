@@ -991,6 +991,36 @@ void main() {
     expect(d.containsKey(c), isFalse); // no balance
   });
 
+  test('company statement before the books start → old entries: no figure changes, no duplicates, running total = their balance', () async {
+    Books.start = '2026-11-08';
+    final sup = await lr.create(name: 'Wonder', group: LedgerGroup.supplier, openingBalance: -rs(52594));
+    final w = items['W']!;
+    final stock0 = await sr.stockAt(w.id, '2026-12-31');
+    final before = await lr.balanceAt(sup);
+    final cash0 = await lr.balanceAt(vs.sys('cash'));
+    final lines = [
+      ('2026-04-09', 'purchase', rs(133489), 'PPC 21'),
+      ('2026-04-10', 'paid', rs(500000), 'Fund Received RTGS'),
+      ('2026-04-11', 'purchase', rs(34549), 'PLUS 5'),
+      ('2026-04-30', 'paid', rs(183772), 'Trade Discount for Apr 26'),
+      ('2026-04-30', 'purchase', rs(13140), 'Trf to Security Ledger'),
+      ('2026-04-30', 'purchase', rs(13140), 'same amount, same day – a second line'),
+      ('2026-11-09', 'purchase', rs(1000), 'after the books start – never an old entry'),
+    ];
+    final added = await vs.importOldEntries(sup, lines, owner);
+    expect(added, 6);
+    expect(await lr.balanceAt(sup), before);
+    expect(await lr.balanceAt(vs.sys('cash')), cash0);
+    expect(await sr.stockAt(w.id, '2026-12-31'), stock0);
+    expect(await vs.importOldEntries(sup, lines, owner), 0); // again: nothing new
+    final st = await lr.statement(sup);
+    expect(st.references.length, 6);
+    // old ledger runs like the company's: −(1,33,489) +5,00,000 −34,549 +1,83,772 −13,140 −13,140
+    expect(st.references.last.balance, -rs(133489) + rs(500000) - rs(34549) + rs(183772) - rs(13140) * 2);
+    expect(await lr.unbalanced(), isEmpty);
+    expect(await vs.deepCheck(), isEmpty);
+  });
+
   test('search: words in any order, page no., phone, amount, bill no.', () async {
     final id = await lr.create(name: 'सुरेश जाधव', nameEn: 'Suresh Jadhav', group: LedgerGroup.customer, pageNo: '29', phone: '98500 12345');
     await lr.create(name: 'सुरेश मोरे', nameEn: 'Suresh More', group: LedgerGroup.customer, pageNo: '63');

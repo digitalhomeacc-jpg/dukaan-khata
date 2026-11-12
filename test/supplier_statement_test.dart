@@ -62,4 +62,17 @@ void main() {
     expect(m.stBilled, 13348900 + 3454900 + 1314000);
     expect(m.ourPaid, 50000000 + 18377200);
   });
+
+  test('invoice dated before the books start, goods entered after: matched as in transit', () {
+    final l = SupplierStatement.parsePdfJson(sample());
+    final inv = l.first; // 09-04-2026 invoice ₹1,33,489
+    final ours = [KhataEntry('p1', '2026-04-10', 'purchase', 13348900 - 50, 0)]; // next day, 50 paise rounding
+    final m = SupplierMatch.match(const [], ours, early: [inv]);
+    expect(m.transit, [inv]);
+    expect(m.extra, isEmpty);
+    expect(m.missing, isEmpty);
+    // an invoice with no purchase after the start stays an old entry
+    final m2 = SupplierMatch.match(const [], const [], early: [inv]);
+    expect(m2.transit, isEmpty);
+  });
 }

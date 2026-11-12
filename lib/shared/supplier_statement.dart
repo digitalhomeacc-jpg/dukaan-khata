@@ -85,35 +85,49 @@ class KhataEntry {
 
 class SupplierMatch {
   final List<SupplierLine> missing = []; // on the statement, not in the khata
+  /// Invoices dated just before the books start whose goods were entered as a
+  /// purchase after it (invoice 7/11, truck 8/11): matched, not old entries.
+  final List<SupplierLine> transit = [];
   final List<KhataEntry> extra = []; // in the khata, not on the statement
   int matched = 0;
   int stBilled = 0, stCredited = 0, ourBought = 0, ourPaid = 0;
 
   /// Pairs statement lines with khata entries of the same amount and side,
   /// nearest date first (within [days]).
-  static SupplierMatch match(List<SupplierLine> st, List<KhataEntry> ours, {int days = 7}) {
+  ///
+  /// [early]: invoices from the days before the books start; each one that
+  /// pairs with a purchase after the start counts as [transit], the rest are
+  /// left alone (they are old entries).
+  static SupplierMatch match(List<SupplierLine> st, List<KhataEntry> ours, {int days = 7, List<SupplierLine> early = const []}) {
     final r = SupplierMatch();
     final used = <int>{};
     for (final o in ours) {
       r.ourBought += o.bought;
       r.ourPaid += o.paid;
     }
-    for (final l in st) {
-      r.stBilled += l.debit;
-      r.stCredited += l.credit;
+    // amounts may differ by a rupee of rounding
+    bool same(int a, int b) => (a - b).abs() < 100; // paise of rounding, not a rupee
+    int? find(SupplierLine l) {
       final d = parseIso(l.date);
       int? best;
       var bestGap = days + 1;
       for (var i = 0; i < ours.length; i++) {
         if (used.contains(i)) continue;
         final o = ours[i];
-        if ((l.debit > 0 ? o.bought : o.paid) != l.amount) continue;
+        if (!same(l.debit > 0 ? o.bought : o.paid, l.amount) || (l.debit > 0 ? o.bought : o.paid) == 0) continue;
         final gap = parseIso(o.date).difference(d).inDays.abs();
         if (gap < bestGap) {
           bestGap = gap;
           best = i;
         }
       }
+      return best;
+    }
+
+    for (final l in st) {
+      r.stBilled += l.debit;
+      r.stCredited += l.credit;
+      final best = find(l);
       if (best == null) {
         r.missing.add(l);
       } else {
@@ -121,9 +135,30 @@ class SupplierMatch {
         r.matched++;
       }
     }
+    for (final l in early.where((x) => x.kind == 'invoice')) {
+      final best = find(l);
+      if (best != null) {
+        used.add(best);
+        r.transit.add(l);
+        r.stBilled += l.debit;
+      }
+    }
     for (var i = 0; i < ours.length; i++) {
       if (!used.contains(i)) r.extra.add(ours[i]);
     }
     return r;
   }
+
+
+}
+
+/// Statement lines before the books start → old entries (जुन्या नोंदी) on the
+/// supplier's khata. Old entries are reference only: no balance, stock or
+/// cash changes. Lines already imported (same date, kind and amount) are
+/// skipped, so importing the same PDF twice adds nothing.
+class StatementImport {
+  /// Old-entry kind for a statement line, seen from our side.
+  static String kindOf(SupplierLine l) => l.debit > 0 ? 'purchase' : 'paid';
+
+  static String keyOf(String date, String kind, int amount) => '$date|$kind|$amount';
 }

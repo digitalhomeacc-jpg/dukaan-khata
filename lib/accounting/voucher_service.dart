@@ -689,6 +689,45 @@ class VoucherService {
     return v.type == VoucherType.sale ? n : -n;
   }
 
+  /// Statement lines before the books start → old entries on a supplier's
+  /// khata (reference only – they change no figure). [lines]: (date, kind
+  /// 'purchase' | 'paid', amount, note). Already imported lines (same date,
+  /// kind, amount) are skipped. [onProgress] gets (done, total). Returns how
+  /// many were added.
+  Future<int> importOldEntries(String partyId, List<(String, String, int, String)> lines, Actor actor,
+      {void Function(int, int)? onProgress}) async {
+    final have = <String, int>{};
+    for (final r in await db.getAll(
+        "SELECT vdate, pay_ledger_id, amount, paid FROM vouchers WHERE party_id = ? AND vtype = 'history' AND deleted = 0", [partyId])) {
+      final kind = '${r['pay_ledger_id'] ?? ''}'.replaceFirst(historyKindPrefix, '');
+      final amt = ((r['amount'] as int?) ?? 0) != 0 ? r['amount'] as int : (r['paid'] as int?) ?? 0;
+      final k = '${r['vdate']}|$kind|$amt';
+      have[k] = (have[k] ?? 0) + 1;
+    }
+    var added = 0, n = 0;
+    for (final (date, kind, amount, note) in lines) {
+      n++;
+      onProgress?.call(n, lines.length);
+      if (!Books.isHistory(date) || amount <= 0) continue;
+      final k = '$date|$kind|$amount';
+      if ((have[k] ?? 0) > 0) {
+        have[k] = have[k]! - 1;
+        continue;
+      }
+      await save(
+          VoucherInput(
+              type: VoucherType.history,
+              date: date,
+              partyId: partyId,
+              payLedgerId: '$historyKindPrefix$kind',
+              amount: amount,
+              narration: note.length > 120 ? note.substring(0, 120) : note),
+          actor);
+      added++;
+    }
+    return added;
+  }
+
   /// Entry types that post money (the rest are notes or stock-only).
   static const postingTypes = {
     VoucherType.sale, VoucherType.purchase, VoucherType.salesReturn, VoucherType.purchaseReturn,

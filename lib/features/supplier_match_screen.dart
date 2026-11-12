@@ -29,6 +29,8 @@ class _SupplierMatchScreenState extends State<SupplierMatchScreen> {
   List<SupplierLine>? lines; // the whole statement
   SupplierMatch? match; // from the books start on
   int ourBalance = 0, ourOpening = 0;
+  int oldImported = 0; // old entries already on the khata from a statement
+  String? progress;
   bool busy = false;
   String? error;
 
@@ -59,24 +61,92 @@ class _SupplierMatchScreenState extends State<SupplierMatchScreen> {
     final app = App.read(context);
     final all = lines!;
     final inBooks = all.where((l) => !Books.isHistory(l.date)).toList();
+    // invoices of the last week before the books start may be goods that came after it
+    final weekBefore = isoDate(parseIso(Books.start).subtract(const Duration(days: 7)));
+    final early = all.where((l) => Books.isHistory(l.date) && l.date.compareTo(weekBefore) >= 0).toList();
     final st = await app.ledgers.statement(widget.supplier.id, from: Books.start, to: all.last.date.compareTo(todayIso()) > 0 ? all.last.date : todayIso());
     final ours = [
       for (final r in st.rows)
         KhataEntry(r.voucherId, r.date, '${app.t('vt_${r.type.code}')}${r.details.isEmpty ? '' : ' · ${r.details}'}', r.credit, r.debit)
     ];
     final fresh = await app.ledgers.byId(widget.supplier.id);
+    final imported = await app.db.get(
+        "SELECT COUNT(*) AS n FROM vouchers WHERE party_id = ? AND vtype = 'history' AND deleted = 0", [widget.supplier.id]);
     if (!mounted) return;
     setState(() {
-      match = SupplierMatch.match(inBooks, ours);
+      oldImported = imported['n'] as int;
+      match = SupplierMatch.match(inBooks, ours, early: early);
       ourBalance = fresh?.balance ?? 0;
       ourOpening = fresh?.openingBalance ?? 0;
     });
   }
 
-  /// Their balance just before our books start (+ = we owed them).
+  /// Their balance just before our books start (+ = we owed them), less the
+  /// invoices whose goods we entered after the start (counted there).
   int? get _theirOpening {
     final before = lines!.where((l) => Books.isHistory(l.date)).toList();
-    return before.isEmpty ? null : before.last.balance;
+    if (before.isEmpty) return null;
+    return before.last.balance - (match?.transit.fold<int>(0, (s, l) => s + l.debit) ?? 0);
+  }
+
+  /// Statement lines before the books start that become old entries.
+  List<SupplierLine> get _oldLines {
+    final transit = match?.transit.toSet() ?? {};
+    return lines!.where((l) => Books.isHistory(l.date) && !transit.contains(l)).toList();
+  }
+
+  Future<void> _importOld() async {
+    final app = App.read(context);
+    final t = app.t;
+    final old = _oldLines;
+    if (!await confirm(context, t('sm_import_q').replaceAll('{n}', '${old.length}').replaceAll('{date}', shortDate(Books.start)))) return;
+    setState(() => busy = true);
+    try {
+      final added = await app.vouchers.importOldEntries(
+        widget.supplier.id,
+        [
+          for (final l in old)
+            (l.date, StatementImport.kindOf(l), l.amount, [if (l.qty > 0) fmtQty(l.qty), l.text].join(' · ')),
+        ],
+        app.actor,
+        onProgress: (d, n) {
+          if (mounted && (d % 20 == 0 || d == n)) setState(() => progress = '$d / $n');
+        },
+      );
+      if (mounted) toast(context, t('sm_imported').replaceAll('{n}', '$added').replaceAll('{s}', '${old.length - added}'));
+    } catch (e) {
+      if (mounted) toast(context, errText(context, e), error: true);
+    }
+    progress = null;
+    await _rematch();
+    if (mounted) setState(() => busy = false);
+  }
+
+  /// मागील बाकी = the company's balance before the books start (owner, asks first).
+  Future<void> _setOpening(int theirs) async {
+    final app = App.read(context);
+    final t = app.t;
+    final l = await app.ledgers.byId(widget.supplier.id);
+    if (l == null || !mounted) return;
+    final ours = -theirs; // + = they owe us
+    if (!await confirm(
+        context,
+        t('sm_set_opening_q')
+            .replaceAll('{old}', '₹${Money.fmt(l.openingBalance.abs())}')
+            .replaceAll('{new}', '₹${Money.fmt(ours.abs())} ${ours <= 0 ? t('we_owe') : t('they_owe')}'))) {
+      return;
+    }
+    await app.ledgers.update(l.id,
+        name: l.name,
+        nameEn: l.nameEn,
+        phone: l.phone,
+        address: l.address,
+        pageNo: l.pageNo,
+        shortCode: l.shortCode,
+        gstin: l.gstin,
+        openingBalance: ours,
+        creditLimit: l.creditLimit);
+    await _rematch();
   }
 
   Future<void> _addDiscount(SupplierLine l) async {
@@ -136,7 +206,25 @@ class _SupplierMatchScreenState extends State<SupplierMatchScreen> {
                     style: Theme.of(context).textTheme.bodySmall),
                 const SizedBox(height: 8),
                 _cmp(t('sm_closing'), bal(lines!.last.balance), bal(-ourBalance), lines!.last.balance == -ourBalance),
-                if (_theirOpening case final o?) _cmp(t('sm_opening').replaceAll('{date}', shortDate(Books.start)), bal(o), bal(-ourOpening), o == -ourOpening),
+                if (_theirOpening case final o?) ...[
+                  _cmp(t('sm_opening').replaceAll('{date}', shortDate(Books.start)), bal(o), bal(-ourOpening), o == -ourOpening),
+                  if (o != -ourOpening && app.actor.isOwner)
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton.icon(
+                        key: const Key('sm_set_opening'),
+                        icon: const Icon(Icons.sync_alt, size: 18),
+                        label: Text(t('sm_set_opening')),
+                        onPressed: busy ? null : () => _setOpening(o),
+                      ),
+                    ),
+                ],
+                for (final x in m.transit)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 26, bottom: 4),
+                    child: Text(t('sm_transit').replaceAll('{date}', shortDate(x.date)).replaceAll('{amt}', Money.fmt(x.debit)),
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AppColors.ink)),
+                  ),
                 _cmp(t('sm_billed'), '₹${Money.fmt(m.stBilled)}', '₹${Money.fmt(m.ourBought)}', m.stBilled == m.ourBought),
                 _cmp(t('sm_credited'), '₹${Money.fmt(m.stCredited)}', '₹${Money.fmt(m.ourPaid)}', m.stCredited == m.ourPaid),
                 const SizedBox(height: 6),
@@ -148,6 +236,28 @@ class _SupplierMatchScreenState extends State<SupplierMatchScreen> {
               ]),
             ),
           ),
+          // everything before the books start → old entries (change no number)
+          if (_oldLines.isNotEmpty && app.actor.isOwner)
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(t('sm_old_title').replaceAll('{date}', shortDate(Books.start)), style: const TextStyle(fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 4),
+                  Text(t('sm_old_help').replaceAll('{n}', '${_oldLines.length}').replaceAll('{have}', '$oldImported'),
+                      style: Theme.of(context).textTheme.bodySmall),
+                  const SizedBox(height: 8),
+                  FilledButton.tonalIcon(
+                    key: const Key('sm_import_old'),
+                    onPressed: busy ? null : _importOld,
+                    icon: busy && progress != null
+                        ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Icon(Icons.history_edu),
+                    label: Text(progress ?? t('sm_import_btn').replaceAll('{n}', '${_oldLines.length}')),
+                  ),
+                ]),
+              ),
+            ),
           if (m.missing.isNotEmpty) ...[
             SectionTitle('${t('sm_missing')} (${m.missing.length})'),
             if (m.missing.where((l) => l.kind == 'discount').length > 1)
