@@ -38,8 +38,13 @@ String normalizeDigits(String s) {
   return b.toString();
 }
 
-String fmtQty(double q) =>
-    q == q.roundToDouble() ? q.toInt().toString() : q.toStringAsFixed(q.abs() < 10 ? 3 : 2).replaceFirst(RegExp(r'0+$'), '');
+/// Quantity as typed: up to 3 decimals, never rounded shorter (12.345 ton stays
+/// 12.345 – an edited bill must show exactly what was saved).
+String fmtQty(double q) {
+  if (q == q.roundToDouble()) return q.toInt().toString();
+  final s = q.toStringAsFixed(3).replaceFirst(RegExp(r'0+$'), '');
+  return s.endsWith('.') ? s.substring(0, s.length - 1) : s;
+}
 
 /// Dates are stored as YYYY-MM-DD strings (sortable, timezone-free).
 String isoDate(DateTime d) =>

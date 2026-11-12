@@ -178,8 +178,13 @@ class PartyForm extends StatefulWidget {
   final Ledger? existing;
   const PartyForm({super.key, required this.group, this.existing});
 
-  static Future<void> open(BuildContext context, LedgerGroup group, {Ledger? existing}) =>
-      Navigator.push(context, MaterialPageRoute(builder: (_) => PartyForm(group: group, existing: existing)));
+  static Future<void> open(BuildContext context, LedgerGroup group, {Ledger? existing}) async {
+    // always the saved values, not a copy from an older screen (saving a stale
+    // copy would quietly undo a change made in between)
+    final fresh = existing == null ? null : await App.read(context).ledgers.byId(existing.id) ?? existing;
+    if (!context.mounted) return;
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => PartyForm(group: group, existing: fresh)));
+  }
 
   @override
   State<PartyForm> createState() => _PartyFormState();

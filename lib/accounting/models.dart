@@ -67,7 +67,9 @@ enum VoucherType {
 
   final String code;
   const VoucherType(this.code);
-  static VoucherType fromCode(String c) => VoucherType.values.firstWhere((v) => v.code == c);
+  /// An entry type this (older) copy of the app does not know yet shows as a
+  /// plain "other" row instead of breaking every list it appears in.
+  static VoucherType fromCode(String c) => VoucherType.values.firstWhere((v) => v.code == c, orElse: () => VoucherType.opening);
 
   /// Stock direction for item lines on this voucher type.
   int get stockDirection => switch (this) {

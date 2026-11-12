@@ -239,6 +239,11 @@ Txn Date,Value Date,Description,Ref No./Cheque No.,Debit,Credit,Balance
       final counts = await repo.counts(bank);
       expect(counts['matched'], 3);
       expect(counts['open'], 1);
+      // deleting a matched entry frees its statement line again
+      final matched = (await repo.list(bank, 'matched')).firstWhere((l) => l.description.contains('SURESH'));
+      await vs.delete(matched.voucherId!, owner);
+      expect((await repo.counts(bank))['open'], 2);
+      expect((await repo.list(bank, 'open')).any((l) => l.id == matched.id && l.voucherId == null), isTrue);
     });
   });
 
@@ -323,5 +328,17 @@ Txn Date,Value Date,Description,Ref No./Cheque No.,Debit,Credit,Balance
     expect(log.length, greaterThanOrEqualTo(3));
     await sr.bulkUpdate([b.id], archived: true);
     expect((await sr.list()).any((x) => x.id == b.id), isFalse);
+  });
+
+  test('quantities show exactly as typed; unknown entry types do not break lists', () {
+    expect(fmtQty(12), '12');
+    expect(fmtQty(12.5), '12.5');
+    expect(fmtQty(12.345), '12.345'); // was rounded to 12.35 when a bill was re-opened
+    expect(fmtQty(2624.125), '2624.125');
+    expect(fmtQty(0.75), '0.75');
+    expect(fmtQty(10.0004), '10');
+    expect(double.parse(fmtQty(128.8)), 128.8);
+    expect(VoucherType.fromCode('sale'), VoucherType.sale);
+    expect(VoucherType.fromCode('something_newer'), VoucherType.opening);
   });
 }

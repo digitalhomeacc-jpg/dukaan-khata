@@ -830,8 +830,13 @@ class _RegisterGrid extends StatelessWidget {
 class ItemForm extends StatefulWidget {
   final Item? existing;
   const ItemForm({super.key, this.existing});
-  static Future<void> open(BuildContext context, {Item? existing}) =>
-      Navigator.push(context, MaterialPageRoute(builder: (_) => ItemForm(existing: existing)));
+  static Future<void> open(BuildContext context, {Item? existing}) async {
+    // always the saved values: the stock card keeps the item as it was when
+    // opened, and saving that old copy would undo an edit made a minute ago
+    final fresh = existing == null ? null : await App.read(context).stock.byId(existing.id) ?? existing;
+    if (!context.mounted) return;
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => ItemForm(existing: fresh)));
+  }
   @override
   State<ItemForm> createState() => _ItemFormState();
 }
@@ -893,7 +898,10 @@ class _ItemFormState extends State<ItemForm> {
           if (e != null)
             IconButton(
               icon: const Icon(Icons.archive_outlined),
+              tooltip: t('bulk_hide'),
               onPressed: () async {
+                if (!await confirm(context, t('bulk_hide_q').replaceAll('{n}', '1'))) return;
+                if (!context.mounted) return;
                 await App.read(context).stock.setArchived(e!.id, true);
                 if (context.mounted) Navigator.pop(context);
               },

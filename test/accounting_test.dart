@@ -931,6 +931,32 @@ void main() {
     expect(await lr.unbalanced(), isEmpty);
   });
 
+  test('monthly bill deleted: that month is due again; editing the bill keeps it settled', () async {
+    final rs_ = RecurringService(db, biz);
+    final hotel = await lr.create(name: 'Hotel Next Door', group: LedgerGroup.customer);
+    final rent = await sr.save(name: 'Rent', category: serviceCategory, unit: 'job', saleRate: rs(8000));
+    final today = todayIso();
+    final month = monthOf(today);
+    final tpl = await rs_.save(vs, owner, partyId: hotel, startMonth: month, lines: [ItemLine(rent, 1, rs(8000))]);
+    var r = (await rs_.list()).firstWhere((x) => x.id == tpl);
+    expect(r.dueMonths(today), [month]);
+    final bill = await rs_.charge(vs, owner, r, month, [ItemLine(rent, 1, rs(8000))], narration: 'Rent');
+    r = (await rs_.list()).firstWhere((x) => x.id == tpl);
+    expect(r.dueMonths(today), isEmpty);
+    // an edit of the bill (rate corrected) keeps the month settled
+    final (v, _) = await vs.load(bill);
+    await vs.save(VoucherInput(type: VoucherType.sale, date: v.date, partyId: hotel, items: [ItemLine(rent, 1, rs(8500))]), owner,
+        existingId: bill);
+    r = (await rs_.list()).firstWhere((x) => x.id == tpl);
+    expect(r.dueMonths(today), isEmpty);
+    expect(await lr.balanceAt(hotel), rs(8500));
+    // deleted by mistake → due again, nothing left on the khata
+    await vs.delete(bill, owner);
+    r = (await rs_.list()).firstWhere((x) => x.id == tpl);
+    expect(r.dueMonths(today), [month]);
+    expect(await lr.balanceAt(hotel), 0);
+  });
+
   test('search: words in any order, page no., phone, amount, bill no.', () async {
     final id = await lr.create(name: 'सुरेश जाधव', nameEn: 'Suresh Jadhav', group: LedgerGroup.customer, pageNo: '29', phone: '98500 12345');
     await lr.create(name: 'सुरेश मोरे', nameEn: 'Suresh More', group: LedgerGroup.customer, pageNo: '63');

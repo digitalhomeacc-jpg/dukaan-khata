@@ -120,6 +120,9 @@ class VoucherInput {
 /// status of a विभागून transfer: `split:<main entry id>`.
 const splitPrefix = 'split:';
 
+/// status of a bill / payment made from a दरमहा reminder: `monthly:<template id>|<YYYY-MM>`.
+const monthlyPrefix = 'monthly:';
+
 class VoucherService {
   final SqliteConnection db;
   final String businessId;
@@ -358,7 +361,8 @@ class VoucherService {
             v.refNo, v.gstBillNeeded ? 1 : 0, ..._charges(v), now, version, id
           ],
         );
-        if ((v.type == VoucherType.booking || '$keepStatus'.startsWith(splitPrefix)) && keepStatus != null) {
+        if ((v.type == VoucherType.booking || '$keepStatus'.startsWith(splitPrefix) || '$keepStatus'.startsWith(monthlyPrefix)) &&
+            keepStatus != null) {
           await tx.execute('UPDATE vouchers SET status = ? WHERE id = ?', [keepStatus, id]);
         }
       } else {
@@ -458,6 +462,23 @@ class VoucherService {
     await tx.execute('UPDATE vouchers SET deleted = 1, updated_at = ? WHERE id = ?', [nowIso(), id]);
     await tx.execute('UPDATE voucher_lines SET deleted = 1 WHERE voucher_id = ?', [id]);
     await tx.execute('UPDATE inventory_lines SET deleted = 1 WHERE voucher_id = ?', [id]);
+    // a monthly bill / payment made from a दरमहा reminder: that month is due again
+    final st = (await tx.getOptional('SELECT status FROM vouchers WHERE id = ?', [id]))?['status'] as String?;
+    if (st != null && st.startsWith(monthlyPrefix)) {
+      final parts = st.substring(monthlyPrefix.length).split('|'); // template id | YYYY-MM
+      if (parts.length == 2) {
+        final tpl = await tx.getOptional('SELECT status, vdate FROM vouchers WHERE id = ? AND deleted = 0', [parts[0]]);
+        if (tpl != null && tpl['status'] == 'active:${parts[1]}') {
+          final y = int.parse(parts[1].substring(0, 4)), m = int.parse(parts[1].substring(5, 7));
+          final prev = m == 1 ? '${y - 1}-12' : '$y-${(m - 1).toString().padLeft(2, '0')}';
+          final first = (tpl['vdate'] as String).substring(0, 7);
+          await tx.execute('UPDATE vouchers SET status = ?, updated_at = ? WHERE id = ?',
+              [prev.compareTo(first) < 0 ? 'active' : 'active:$prev', nowIso(), parts[0]]);
+        }
+      }
+    }
+    // its bank statement line is unmatched again (not left pointing at a deleted entry)
+    await tx.execute("UPDATE bank_lines SET status = 'open', voucher_id = NULL WHERE voucher_id = ?", [id]);
   }
 
   /// Entry types whose money can be split over two modes (रोख + फोनपे).
@@ -577,7 +598,8 @@ class VoucherService {
       'ref': v['ref_no'],
       'narration': v['narration'],
       'haste': v['haste'],
-      'status': v['status'],
+      // internal links (विभागून part, monthly bill) are not a status to show
+      'status': '${v['status'] ?? ''}'.startsWith(splitPrefix) || '${v['status'] ?? ''}'.startsWith(monthlyPrefix) ? null : v['status'],
       'transporter_fare': money(v['transporter_fare']),
       'gst_rate': (v['gst_rate'] as int? ?? 0) == 0 ? '' : '${(v['gst_rate'] as int) / 100}%',
       'gst_bill': (v['gst_bill_needed'] as int? ?? 0) == 1 ? '✓' : '',

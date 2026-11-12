@@ -89,8 +89,12 @@ class _StaffBalance extends StatelessWidget {
 class StaffForm extends StatefulWidget {
   final Ledger? existing;
   const StaffForm({super.key, this.existing});
-  static Future<void> open(BuildContext context, {Ledger? existing}) =>
-      Navigator.push(context, MaterialPageRoute(builder: (_) => StaffForm(existing: existing)));
+  static Future<void> open(BuildContext context, {Ledger? existing}) async {
+    // always the saved values, not a copy from an older screen
+    final fresh = existing == null ? null : await App.read(context).ledgers.byId(existing.id) ?? existing;
+    if (!context.mounted) return;
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => StaffForm(existing: fresh)));
+  }
   @override
   State<StaffForm> createState() => _StaffFormState();
 }
@@ -119,8 +123,18 @@ class _StaffFormState extends State<StaffForm> {
       );
     } else {
       id = e!.id;
+      // this form shows only some fields: the rest stay as they are
       await app.ledgers.update(id,
-          name: name.text, nameEn: nameEn.text, phone: phone.text, openingBalance: Money.parse(opening.text) ?? 0);
+          name: name.text,
+          nameEn: nameEn.text,
+          phone: phone.text,
+          address: e!.address,
+          pageNo: e!.pageNo,
+          shortCode: e!.shortCode,
+          gstin: e!.gstin,
+          creditLimit: e!.creditLimit,
+          // shown without its sign: a "we owe him" opening stays that way
+          openingBalance: (Money.parse(opening.text) ?? 0) * (e!.openingBalance < 0 ? -1 : 1));
     }
     await app.ledgers.setStaffPay(id, salary: Money.parse(salary.text) ?? 0, cut: Money.parse(cut.text) ?? 0);
     if (mounted) Navigator.pop(context);
@@ -215,6 +229,25 @@ class _SalaryScreenState extends State<SalaryScreen> {
     final t = app.t;
     if (sal <= 0) return toast(context, t('err_amount'), error: true);
     if (ded < 0 || ded > sal) return toast(context, t('err_salary_cut'), error: true);
+    // the same month twice? ask first (पगार is easy to pay again by mistake)
+    final ym = '${month.year}-${month.month.toString().padLeft(2, '0')}';
+    const mr = ['जानेवारी', 'फेब्रुवारी', 'मार्च', 'एप्रिल', 'मे', 'जून', 'जुलै', 'ऑगस्ट', 'सप्टेंबर', 'ऑक्टोबर', 'नोव्हेंबर', 'डिसेंबर'];
+    const en = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    final already = await app.db.getOptional(
+        "SELECT vdate, amount FROM vouchers WHERE party_id = ? AND vtype = 'salary' AND deleted = 0 "
+        'AND (ref_no = ? OR narration LIKE ? OR narration LIKE ?) LIMIT 1',
+        [staff!.id, ym, '% ${mr[month.month - 1]} ${month.year}%', '% ${en[month.month - 1]} ${month.year}%']);
+    if (!mounted) return;
+    if (already != null &&
+        !await confirm(
+            context,
+            t('salary_twice')
+                .replaceAll('{month}', _monthName(month, app))
+                .replaceAll('{date}', shortDate(already['vdate'] as String))
+                .replaceAll('{amt}', Money.fmt((already['amount'] as int?) ?? 0)))) {
+      return;
+    }
+    if (!mounted) return;
     setState(() => saving = true);
     try {
       await app.vouchers.save(
@@ -226,6 +259,7 @@ class _SalaryScreenState extends State<SalaryScreen> {
           amount: sal,
           paid: net,
           narration: '${t('salary')} ${_monthName(month, app)}${ded > 0 ? ' · ${t('salary_cut')} ₹${Money.fmt(ded)}' : ''}',
+          refNo: ym, // which month this पगार is for
         ),
         app.actor,
       );

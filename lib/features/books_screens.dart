@@ -109,7 +109,7 @@ class _ShopDetailsScreenState extends State<ShopDetailsScreen> {
             if (start != Books.start) {
               final clash = await app.db.getOptional(
                 "SELECT COUNT(*) AS n FROM vouchers WHERE business_id = ? AND deleted = 0 AND "
-                "((vtype = 'history' AND vdate >= ?) OR (vtype <> 'history' AND vdate < ?))",
+                "((vtype = 'history' AND vdate >= ?) OR (vtype NOT IN ('history', 'booking', 'promise') AND vdate < ?))",
                 [app.businessId, start, start],
               );
               final n = (clash?['n'] as int?) ?? 0;

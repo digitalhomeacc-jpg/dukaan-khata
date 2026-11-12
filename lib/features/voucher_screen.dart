@@ -16,6 +16,7 @@ import 'audit_screen.dart';
 import 'booking_screen.dart';
 import 'books_screens.dart';
 import 'parties_screen.dart';
+import 'promise_screen.dart';
 import 'recurring_screen.dart';
 import 'stock_screen.dart' show UnitField;
 
@@ -63,6 +64,17 @@ class VoucherScreen extends StatefulWidget {
     if (v.type == VoucherType.recurring) return RecurringForm.open(context, editId: voucherId);
     if (v.type == VoucherType.recurringPay) return RecurringPayForm.open(context, editId: voucherId);
     if (v.type == VoucherType.salary || v.type == VoucherType.interest) return _EntrySheet.show(context, v);
+    // a promise has its own list (kept / missed); this screen would reset it
+    if (v.type == VoucherType.promise) return PromisesScreen.open(context);
+    // the विभागून part of a bill / जमा is changed from that entry, never on its own
+    if (v.type == VoucherType.contra && (v.status ?? '').startsWith(splitPrefix)) {
+      final main = v.status!.substring(splitPrefix.length);
+      if (await app.db.getOptional('SELECT id FROM vouchers WHERE id = ? AND deleted = 0', [main]) != null) {
+        if (!context.mounted) return;
+        return edit(context, main);
+      }
+    }
+    if (!context.mounted) return;
     await Navigator.push(
       context,
       MaterialPageRoute(
@@ -301,10 +313,10 @@ class _VoucherScreenState extends State<VoucherScreen> {
         payId = null;
       }
       for (final l in ls) {
-        final it = items.firstWhere(
-          (i) => i.id == l.itemId,
-          orElse: () => Item(id: l.itemId, name: '?'),
-        );
+        // an item hidden since the bill was made is not in the list: fetch it by id
+        final it = items.where((i) => i.id == l.itemId).firstOrNull ??
+            await app.stock.byId(l.itemId) ??
+            Item(id: l.itemId, name: '?');
         lines.add(_LineCtl(it, l.qty, l.rate, amount: l.amount));
       }
       if (!hasItems || (historyBill && ls.isEmpty)) {
@@ -312,7 +324,11 @@ class _VoucherScreenState extends State<VoucherScreen> {
         amount.text = a == 0 ? '' : Money.fmt(a).replaceAll(',', '');
       }
       paid.text = v.paid == 0 ? '' : Money.fmt(v.paid).replaceAll(',', '');
-      paidTouched = true;
+      // a bill paid in full stays "paid in full" when its items change; only a
+      // part payment is a typed figure to keep
+      paidTouched = v.partyId != null && v.paid != 0 && v.paid != v.amount;
+      // nothing was paid: it is on credit (an empty "paid" box must not become "all paid")
+      if (creditAllowed && v.partyId != null && v.paid == 0) payId = null;
       if (await app.vouchers.splitOf(v.id) case (final sid, final amt)) {
         splitOn = true;
         splitId = sid;
@@ -592,6 +608,10 @@ class _VoucherScreenState extends State<VoucherScreen> {
   Future<void> _save({bool andNew = false}) async {
     final app = App.read(context);
     final t = app.t;
+    if (saving) return; // Ctrl+S twice must not make two entries
+    // "save + new" is only for new entries: after an edit the next entry
+    // would be written over the one just edited
+    if (editing != null) andNew = false;
     // an old bill may be typed as just an amount when the items aren't known
     final amountOnly = historyBill && lines.isEmpty;
     if (hasItems && lines.isEmpty && !amountOnly) return toast(context, t('err_items'), error: true);
@@ -673,6 +693,8 @@ class _VoucherScreenState extends State<VoucherScreen> {
           paidTouched = false;
           gstBill = false;
           hamaliCtl.clear();
+          varhaiCtl.clear();
+          quick.clear();
           transportCtl.clear();
           fareCtl.clear();
           fareTouched = false;

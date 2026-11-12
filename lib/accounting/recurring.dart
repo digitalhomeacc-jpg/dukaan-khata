@@ -141,6 +141,8 @@ class RecurringService {
       actor,
     );
     await db.execute("UPDATE vouchers SET status = ?, updated_at = ? WHERE id = ?", ['active:$month', nowIso(), r.id]);
+    // remember which month this bill settles: deleting it makes the month due again
+    await db.execute('UPDATE vouchers SET status = ? WHERE id = ?', ['$monthlyPrefix${r.id}|$month', id]);
     return id;
   }
 
@@ -174,6 +176,7 @@ class RecurringService {
       actor,
     );
     await db.execute('UPDATE vouchers SET status = ?, updated_at = ? WHERE id = ?', ['active:$month', nowIso(), r.id]);
+    await db.execute('UPDATE vouchers SET status = ? WHERE id = ?', ['$monthlyPrefix${r.id}|$month', id]);
     return id;
   }
 

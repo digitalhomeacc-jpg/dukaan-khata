@@ -63,6 +63,8 @@ class _BookingScreenState extends State<BookingScreen> {
       date = b.date;
       note.text = b.note ?? '';
       for (final l in b.lines) {
+        // an item hidden since then must still be in the dropdown
+        if (!items.any((i) => i.id == l.item.id)) items.add(l.item);
         rows.add(_BookRow(l.item, l.qty, l.rate));
       }
     } else {
