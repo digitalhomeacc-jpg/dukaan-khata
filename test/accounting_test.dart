@@ -806,6 +806,10 @@ void main() {
     dc = await lr.dayCharges(day);
     expect(dc.freightPaid, rs(250));
     expect(dc.transportPaid, rs(700));
+    // bill-wise report: same totals, and whose vehicle went
+    final cr = await Reports(db, biz, (k) => k).chargesRegister(day, day);
+    expect(cr.totals!.sublist(2, 6), [Money.fmt(rs(400)), Money.fmt(rs(300)), Money.fmt(rs(1300)), Money.fmt(rs(700))]);
+    expect(cr.rows.map((r) => r[6]), containsAll(['own_vehicle', 'Ganesh Transport ${Money.fmt(rs(700))}']));
 
     // khata line shows the charges; edit keeps them
     final st = await lr.statement(cust);

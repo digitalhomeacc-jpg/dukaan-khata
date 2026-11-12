@@ -390,6 +390,74 @@ class Reports {
     );
   }
 
+  /// हमाली व गाडी भाडे: bill by bill – hamali taken / paid, fares taken / paid,
+  /// and whose vehicle went (own or which driver, at what fare).
+  Future<ReportTable> chargesRegister(String from, String to) async {
+    final b = businessId;
+    final rows = await db.getAll(
+      'SELECT v.id, v.vdate, v.vtype, v.vno, v.transport, v.transporter_fare, p.name AS party_name, p.page_no, p.grp AS party_grp, '
+      'tr.name AS transporter_name, '
+      "SUM(CASE WHEN vl.ledger_id IN (?, ?) THEN vl.credit - vl.debit ELSE 0 END) AS hamali_in, "
+      "SUM(CASE WHEN vl.ledger_id = ? THEN vl.debit - vl.credit ELSE 0 END) AS hamali_out, "
+      "SUM(CASE WHEN v.vtype = 'payment' AND l.grp = 'transporter' THEN vl.debit - vl.credit ELSE 0 END) AS fare_out "
+      'FROM vouchers v JOIN voucher_lines vl ON vl.voucher_id = v.id AND vl.deleted = 0 JOIN ledgers l ON l.id = vl.ledger_id '
+      'LEFT JOIN ledgers p ON p.id = v.party_id LEFT JOIN ledgers tr ON tr.id = v.transporter_id '
+      'WHERE v.business_id = ? AND v.deleted = 0 AND v.vdate BETWEEN ? AND ? '
+      'GROUP BY v.id ORDER BY v.vdate, v.created_at',
+      ['$b:hamali_income', '$b:varhai', '$b:hamali', b, from, to],
+    );
+    final out = <List<String>>[];
+    final refs = <String?>[];
+    var hin = 0, hout = 0, fin = 0, fout = 0;
+    for (final r in rows) {
+      final type = VoucherType.fromCode(r['vtype'] as String);
+      final hi = (r['hamali_in'] as num).toInt(), ho = (r['hamali_out'] as num).toInt();
+      final fi = type == VoucherType.sale ? ((r['transport'] as int?) ?? 0) : 0;
+      final fo = (r['fare_out'] as num).toInt();
+      if (hi == 0 && ho == 0 && fi == 0 && fo == 0) continue;
+      final party = r['party_name'] as String?;
+      final who = r['party_grp'] == 'transporter' || party == null ? '' : '$party${r['page_no'] != null ? ' (${r['page_no']})' : ''}';
+      final vehicle = fi == 0
+          ? (fo != 0 ? (party ?? '') : '')
+          : r['transporter_name'] == null
+              ? tr('own_vehicle')
+              : '${r['transporter_name']} ${Money.fmt((r['transporter_fare'] as int?) ?? fi)}';
+      out.add([
+        shortDate(r['vdate'] as String),
+        [
+          '${vtypeLabel(type, tr)}${type == VoucherType.sale ? ' #${r['vno']}' : ''}',
+          if (who.isNotEmpty) who,
+        ].join(' · '),
+        hi == 0 ? '' : Money.fmt(hi),
+        ho == 0 ? '' : Money.fmt(ho),
+        fi == 0 ? '' : Money.fmt(fi),
+        fo == 0 ? '' : Money.fmt(fo),
+        vehicle,
+      ]);
+      refs.add(r['id'] as String);
+      hin += hi;
+      hout += ho;
+      fin += fi;
+      fout += fo;
+    }
+    return ReportTable(
+      title: tr('r_charges'),
+      subtitle: _range(from, to),
+      columns: [
+        ReportColumn(tr('date'), flex: 2),
+        ReportColumn(tr('details'), flex: 5),
+        ReportColumn.num(tr('c_hamali_in'), flex: 2),
+        ReportColumn.num(tr('c_hamali_out'), flex: 2),
+        ReportColumn.num(tr('c_fare_in'), flex: 2),
+        ReportColumn.num(tr('c_fare_out'), flex: 2),
+        ReportColumn(tr('c_vehicle'), flex: 3),
+      ],
+      rows: out,
+      rowRefs: refs,
+      totals: ['', tr('total'), Money.fmt(hin), Money.fmt(hout), Money.fmt(fin), Money.fmt(fout), ''],
+    );
+  }
+
   Future<ReportTable> register(VoucherType type, String from, String to) async {
     final rows = await db.getAll(
       'SELECT v.id, v.vdate, v.vno, v.amount, v.paid, p.name AS party, pl.short_code AS code, '

@@ -9,6 +9,7 @@ import '../shared/export.dart';
 import '../shared/widgets.dart';
 import '../state/app_controller.dart';
 import 'cash_count_screen.dart';
+import 'report_view.dart';
 import 'voucher_screen.dart';
 
 /// Rojmal – the daily cash book. Inflow on the left, outflow on the right,
@@ -358,6 +359,18 @@ class _DayEndCard extends StatelessWidget {
               ]),
             ],
           ],
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              key: const Key('charges_details'),
+              icon: const Icon(Icons.list_alt, size: 18),
+              label: Text(t('charges_details')),
+              onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => ReportView(load: () => app.reports.chargesRegister(c.date, c.date)))),
+            ),
+          ),
         ],
       ),
     );

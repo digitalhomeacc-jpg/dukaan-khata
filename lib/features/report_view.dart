@@ -254,6 +254,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
     final items = <(IconData, String, VoidCallback, bool)>[
       (Icons.event_available, t('promises'), () => PromisesScreen.open(context), false),
       (Icons.today, t('r_daybook'), () => open(() => r.dayBook(from, to)), false),
+      (Icons.local_shipping_outlined, t('r_charges'), () => open(() => r.chargesRegister(from, to)), false),
       (Icons.payments, t('r_cashbook'), () => moneyBook([LedgerGroup.cash], t('r_cashbook')), false),
       (Icons.calculate_outlined, t('r_cash_diff'), () => open(() => r.ledgerStatement(app.vouchers.sys('cash_diff'), from: from, to: to)), false),
       (Icons.account_balance, t('r_upibook'), () => moneyBook([LedgerGroup.upi, LedgerGroup.bank], t('r_upibook')), true),
