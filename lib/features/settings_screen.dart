@@ -7,6 +7,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../accounting/models.dart';
 import '../core/drive_backup.dart';
+import 'self_test.dart';
 import '../core/config.dart';
 import '../core/money.dart';
 import '../shared/party_import.dart';
@@ -156,6 +157,24 @@ class SettingsScreen extends StatelessWidget {
             },
           ),
         const SizedBox(height: 24),
+        // demo build only: proves the edit screen changes nothing by itself
+        if (const bool.fromEnvironment('DEMO'))
+          ListTile(
+            key: const Key('self_test'),
+            leading: const Icon(Icons.rule),
+            title: const Text('Self-check: edit screen (demo)'),
+            onTap: () async {
+              final (n, problems) = await EditSelfTest.run(context);
+              if (!context.mounted) return;
+              await showDialog(
+                context: context,
+                builder: (ctx) => AlertDialog(
+                  title: Text(problems.isEmpty ? 'OK: $n entries re-saved, nothing moved' : '${problems.length} problems in $n entries'),
+                  content: SingleChildScrollView(child: Text(problems.join('\n\n'))),
+                ),
+              );
+            },
+          ),
         Center(child: Text('Dukaan Khata · ${t('version')} ${AppConfig.build}', style: Theme.of(context).textTheme.bodySmall)),
         const SizedBox(height: 24),
       ]),

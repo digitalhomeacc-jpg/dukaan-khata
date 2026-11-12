@@ -689,10 +689,122 @@ class VoucherService {
     return v.type == VoucherType.sale ? n : -n;
   }
 
+  /// Entry types that post money (the rest are notes or stock-only).
+  static const postingTypes = {
+    VoucherType.sale, VoucherType.purchase, VoucherType.salesReturn, VoucherType.purchaseReturn,
+    VoucherType.receipt, VoucherType.payment, VoucherType.contra, VoucherType.salary, VoucherType.interest,
+  };
+
+  /// A saved entry turned back into the input that made it – exactly what
+  /// the edit screen must show. Saving this again must change nothing.
+  Future<VoucherInput> inputOf(String id) async {
+    final (v, items) = await load(id);
+    final ro = await roundOffOf(v);
+    final onBill = v.type == VoucherType.sale ? v.hamali + v.transport : 0;
+    return VoucherInput(
+      type: v.type,
+      date: v.date,
+      partyId: v.partyId,
+      payLedgerId: v.payLedgerId,
+      items: items,
+      amount: items.isEmpty ? v.amount - onBill - v.gst - ro : 0,
+      paid: v.paid,
+      discount: await discountOf(v),
+      narration: v.narration,
+      refNo: v.refNo,
+      gstBillNeeded: v.gstBillNeeded,
+      hamali: v.hamali,
+      transport: v.transport,
+      transporterId: v.transporterId,
+      transporterFare: v.transporterFare,
+      gstRate: v.gstRate,
+      roundOff: ro,
+      haste: v.haste,
+      varhai: await varhaiOf(v),
+    );
+  }
+
+  /// खोल तपासणी: for every money entry, works out afresh what it should have
+  /// posted from its saved details and compares that with the lines in the
+  /// books, account by account. Returns (entry, what differs); empty = all good.
+  Future<List<(Voucher, String)>> deepCheck() async {
+    final rows = await db.getAll(
+        'SELECT v.*, p.name AS party_name FROM vouchers v LEFT JOIN ledgers p ON p.id = v.party_id '
+        'WHERE v.business_id = ? AND v.deleted = 0 ORDER BY v.vdate, v.created_at',
+        [businessId]);
+    final services = {
+      for (final r in await db.getAll('SELECT id FROM items WHERE business_id = ? AND category = ?', [businessId, serviceCategory]))
+        r['id'] as String
+    };
+    final names = {
+      for (final r in await db.getAll('SELECT id, name FROM ledgers WHERE business_id = ?', [businessId])) r['id'] as String: r['name'] as String
+    };
+    // goods and services are one bucket: an item may have been moved between them later
+    String bucket(String id) => id == sys('service_income') ? sys('sales') : id == sys('service_cost') ? sys('purchase') : id;
+    final bad = <(Voucher, String)>[];
+    for (final r in rows) {
+      final v = Voucher.fromRow(r);
+      final actual = <String, int>{};
+      var net = 0;
+      for (final l in await db.getAll('SELECT ledger_id, debit, credit FROM voucher_lines WHERE voucher_id = ? AND deleted = 0', [v.id])) {
+        final d = ((l['debit'] as int?) ?? 0) - ((l['credit'] as int?) ?? 0);
+        actual[bucket(l['ledger_id'] as String)] = (actual[bucket(l['ledger_id'] as String)] ?? 0) + d;
+        net += d;
+      }
+      actual.removeWhere((_, x) => x == 0);
+      if (!postingTypes.contains(v.type)) {
+        // notes and stock-only entries must never touch money
+        if (v.type != VoucherType.journal && actual.isNotEmpty) bad.add((v, 'note entry has money lines'));
+        continue;
+      }
+      if (net != 0) {
+        bad.add((v, 'debit ≠ credit by ${Money.fmt(net.abs())}'));
+        continue;
+      }
+      final VoucherInput input;
+      final expected = <String, int>{};
+      try {
+        input = await inputOf(v.id);
+        for (final l in buildLines(input, services: services)) {
+          expected[bucket(l.ledgerId)] = (expected[bucket(l.ledgerId)] ?? 0) + l.debit - l.credit;
+        }
+      } catch (e) {
+        bad.add((v, 'cannot be rebuilt: $e'));
+        continue;
+      }
+      expected.removeWhere((_, x) => x == 0);
+      final diffs = [
+        for (final k in {...expected.keys, ...actual.keys})
+          if ((expected[k] ?? 0) != (actual[k] ?? 0))
+            '${names[k] ?? k}: ${Money.fmt(actual[k] ?? 0)} ≠ ${Money.fmt(expected[k] ?? 0)}',
+      ];
+      if (input.total != v.amount && v.type != VoucherType.salary) diffs.add('total ${Money.fmt(v.amount)} ≠ ${Money.fmt(input.total)}');
+      if (diffs.isNotEmpty) bad.add((v, diffs.join('; ')));
+    }
+    // a विभागून part must belong to a live entry and be smaller than its money
+    for (final r in await db.getAll(
+        "SELECT s.*, m.deleted AS m_deleted, m.paid AS m_paid, m.vdate AS m_date FROM vouchers s "
+        "LEFT JOIN vouchers m ON m.id = substr(s.status, ${splitPrefix.length + 1}) "
+        "WHERE s.business_id = ? AND s.deleted = 0 AND s.status LIKE '$splitPrefix%'",
+        [businessId])) {
+      final why = r['m_deleted'] == null || r['m_deleted'] == 1
+          ? 'split part without its entry'
+          : ((r['amount'] as int?) ?? 0) >= ((r['m_paid'] as int?) ?? 0)
+              ? 'split part is not smaller than the money paid'
+              : r['m_date'] != r['vdate']
+                  ? 'split part on a different date'
+                  : null;
+      if (why != null) bad.add((Voucher.fromRow(r), why));
+    }
+    return bad;
+  }
+
   Future<(Voucher, List<ItemLine>)> load(String id) async {
     final v = Voucher.fromRow(await db.get('SELECT * FROM vouchers WHERE id = ?', [id]));
     final items = await db.getAll(
-        'SELECT item_id, qty, rate, amount, direction FROM inventory_lines WHERE voucher_id = ? AND deleted = 0', [id]);
+        // lines in the order they were typed (ids end in I0, I1 … I10)
+        'SELECT item_id, qty, rate, amount, direction FROM inventory_lines WHERE voucher_id = ? AND deleted = 0 ORDER BY LENGTH(id), id',
+        [id]);
     return (
       v,
       [

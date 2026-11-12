@@ -29,6 +29,8 @@ class VoucherScreen extends StatefulWidget {
   final int? presetAmount; // e.g. day-end payment to a transporter
   final String? presetNarration;
   final String? historyKind; // old entry: sale | purchase | received | paid
+  /// Self-check only (demo build): load the entry, save it untouched, close.
+  final bool autoSave;
   const VoucherScreen({
     super.key,
     required this.type,
@@ -38,6 +40,7 @@ class VoucherScreen extends StatefulWidget {
     this.presetAmount,
     this.presetNarration,
     this.historyKind,
+    this.autoSave = false,
   });
 
   static Future<void> open(
@@ -329,6 +332,9 @@ class _VoucherScreenState extends State<VoucherScreen> {
       paidTouched = v.partyId != null && v.paid != 0 && v.paid != v.amount;
       // nothing was paid: it is on credit (an empty "paid" box must not become "all paid")
       if (creditAllowed && v.partyId != null && v.paid == 0) payId = null;
+      // money was paid but no mode was stored: it went to cash, so show cash
+      // (opening it as "on credit" would drop the payment on save)
+      if (creditAllowed && v.partyId != null && v.paid > 0 && payId == null) payId = app.vouchers.sys('cash');
       if (await app.vouchers.splitOf(v.id) case (final sid, final amt)) {
         splitOn = true;
         splitId = sid;
@@ -369,6 +375,14 @@ class _VoucherScreenState extends State<VoucherScreen> {
     }
     setState(() => loading = false);
     _loadHaste();
+    if (widget.autoSave) {
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        final route = ModalRoute.of(context);
+        await _save();
+        // a successful save closes the screen itself; still on top = it refused
+        if (mounted && (route?.isCurrent ?? false)) Navigator.pop(context, 'not saved');
+      });
+    }
   }
 
   String _title(AppController app) {

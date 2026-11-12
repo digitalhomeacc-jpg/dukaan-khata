@@ -31,6 +31,9 @@ class _SyncSheetState extends State<SyncSheet> {
   List<(VoucherType, int, int)> dupes = [];
   bool busy = false;
   bool checked = false;
+  bool deepBusy = false;
+  List<(Voucher, String)>? deep;
+  int deepCount = 0;
   Timer? _tick;
 
   @override
@@ -152,6 +155,48 @@ class _SyncSheetState extends State<SyncSheet> {
           ),
         ]),
         for (final v in unbalanced) VoucherTile(v),
+        // खोल तपासणी: every entry's postings worked out afresh and compared
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            key: const Key('deep_check'),
+            icon: deepBusy
+                ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.fact_check_outlined, size: 18),
+            label: Text(t('deep_check')),
+            onPressed: deepBusy
+                ? null
+                : () async {
+                    setState(() => deepBusy = true);
+                    final r = await App.read(context).vouchers.deepCheck();
+                    final n = ((await App.read(context).db.get(
+                            'SELECT COUNT(*) AS n FROM vouchers WHERE business_id = ? AND deleted = 0', [App.read(context).businessId]))['n'] as num)
+                        .toInt();
+                    if (mounted) {
+                      setState(() {
+                        deepBusy = false;
+                        deep = r;
+                        deepCount = n;
+                      });
+                    }
+                  },
+          ),
+        ),
+        if (deep != null)
+          Padding(
+            padding: const EdgeInsets.only(left: 8, bottom: 6),
+            child: Text(
+              deep!.isEmpty ? t('deep_check_ok').replaceAll('{n}', '$deepCount') : t('deep_check_bad').replaceAll('{n}', '${deep!.length}'),
+              style: TextStyle(fontWeight: FontWeight.w600, color: deep!.isEmpty ? AppColors.paid : AppColors.due),
+            ),
+          ),
+        for (final (v, why) in deep ?? const <(Voucher, String)>[]) ...[
+          VoucherTile(v),
+          Padding(
+            padding: const EdgeInsets.only(left: 16, bottom: 8),
+            child: Text(why, style: TextStyle(fontSize: 12, color: AppColors.due)),
+          ),
+        ],
         if (dupes.isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(top: 10),
