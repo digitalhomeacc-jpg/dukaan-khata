@@ -201,9 +201,12 @@ class _VoucherScreenState extends State<VoucherScreen> {
       (hasItems && !(historyBill && lines.isEmpty) ? itemsTotal : (Money.parse(amount.text) ?? 0)) + hamali + transport + gst;
   int get total => totalBeforeRound + roundOff;
   /// What is still left on the khata after this जमा / payment (new entries only).
+  int _editEffect = 0; // what the entry being edited did to the party's balance
   int? get _leftAfter {
-    if (editing != null || party == null || !party!.group.isParty) return null;
-    final due = type == VoucherType.receipt ? party!.balance : -party!.balance;
+    if (party == null || !party!.group.isParty) return null;
+    // editing: count the balance as if this entry weren't there yet
+    final bal = party!.balance - (editing != null && editing!.partyId == party!.id ? _editEffect : 0);
+    final due = type == VoucherType.receipt ? bal : -bal;
     if (due <= 0) return null;
     return due - total - (Money.parse(discount.text) ?? 0);
   }
@@ -284,6 +287,10 @@ class _VoucherScreenState extends State<VoucherScreen> {
       type = v.type;
       date = v.date;
       if (v.partyId != null) party = await app.ledgers.byId(v.partyId!);
+      // the balance without this entry – for the सूट button when editing
+      if (v.partyId != null) _editEffect = await app.vouchers.effectOn(v.id, v.partyId!);
+      final disc = await app.vouchers.discountOf(v);
+      if (disc != 0) discount.text = Money.fmt(disc).replaceAll(',', '');
       payId = v.payLedgerId;
       goodsOpening = v.type.isGoodsLoan && v.payLedgerId == goodsOpeningMarker;
       if (v.type == VoucherType.history) {

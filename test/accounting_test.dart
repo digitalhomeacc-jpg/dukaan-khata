@@ -905,6 +905,32 @@ void main() {
     expect(tb.totals![2], Money.fmt(rs(3200)));
   });
 
+  test('सूट: kept when an entry is re-opened; balance without the entry for the settle button', () async {
+    final cust = await lr.create(name: 'Settle Cust', group: LedgerGroup.customer, openingBalance: rs(43508));
+    final r = await vs.save(
+        VoucherInput(type: VoucherType.receipt, date: todayIso(), partyId: cust, payLedgerId: vs.sys('cash'), amount: rs(43500)), owner);
+    expect(await lr.balanceAt(cust), rs(8));
+    var (v, _) = await vs.load(r);
+    expect(await vs.discountOf(v), 0);
+    // what the edit screen does: balance − this entry's effect = 43,508 due before it
+    expect(await lr.balanceAt(cust) - await vs.effectOn(r, cust), rs(43508));
+    await vs.save(
+        VoucherInput(type: VoucherType.receipt, date: todayIso(), partyId: cust, payLedgerId: vs.sys('cash'), amount: rs(43500), discount: rs(8)),
+        owner,
+        existingId: r);
+    expect(await lr.balanceAt(cust), 0);
+    (v, _) = await vs.load(r);
+    expect(await vs.discountOf(v), rs(8));
+    // supplier side
+    final sup = await lr.create(name: 'Settle Sup', group: LedgerGroup.supplier, openingBalance: -rs(1005));
+    final p = await vs.save(
+        VoucherInput(type: VoucherType.payment, date: todayIso(), partyId: sup, payLedgerId: vs.sys('cash'), amount: rs(1000), discount: rs(5)),
+        owner);
+    expect(await lr.balanceAt(sup), 0);
+    expect(await vs.discountOf((await vs.load(p)).$1), rs(5));
+    expect(await lr.unbalanced(), isEmpty);
+  });
+
   test('search: words in any order, page no., phone, amount, bill no.', () async {
     final id = await lr.create(name: 'सुरेश जाधव', nameEn: 'Suresh Jadhav', group: LedgerGroup.customer, pageNo: '29', phone: '98500 12345');
     await lr.create(name: 'सुरेश मोरे', nameEn: 'Suresh More', group: LedgerGroup.customer, pageNo: '63');

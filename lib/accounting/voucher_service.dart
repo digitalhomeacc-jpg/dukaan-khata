@@ -636,6 +636,22 @@ class VoucherService {
   }
 
   /// Round off stored on a bill (read back from its round-off line).
+  /// The सूट (settlement discount) on a saved जमा / payment.
+  Future<int> discountOf(Voucher v) async {
+    if (v.type != VoucherType.receipt && v.type != VoucherType.payment) return 0;
+    final r = await db.get(
+        'SELECT COALESCE(SUM(debit), 0) AS g, COALESCE((SELECT SUM(credit) FROM voucher_lines WHERE voucher_id = ? AND ledger_id = ? AND deleted = 0), 0) AS rcv '
+        'FROM voucher_lines WHERE voucher_id = ? AND ledger_id = ? AND deleted = 0',
+        [v.id, sys('discount_recd'), v.id, sys('discount_given')]);
+    return v.type == VoucherType.receipt ? (r['g'] as num).toInt() : (r['rcv'] as num).toInt();
+  }
+
+  /// How much a saved entry moved [ledgerId]'s balance (debit − credit).
+  Future<int> effectOn(String voucherId, String ledgerId) async => ((await db.get(
+          'SELECT COALESCE(SUM(debit - credit), 0) AS n FROM voucher_lines WHERE voucher_id = ? AND ledger_id = ? AND deleted = 0',
+          [voucherId, ledgerId]))['n'] as num)
+      .toInt();
+
   Future<int> roundOffOf(Voucher v) async {
     if (v.type == VoucherType.history) {
       // old entries have no round-off line: work it out from the stored parts
