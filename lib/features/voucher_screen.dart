@@ -200,6 +200,23 @@ class _VoucherScreenState extends State<VoucherScreen> {
   int get totalBeforeRound =>
       (hasItems && !(historyBill && lines.isEmpty) ? itemsTotal : (Money.parse(amount.text) ?? 0)) + hamali + transport + gst;
   int get total => totalBeforeRound + roundOff;
+  /// What is still left on the khata after this जमा / payment (new entries only).
+  int? get _leftAfter {
+    if (editing != null || party == null || !party!.group.isParty) return null;
+    final due = type == VoucherType.receipt ? party!.balance : -party!.balance;
+    if (due <= 0) return null;
+    return due - total - (Money.parse(discount.text) ?? 0);
+  }
+
+  /// A small remainder (up to ₹500) that a सूट would settle.
+  int? get _settleGap {
+    final l = _leftAfter;
+    if (l == null || l <= 0 || l > 50000 || total <= 0) return null;
+    return l;
+  }
+
+  bool get _closesAccount => _leftAfter == 0 && (Money.parse(discount.text) ?? 0) > 0;
+
   bool get splitAllowed => hasPay && !isHistory && payId != null && VoucherService.splitTypes.contains(type);
   /// The money that moves now (bill: paid now; जमा / दिले: the amount).
   int get moneyNow => creditAllowed ? (Money.parse(paid.text) ?? total) : total;
@@ -865,6 +882,7 @@ class _VoucherScreenState extends State<VoucherScreen> {
               TextField(
                 controller: discount,
                 keyboardType: TextInputType.number,
+                onChanged: (_) => setState(() {}),
                 decoration: InputDecoration(
                   labelText: t('discount'),
                   prefixText: '₹ ',
@@ -872,6 +890,25 @@ class _VoucherScreenState extends State<VoucherScreen> {
                   isDense: true,
                 ),
               ),
+              // closing an account: 43,508 due, 43,500 paid → ₹8 सूट in one tap
+              if (_settleGap case final gap? when gap > 0)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: ActionChip(
+                      key: const Key('settle_discount'),
+                      avatar: const Icon(Icons.done_all, size: 18),
+                      label: Text(t('settle_discount').replaceAll('{n}', Money.fmt(gap))),
+                      onPressed: () => setState(() => discount.text = Money.fmt(gap).replaceAll(',', '')),
+                    ),
+                  ),
+                ),
+              if (_closesAccount)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text('✓ ${t('settle_closed')}', style: TextStyle(color: Colors.green.shade700, fontWeight: FontWeight.w600)),
+                ),
             ],
             const SizedBox(height: 12),
             TextField(

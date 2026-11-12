@@ -529,6 +529,8 @@ const Map<String, (String, String)> _s = {
   'tbl_inventory_lines': ('मालाच्या ओळी', 'Item lines'),
   'tbl_bank_lines': ('बँक स्टेटमेंट', 'Bank statement lines'),
   'tbl_audit_log': ('बदल इतिहास', 'Change history'),
+  'settle_discount': ('बाकी ₹{n} सूट देऊन खाते पूर्ण करा', 'Give ₹{n} discount and close the account'),
+  'settle_closed': ('खाते पूर्ण होईल (बाकी 0)', 'Account will be settled (balance 0)'),
   'r_charges': ('हमाली व गाडी भाडे', 'Hamali & transport'),
   'charges_details': ('बिलनिहाय तपशील', 'Bill-wise details'),
   'c_hamali_in': ('हमाली घेतली', 'Hamali in'),
