@@ -50,7 +50,7 @@
     // Keep the app on the phone so it opens without internet.
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', function () {
-        navigator.serviceWorker.register('app_sw.js?v=202611122039').catch(function () {});
+        navigator.serviceWorker.register('app_sw.js?v=202611122054').catch(function () {});
         // A new version took over: reload once so every file (icons too) comes
         // from the new version. Right after opening this is automatic; later,
         // a small bar asks first so nothing being typed is lost.
@@ -72,7 +72,7 @@
       });
     }
   </script>
-  <script src="pdf_text.js?v=202611122039" defer></script>
-  <script src="flutter_bootstrap.js?v=202611122039" async></script>
+  <script src="pdf_text.js?v=202611122054" defer></script>
+  <script src="flutter_bootstrap.js?v=202611122054" async></script>
 </body>
 </html>
