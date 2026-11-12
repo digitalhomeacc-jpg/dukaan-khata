@@ -4,7 +4,7 @@
 // It signs in like the app does, downloads the whole shop from the cloud and
 // saves it as one file in the Drive folder "Dukaan Khata Backups". The file is
 // the same as the app's own backup: More → Backup → Restore reads it.
-// One file per day (the latest backup of that day); the newest 60 days are kept.
+// The newest 60 backups are kept; older ones go to Drive's bin.
 //
 // Setup (once): paste this at script.google.com, set the two Script
 // Properties EMAIL and PASSWORD (the owner's app login), then run setup().
@@ -13,7 +13,7 @@ const SUPABASE_URL = 'https://kbbhqurgkyimghvrhjts.supabase.co';
 // publishable key: safe to share, the data is protected by the login above
 const SUPABASE_KEY = 'sb_publishable_4beW7RKDIIKCiig-Ry0mwQ_6x-xyT_X';
 const FOLDER = 'Dukaan Khata Backups';
-const KEEP = 60; // days
+const KEEP = 60;
 const TABLES = ['businesses', 'members', 'ledgers', 'items', 'vouchers', 'voucher_lines', 'inventory_lines', 'bank_lines', 'audit_log'];
 
 /** Run once: makes the nightly schedule (≈ 11 pm India time) and takes the first backup. */
@@ -89,16 +89,9 @@ function backupNow() {
       exported_at: new Date().toISOString(),
       tables: tables,
     });
-    // one file per day: a later backup the same day replaces that day's file
-    const day = Utilities.formatDate(new Date(), 'Asia/Kolkata', 'yyyy-MM-dd');
-    const prefix = 'Dukaan Khata ' + (shop.name || shop.id) + ' ' + day;
-    const name = prefix + '.json';
-    const file = folder.createFile(Utilities.newBlob(json, 'application/json', name));
-    const same = folder.getFiles();
-    while (same.hasNext()) {
-      const f = same.next();
-      if (f.getId() !== file.getId() && f.getName().indexOf(prefix) === 0) f.setTrashed(true);
-    }
+    const stamp = Utilities.formatDate(new Date(), 'Asia/Kolkata', 'yyyy-MM-dd HH-mm');
+    const name = 'Dukaan Khata ' + (shop.name || shop.id) + ' ' + stamp + '.json';
+    folder.createFile(Utilities.newBlob(json, 'application/json', name));
     console.log('Saved ' + name + ' (' + count + ' rows) ' + JSON.stringify(counts));
     done.push({ file: name, rows: count, tables: counts });
   }
