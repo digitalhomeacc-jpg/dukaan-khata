@@ -864,6 +864,29 @@ void main() {
     expect(await lr.unbalanced(), isEmpty);
   });
 
+  test('उधारी tab: unpaid bills given / taken and goods lent, for that day only', () async {
+    final cust = await lr.create(name: 'Udhar Cust', group: LedgerGroup.customer, pageNo: '12');
+    final sup = await lr.create(name: 'Udhar Sup', group: LedgerGroup.supplier);
+    final w = items['W']!;
+    final day = todayIso();
+    // full credit, part paid, fully paid (not credit), purchase on credit, goods lent
+    await vs.save(VoucherInput(type: VoucherType.sale, date: day, partyId: cust, items: [ItemLine(w.id, 10, rs(280))]), owner);
+    await vs.save(
+        VoucherInput(type: VoucherType.sale, date: day, partyId: cust, payLedgerId: vs.sys('cash'), paid: rs(1000), items: [ItemLine(w.id, 5, rs(280))]),
+        owner);
+    await vs.save(VoucherInput(type: VoucherType.sale, date: day, partyId: cust, payLedgerId: vs.sys('cash'), paid: rs(280), items: [ItemLine(w.id, 1, rs(280))]), owner);
+    await vs.save(VoucherInput(type: VoucherType.purchase, date: day, partyId: sup, items: [ItemLine(w.id, 100, rs(250))]), owner);
+    await vs.save(VoucherInput(type: VoucherType.goodsOut, date: day, partyId: cust, items: [ItemLine(w.id, 30, 0)]), owner);
+    final d = await Reports(db, biz, (k) => k).udhariDay(day);
+    expect(d.given, rs(2800 + 400));
+    expect(d.taken, rs(25000));
+    expect(d.goods.length, 1);
+    expect(d.goods.single.items, contains('30'));
+    expect(d.rows.first.pageNo, '12');
+    final tb = await Reports(db, biz, (k) => k).udhariTable(day);
+    expect(tb.totals![2], Money.fmt(rs(3200)));
+  });
+
   test('search: words in any order, page no., phone, amount, bill no.', () async {
     final id = await lr.create(name: 'सुरेश जाधव', nameEn: 'Suresh Jadhav', group: LedgerGroup.customer, pageNo: '29', phone: '98500 12345');
     await lr.create(name: 'सुरेश मोरे', nameEn: 'Suresh More', group: LedgerGroup.customer, pageNo: '63');

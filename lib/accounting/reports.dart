@@ -260,6 +260,63 @@ class Reports {
     );
   }
 
+  /// उधारी: what went on credit on [date] – bills not paid in full (given to
+  /// customers / taken from suppliers) and goods lent or brought back.
+  Future<UdhariDay> udhariDay(String date) async {
+    final rows = await db.getAll(
+      'SELECT v.id, v.vtype, v.amount, v.paid, v.pay_ledger_id, p.name AS party_name, p.page_no, '
+      "(SELECT GROUP_CONCAT(COALESCE(i.name, '?') || ' ' || il.qty || ' ' || COALESCE(i.unit, ''), ', ') "
+      ' FROM inventory_lines il JOIN items i ON i.id = il.item_id WHERE il.voucher_id = v.id AND il.deleted = 0) AS items '
+      'FROM vouchers v LEFT JOIN ledgers p ON p.id = v.party_id '
+      "WHERE v.business_id = ? AND v.vdate = ? AND v.deleted = 0 AND v.party_id IS NOT NULL "
+      "AND v.vtype IN ('sale', 'purchase', 'goods_out', 'goods_in') ORDER BY v.created_at",
+      [businessId, date],
+    );
+    final out = <UdhariRow>[];
+    for (final r in rows) {
+      final type = VoucherType.fromCode(r['vtype'] as String);
+      if (type.isGoodsLoan && r['pay_ledger_id'] == 'opening') continue; // carried from before the books
+      final unpaid = ((r['amount'] as int?) ?? 0) - ((r['paid'] as int?) ?? 0);
+      if (!type.isGoodsLoan && unpaid <= 0) continue;
+      // "सळई 8mm 12.0 kg" → "सळई 8mm 12 kg"
+      final items = (r['items'] as String?)?.replaceAllMapped(RegExp(r'(\d+)\.0(?=\D|$)'), (m) => m[1]!).replaceAllMapped(
+              RegExp(r' (bag|kg|nos|ft|ton|brass|ltr|sqft|job|day)(?=,|$)'), (m) => ' ${tr('unit_${m[1]}')}') ??
+          '';
+      out.add(UdhariRow(r['id'] as String, type, (r['party_name'] as String?) ?? '', r['page_no'] as String?, items,
+          type.isGoodsLoan ? 0 : unpaid));
+    }
+    return UdhariDay(date, out);
+  }
+
+  Future<ReportTable> udhariTable(String date) async {
+    final d = await udhariDay(date);
+    String money(UdhariRow r, VoucherType t) => r.type == t ? Money.fmt(r.amount) : '';
+    return ReportTable(
+      title: tr('udhari_tab'),
+      subtitle: shortDate(date),
+      columns: [
+        ReportColumn(tr('party'), flex: 4),
+        ReportColumn(tr('details'), flex: 5),
+        ReportColumn.num(tr('udhari_given'), flex: 2),
+        ReportColumn.num(tr('udhari_taken'), flex: 2),
+      ],
+      rows: [
+        for (final r in d.rows)
+          [
+            '${r.party}${r.pageNo != null ? ' (${r.pageNo})' : ''}',
+            [
+              if (r.type.isGoodsLoan) vtypeLabel(r.type, tr),
+              if (r.items.isNotEmpty) r.items,
+            ].join(' · '),
+            money(r, VoucherType.sale),
+            money(r, VoucherType.purchase),
+          ]
+      ],
+      rowRefs: [for (final r in d.rows) r.voucherId],
+      totals: ['', tr('total'), Money.fmt(d.given), Money.fmt(d.taken)],
+    );
+  }
+
   Future<ReportTable> moneyBook(List<String> ledgerIds, String title, String from, String to) async {
     final rows = <List<String>>[];
     final refs = <String?>[];
@@ -726,6 +783,25 @@ class Reports {
       rowRefs: [null, for (final m in mv) m.voucherId],
     );
   }
+}
+
+class UdhariRow {
+  final String voucherId;
+  final VoucherType type; // sale / purchase (money) or goods_out / goods_in (goods only)
+  final String party;
+  final String? pageNo;
+  final String items;
+  final int amount; // the unpaid part of the bill
+  UdhariRow(this.voucherId, this.type, this.party, this.pageNo, this.items, this.amount);
+}
+
+class UdhariDay {
+  final String date;
+  final List<UdhariRow> rows;
+  UdhariDay(this.date, this.rows);
+  int get given => rows.where((r) => r.type == VoucherType.sale).fold(0, (s, r) => s + r.amount);
+  int get taken => rows.where((r) => r.type == VoucherType.purchase).fold(0, (s, r) => s + r.amount);
+  List<UdhariRow> get goods => rows.where((r) => r.type.isGoodsLoan).toList();
 }
 
 /// Sort / filter for any report (on screen and in its PDF / Excel).

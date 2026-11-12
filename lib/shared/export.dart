@@ -41,32 +41,48 @@ class Exporter {
     _bold ??= pw.Font.ttf(await rootBundle.load('assets/fonts/NotoSansDevanagari-Bold.ttf'));
   }
 
-  static Future<Uint8List> pdf(ReportTable t, {String shop = ''}) async {
+  static Future<Uint8List> pdf(ReportTable t, {String shop = ''}) => pdfMulti([t], shop: shop);
+
+  /// Several tables one below the other (रोजमेळ: cash, PhonePe, bank, उधारी),
+  /// each with its own title and totals.
+  static Future<Uint8List> pdfMulti(List<ReportTable> tables, {String shop = '', String? heading}) async {
     await _fonts();
     final doc = pw.Document(theme: pw.ThemeData.withFont(base: _regular, bold: _bold));
-    final flex = {for (var i = 0; i < t.columns.length; i++) i: pw.FlexColumnWidth(t.columns[i].flex.toDouble())};
-    pw.Alignment al(int i) => t.columns[i].align == ColAlign.right ? pw.Alignment.centerRight : pw.Alignment.centerLeft;
-    // multi-line cells ("15\n@275") keep every line under the same edge
-    pw.TextAlign ta(int i) => t.columns[i].align == ColAlign.right ? pw.TextAlign.right : pw.TextAlign.left;
-    doc.addPage(pw.MultiPage(
-      // wide tables (daily stock register: one column per item) print sideways
-      pageFormat: t.columns.length > 8 ? PdfPageFormat.a4.landscape : PdfPageFormat.a4,
-      margin: const pw.EdgeInsets.all(24),
-      header: (_) => pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
-        if (shop.isNotEmpty) pw.Text(latin(shop), style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
-        pw.Text(latin(t.title), style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold)),
-        if (t.subtitle.isNotEmpty) pw.Text(latin(t.subtitle), style: const pw.TextStyle(fontSize: 9)),
-        pw.SizedBox(height: 6),
-      ]),
-      footer: (c) => pw.Align(
-        alignment: pw.Alignment.centerRight,
-        child: pw.Text('${c.pageNumber}/${c.pagesCount}', style: const pw.TextStyle(fontSize: 8)),
-      ),
-      build: (_) => [
-        pw.Table(
-          columnWidths: flex,
-          border: pw.TableBorder.all(color: PdfColors.grey400, width: 0.5),
-          children: [
+    final single = tables.length == 1 && heading == null;
+    final wide = tables.any((t) => t.columns.length > 8);
+    pw.Widget table(ReportTable t) {
+      final flex = {for (var i = 0; i < t.columns.length; i++) i: pw.FlexColumnWidth(t.columns[i].flex.toDouble())};
+      pw.Alignment al(int i) => t.columns[i].align == ColAlign.right ? pw.Alignment.centerRight : pw.Alignment.centerLeft;
+      // multi-line cells ("15\n@275") keep every line under the same edge
+      pw.TextAlign ta(int i) => t.columns[i].align == ColAlign.right ? pw.TextAlign.right : pw.TextAlign.left;
+      return pw.Table(
+        columnWidths: flex,
+        border: pw.TableBorder.all(color: PdfColors.grey400, width: 0.5),
+        children: [
+          pw.TableRow(
+            decoration: const pw.BoxDecoration(color: PdfColors.grey200),
+            children: [
+              for (var i = 0; i < t.columns.length; i++)
+                pw.Container(
+                  alignment: al(i),
+                  padding: const pw.EdgeInsets.all(3),
+                  child: pw.Text(latin(t.columns[i].title), textAlign: ta(i), style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
+                ),
+            ],
+          ),
+          for (var r = 0; r < t.rows.length; r++)
+            pw.TableRow(
+              decoration: t.highlight.contains(r) ? const pw.BoxDecoration(color: PdfColors.amber50) : null,
+              children: [
+                for (var i = 0; i < t.columns.length; i++)
+                  pw.Container(
+                    alignment: al(i),
+                    padding: const pw.EdgeInsets.all(3),
+                    child: pw.Text(i < t.rows[r].length ? latin(t.rows[r][i]) : '', textAlign: ta(i), style: const pw.TextStyle(fontSize: 9)),
+                  ),
+              ],
+            ),
+          if (t.totals != null)
             pw.TableRow(
               decoration: const pw.BoxDecoration(color: PdfColors.grey200),
               children: [
@@ -74,39 +90,52 @@ class Exporter {
                   pw.Container(
                     alignment: al(i),
                     padding: const pw.EdgeInsets.all(3),
-                    child: pw.Text(latin(t.columns[i].title), textAlign: ta(i), style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
+                    child: pw.Text(latin(t.totals![i]), textAlign: ta(i), style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
                   ),
               ],
             ),
-            for (var r = 0; r < t.rows.length; r++)
-              pw.TableRow(
-                decoration: t.highlight.contains(r) ? const pw.BoxDecoration(color: PdfColors.amber50) : null,
-                children: [
-                  for (var i = 0; i < t.columns.length; i++)
-                    pw.Container(
-                      alignment: al(i),
-                      padding: const pw.EdgeInsets.all(3),
-                      child: pw.Text(i < t.rows[r].length ? latin(t.rows[r][i]) : '', textAlign: ta(i), style: const pw.TextStyle(fontSize: 9)),
-                    ),
-                ],
-              ),
-            if (t.totals != null)
-              pw.TableRow(
-                decoration: const pw.BoxDecoration(color: PdfColors.grey200),
-                children: [
-                  for (var i = 0; i < t.columns.length; i++)
-                    pw.Container(
-                      alignment: al(i),
-                      padding: const pw.EdgeInsets.all(3),
-                      child: pw.Text(latin(t.totals![i]), textAlign: ta(i), style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
-                    ),
-                ],
-              ),
+        ],
+      );
+    }
+
+    doc.addPage(pw.MultiPage(
+      // wide tables (daily stock register: one column per item) print sideways
+      pageFormat: wide ? PdfPageFormat.a4.landscape : PdfPageFormat.a4,
+      margin: const pw.EdgeInsets.all(24),
+      header: (_) => pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+        if (shop.isNotEmpty) pw.Text(latin(shop), style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
+        if (single) ...[
+          pw.Text(latin(tables.first.title), style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold)),
+          if (tables.first.subtitle.isNotEmpty) pw.Text(latin(tables.first.subtitle), style: const pw.TextStyle(fontSize: 9)),
+        ] else if (heading != null)
+          pw.Text(latin(heading), style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold)),
+        pw.SizedBox(height: 6),
+      ]),
+      footer: (c) => pw.Align(
+        alignment: pw.Alignment.centerRight,
+        child: pw.Text('${c.pageNumber}/${c.pagesCount}', style: const pw.TextStyle(fontSize: 8)),
+      ),
+      build: (_) => [
+        for (final t in tables) ...[
+          if (!single) ...[
+            pw.SizedBox(height: 8),
+            pw.Text(latin(t.title), style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold)),
+            if (t.subtitle.isNotEmpty) pw.Text(latin(t.subtitle), style: const pw.TextStyle(fontSize: 9)),
+            pw.SizedBox(height: 3),
           ],
-        ),
+          table(t),
+        ],
       ],
     ));
     return doc.save();
+  }
+
+  static Future<void> sharePdfMulti(List<ReportTable> tables, {required String heading, String shop = ''}) async {
+    final bytes = await pdfMulti(tables, shop: shop, heading: heading);
+    await SharePlus.instance.share(ShareParams(
+      files: [XFile.fromData(bytes, mimeType: 'application/pdf', name: _fileName(heading, 'pdf'))],
+      fileNameOverrides: [_fileName(heading, 'pdf')],
+    ));
   }
 
   static Uint8List excel(List<ReportTable> tables) {

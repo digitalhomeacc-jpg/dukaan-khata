@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../accounting/ledger_repo.dart';
 import '../accounting/models.dart';
+import '../accounting/reports.dart';
 import '../core/money.dart';
 import '../core/theme.dart';
 import '../shared/export.dart';
@@ -21,6 +22,8 @@ class RojmalScreen extends StatefulWidget {
 class _RojmalScreenState extends State<RojmalScreen> {
   String date = todayIso();
   String? accountId; // null = all money accounts
+  static const udhari = '_udhari'; // the उधारी tab: what went on credit today
+  bool get onUdhari => accountId == udhari;
 
   @override
   Widget build(BuildContext context) {
@@ -30,7 +33,7 @@ class _RojmalScreenState extends State<RojmalScreen> {
       reloadKey: '$date|$accountId',
       load: () async {
         final accts = await app.ledgers.list([LedgerGroup.cash, LedgerGroup.upi, LedgerGroup.bank]);
-        final ids = accountId == null ? accts.map((a) => a.id).toList() : [accountId!];
+        final ids = onUdhari ? <String>[] : accountId == null ? accts.map((a) => a.id).toList() : [accountId!];
         return (accts, await app.ledgers.cashBook(ids, date), await app.ledgers.dayCharges(date));
       },
       builder: (context, data) {
@@ -51,9 +54,26 @@ class _RojmalScreenState extends State<RojmalScreen> {
               IconButton(
                 icon: const Icon(Icons.picture_as_pdf),
                 onPressed: () async {
-                  final ids = accountId == null ? accts.map((a) => a.id).toList() : [accountId!];
-                  final title = accountId == null ? t('rojmal') : accts.firstWhere((a) => a.id == accountId).name;
-                  await Exporter.sharePdf(await app.pdfTable(() => app.reports.moneyBook(ids, title, date, date)), shop: app.pdfShopName);
+                  if (onUdhari) {
+                    return Exporter.sharePdf(await app.pdfTable(() => app.reports.udhariTable(date)), shop: app.pdfShopName);
+                  }
+                  if (accountId != null) {
+                    final title = accts.firstWhere((a) => a.id == accountId).name;
+                    return Exporter.sharePdf(await app.pdfTable(() => app.reports.moneyBook([accountId!], title, date, date)),
+                        shop: app.pdfShopName);
+                  }
+                  // सर्व: one table each – cash, PhonePe, bank – then the day's उधारी
+                  final tables = <ReportTable>[];
+                  for (final (g, key) in [(LedgerGroup.cash, 'cash_tbl'), (LedgerGroup.upi, 'upi_tbl'), (LedgerGroup.bank, 'bank_tbl')]) {
+                    final ids = accts.where((a) => a.group == g).map((a) => a.id).toList();
+                    if (ids.isEmpty) continue;
+                    tables.add(await app.pdfTable(() async {
+                      final tb = await app.reports.moneyBook(ids, app.reports.tr(key), date, date);
+                      return tb;
+                    }));
+                  }
+                  tables.add(await app.pdfTable(() => app.reports.udhariTable(date)));
+                  await Exporter.sharePdfMulti(tables, heading: 'Rojmel ${shortDate(date)}', shop: app.pdfShopName);
                 },
               ),
             ],
@@ -82,10 +102,23 @@ class _RojmalScreenState extends State<RojmalScreen> {
                       onSelected: (_) => setState(() => accountId = a.id),
                     ),
                   ),
+                Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: ChoiceChip(
+                    key: const Key('udhari_tab'),
+                    avatar: Icon(Icons.menu_book_outlined, size: 18, color: Colors.orange.shade800),
+                    label: Text(t('udhari_tab')),
+                    selected: onUdhari,
+                    selectedColor: Colors.orange.shade200,
+                    onSelected: (_) => setState(() => accountId = udhari),
+                  ),
+                ),
               ]),
             ),
-            _summary(context, book),
-            if (!charges.isEmpty) _DayEndCard(charges: charges),
+            if (onUdhari) Expanded(child: _UdhariView(date: date)),
+            if (!onUdhari) _summary(context, book),
+            if (!onUdhari && !charges.isEmpty) _DayEndCard(charges: charges),
+            if (!onUdhari)
             Expanded(
               child: wide
                   ? Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -109,7 +142,10 @@ class _RojmalScreenState extends State<RojmalScreen> {
     Widget box(String label, int v, Color c) => Expanded(
           child: Column(children: [
             Text(label, style: Theme.of(context).textTheme.bodySmall),
-            Text(Money.fmt(v), style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: c)),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(Money.fmt(v), maxLines: 1, style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: c)),
+            ),
           ]),
         );
     return Card(
@@ -291,6 +327,75 @@ class _DayEndCard extends StatelessWidget {
           ],
         ],
       ),
+    );
+  }
+}
+
+/// उधारी tab: bills not paid in full today (given / taken) and goods lent.
+class _UdhariView extends StatelessWidget {
+  final String date;
+  const _UdhariView({required this.date});
+
+  @override
+  Widget build(BuildContext context) {
+    final app = App.of(context);
+    final t = app.t;
+    final scheme = Theme.of(context).colorScheme;
+    return LiveBuilder<UdhariDay>(
+      reloadKey: date,
+      load: () => app.reports.udhariDay(date),
+      builder: (context, d) {
+        Widget box(String label, String v, Color c) => Expanded(
+              child: Column(children: [
+                Text(label, style: Theme.of(context).textTheme.bodySmall),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(v, maxLines: 1, style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: c)),
+                ),
+              ]),
+            );
+        Widget section(String title, Color c, List<UdhariRow> rows, {String? total}) => Column(children: [
+              Container(
+                color: c.withValues(alpha: 0.08),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Row(children: [
+                  Text(title, style: TextStyle(color: c, fontWeight: FontWeight.bold)),
+                  const Spacer(),
+                  if (total != null) Text(total, style: TextStyle(color: c, fontWeight: FontWeight.bold)),
+                ]),
+              ),
+              for (final r in rows)
+                ListTile(
+                  dense: true,
+                  title: Text('${r.party}${r.pageNo != null ? ' (${r.pageNo})' : ''}'),
+                  subtitle: r.items.isEmpty ? null : Text(r.items),
+                  trailing: r.type.isGoodsLoan
+                      ? Text(t('vt_${r.type.code}'), style: TextStyle(color: c, fontWeight: FontWeight.w600))
+                      : Text(Money.fmt(r.amount), style: TextStyle(color: c, fontWeight: FontWeight.bold, fontSize: 15)),
+                  onTap: () => VoucherScreen.edit(context, r.voucherId),
+                ),
+            ]);
+        final given = d.rows.where((r) => r.type == VoucherType.sale).toList();
+        final taken = d.rows.where((r) => r.type == VoucherType.purchase).toList();
+        return ListView(padding: const EdgeInsets.only(bottom: 90), children: [
+          Card(
+            margin: const EdgeInsets.all(8),
+            child: Padding(
+              padding: const EdgeInsets.all(10),
+              child: Row(children: [
+                box(t('udhari_given'), Money.fmt(d.given), Colors.orange.shade800),
+                box(t('udhari_taken'), Money.fmt(d.taken), scheme.primary),
+                box(t('udhari_goods'), '${d.goods.length}', Colors.brown),
+              ]),
+            ),
+          ),
+          if (d.rows.isEmpty)
+            Padding(padding: const EdgeInsets.all(32), child: Center(child: Text(t('udhari_none')))),
+          if (given.isNotEmpty) section(t('udhari_given'), Colors.orange.shade800, given, total: Money.fmt(d.given)),
+          if (taken.isNotEmpty) section(t('udhari_taken'), scheme.primary, taken, total: Money.fmt(d.taken)),
+          if (d.goods.isNotEmpty) section(t('udhari_goods'), Colors.brown, d.goods),
+        ]);
+      },
     );
   }
 }
