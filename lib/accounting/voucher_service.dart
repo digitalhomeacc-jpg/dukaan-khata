@@ -117,6 +117,9 @@ class VoucherInput {
 
 /// Turns simple entries ("sale 15 bags at 275 to Suresh Jadhav, paid by PhonePe")
 /// into balanced double-entry vouchers – the Tally engine under a Khatabook face.
+/// status of a विभागून transfer: `split:<main entry id>`.
+const splitPrefix = 'split:';
+
 class VoucherService {
   final SqliteConnection db;
   final String businessId;
@@ -355,7 +358,7 @@ class VoucherService {
             v.refNo, v.gstBillNeeded ? 1 : 0, ..._charges(v), now, version, id
           ],
         );
-        if (v.type == VoucherType.booking && keepStatus != null) {
+        if ((v.type == VoucherType.booking || '$keepStatus'.startsWith(splitPrefix)) && keepStatus != null) {
           await tx.execute('UPDATE vouchers SET status = ? WHERE id = ?', [keepStatus, id]);
         }
       } else {
@@ -440,13 +443,71 @@ class VoucherService {
     await db.writeTransaction((tx) async {
       final old = await tx.get('SELECT * FROM vouchers WHERE id = ?', [id]);
       _checkEditable(actor, old['vdate'] as String, deleting: true);
-      final before = await entrySummary(tx, id);
-      await AuditLog.write(tx,
-          businessId: businessId, recordId: id, action: 'delete', kind: 'voucher', title: _entryTitle(before), before: before, by: actor);
-      await tx.execute('UPDATE vouchers SET deleted = 1, updated_at = ? WHERE id = ?', [nowIso(), id]);
-      await tx.execute('UPDATE voucher_lines SET deleted = 1 WHERE voucher_id = ?', [id]);
-      await tx.execute('UPDATE inventory_lines SET deleted = 1 WHERE voucher_id = ?', [id]);
+      await _markDeleted(tx, id, actor);
+      // its विभागून part goes with it
+      for (final r in await tx.getAll("SELECT id FROM vouchers WHERE status = ? AND deleted = 0", ['$splitPrefix$id'])) {
+        await _markDeleted(tx, r['id'] as String, actor);
+      }
     });
+  }
+
+  Future<void> _markDeleted(SqliteWriteContext tx, String id, Actor actor) async {
+    final before = await entrySummary(tx, id);
+    await AuditLog.write(tx,
+        businessId: businessId, recordId: id, action: 'delete', kind: 'voucher', title: _entryTitle(before), before: before, by: actor);
+    await tx.execute('UPDATE vouchers SET deleted = 1, updated_at = ? WHERE id = ?', [nowIso(), id]);
+    await tx.execute('UPDATE voucher_lines SET deleted = 1 WHERE voucher_id = ?', [id]);
+    await tx.execute('UPDATE inventory_lines SET deleted = 1 WHERE voucher_id = ?', [id]);
+  }
+
+  /// Entry types whose money can be split over two modes (रोख + फोनपे).
+  static const splitTypes = {
+    VoucherType.sale, VoucherType.receipt, VoucherType.purchaseReturn, // money in
+    VoucherType.purchase, VoucherType.payment, VoucherType.salesReturn, // money out
+  };
+  static bool _moneyIn(VoucherType t) => t == VoucherType.sale || t == VoucherType.receipt || t == VoucherType.purchaseReturn;
+
+  /// विभागून: [amount] of entry [mainId]'s money came / went by [ledgerId]
+  /// instead of the entry's own mode. Kept as a linked transfer between the
+  /// two accounts (status `split:<mainId>`), so the party's khata shows one
+  /// line and cash and PhonePe are each exact. null / 0 removes the split.
+  Future<void> saveSplit(String mainId, Actor actor, {String? ledgerId, int amount = 0}) async {
+    final m = await db.get('SELECT vtype, vdate, vno, pay_ledger_id, party_id FROM vouchers WHERE id = ?', [mainId]);
+    final type = VoucherType.fromCode(m['vtype'] as String);
+    final pay = m['pay_ledger_id'] as String?;
+    final existing = (await db.getOptional("SELECT id FROM vouchers WHERE status = ? AND deleted = 0", ['$splitPrefix$mainId']))?['id'] as String?;
+    if (ledgerId == null || amount <= 0 || pay == null || ledgerId == pay || !splitTypes.contains(type)) {
+      if (existing != null) {
+        await db.writeTransaction((tx) => _markDeleted(tx, existing, actor));
+      }
+      return;
+    }
+    final party = m['party_id'] == null ? null : (await db.getOptional('SELECT name FROM ledgers WHERE id = ?', [m['party_id']]))?['name'];
+    final into = _moneyIn(type);
+    final id = await save(
+      VoucherInput(
+        type: VoucherType.contra,
+        date: m['vdate'] as String,
+        partyId: into ? ledgerId : pay,
+        payLedgerId: into ? pay : ledgerId,
+        amount: amount,
+        narration: 'विभागून · ${type.code == 'sale' || type.code == 'purchase' ? 'बिल ' : ''}#${m['vno']}${party == null ? '' : ' · $party'}',
+      ),
+      actor,
+      existingId: existing,
+    );
+    await db.execute('UPDATE vouchers SET status = ? WHERE id = ?', ['$splitPrefix$mainId', id]);
+  }
+
+  /// The split of an entry: (second mode, its amount), or null.
+  Future<(String, int)?> splitOf(String mainId) async {
+    final r = await db.getOptional(
+        'SELECT s.party_id, s.pay_ledger_id, s.amount, v.pay_ledger_id AS main_pay FROM vouchers s JOIN vouchers v ON v.id = ? '
+        'WHERE s.status = ? AND s.deleted = 0',
+        [mainId, '$splitPrefix$mainId']);
+    if (r == null) return null;
+    final other = r['party_id'] == r['main_pay'] ? r['pay_ledger_id'] : r['party_id'];
+    return (other as String, (r['amount'] as int?) ?? 0);
   }
 
   static bool canEdit(Actor actor, String vdate) =>

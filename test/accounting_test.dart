@@ -811,6 +811,59 @@ void main() {
     expect(theirs, contains('transport ${Money.fmt(rs(800))}'));
   });
 
+  test('विभागून: part cash, part PhonePe – one khata line, both accounts exact', () async {
+    final cust = await lr.create(name: 'Split Cust', group: LedgerGroup.customer, openingBalance: rs(10000));
+    final cash = vs.sys('cash'), pe = vs.sys('upi_h');
+    final c0 = await lr.balanceAt(cash), p0 = await lr.balanceAt(pe);
+    // जमा ₹5,000: ₹2,000 by PhonePe, the rest cash
+    final r = await vs.save(VoucherInput(type: VoucherType.receipt, date: todayIso(), partyId: cust, payLedgerId: cash, amount: rs(5000)), owner);
+    await vs.saveSplit(r, owner, ledgerId: pe, amount: rs(2000));
+    expect(await lr.balanceAt(cust), rs(5000));
+    expect(await lr.balanceAt(cash), c0 + rs(3000));
+    expect(await lr.balanceAt(pe), p0 + rs(2000));
+    var st = await lr.statement(cust);
+    expect(st.rows.length, 1); // one line for the customer…
+    expect(st.rows.single.details, contains('₹3,000 + '));
+    expect(st.rows.single.details, contains('₹2,000'));
+    expect(await vs.splitOf(r), (pe, rs(2000)));
+    // रोजमेळ: the entry's own rows – रोख 3,000 + PhonePe 2,000, no transfer rows
+    final book = await lr.cashBook([cash, pe], todayIso());
+    final mine = book.rows.where((x) => x.voucherId == r).toList();
+    expect(mine.map((x) => x.inflow).toSet(), {rs(3000), rs(2000)});
+    expect(book.rows.where((x) => x.voucherId != r && (x.particulars.contains('विभागून') || x.type == VoucherType.contra)), isEmpty);
+    // edit: change the split, then remove it
+    await vs.saveSplit(r, owner, ledgerId: pe, amount: rs(1000));
+    expect(await lr.balanceAt(cash), c0 + rs(4000));
+    expect(await lr.balanceAt(pe), p0 + rs(1000));
+    await vs.saveSplit(r, owner);
+    expect(await lr.balanceAt(cash), c0 + rs(5000));
+    expect(await lr.balanceAt(pe), p0);
+    expect(await vs.splitOf(r), isNull);
+    // cash bill, no name: ₹2,800 – ₹800 PhonePe
+    final w = items['W']!;
+    final b = await vs.save(
+        VoucherInput(type: VoucherType.sale, date: todayIso(), payLedgerId: cash, items: [ItemLine(w.id, 10, rs(280))]), owner);
+    await vs.saveSplit(b, owner, ledgerId: pe, amount: rs(800));
+    expect(await lr.balanceAt(cash), c0 + rs(5000 + 2000));
+    expect(await lr.balanceAt(pe), p0 + rs(800));
+    // editing the bill keeps its split; deleting it removes both
+    final (v, ls) = await vs.load(b);
+    await vs.save(VoucherInput(type: VoucherType.sale, date: v.date, payLedgerId: cash, items: ls), owner, existingId: b);
+    expect(await vs.splitOf(b), (pe, rs(800)));
+    await vs.delete(b, owner);
+    expect(await lr.balanceAt(cash), c0 + rs(5000));
+    expect(await lr.balanceAt(pe), p0);
+    // supplier paid ₹4,000: ₹1,500 from PhonePe
+    final sup = await lr.create(name: 'Split Sup', group: LedgerGroup.supplier);
+    final p = await vs.save(VoucherInput(type: VoucherType.payment, date: todayIso(), partyId: sup, payLedgerId: cash, amount: rs(4000)), owner);
+    await vs.saveSplit(p, owner, ledgerId: pe, amount: rs(1500));
+    expect(await lr.balanceAt(cash), c0 + rs(5000 - 2500));
+    expect(await lr.balanceAt(pe), p0 - rs(1500));
+    st = await lr.statement(sup);
+    expect(st.rows.length, 1);
+    expect(await lr.unbalanced(), isEmpty);
+  });
+
   test('search: words in any order, page no., phone, amount, bill no.', () async {
     final id = await lr.create(name: 'सुरेश जाधव', nameEn: 'Suresh Jadhav', group: LedgerGroup.customer, pageNo: '29', phone: '98500 12345');
     await lr.create(name: 'सुरेश मोरे', nameEn: 'Suresh More', group: LedgerGroup.customer, pageNo: '63');

@@ -336,7 +336,11 @@ class LedgerRepo {
     final opening = from == null ? ledger.openingBalance : await balanceAt(ledgerId, date: from, before: true);
     final rows = await db.getAll(
       'SELECT v.id, v.vdate, v.vtype, v.vno, v.narration, v.ref_no, pl.short_code AS pay_code, '
-      'v.hamali, v.transport, v.haste, tr.name AS transporter_name, '
+      'v.hamali, v.transport, v.haste, tr.name AS transporter_name, v.paid, pl.name AS pay_name, '
+      // विभागून: part of the money by a second mode (a linked transfer)
+      "(SELECT s.amount || '|' || l2.name FROM vouchers s JOIN ledgers l2 ON l2.id = "
+      ' CASE WHEN s.party_id = v.pay_ledger_id THEN s.pay_ledger_id ELSE s.party_id END '
+      " WHERE s.status = 'split:' || v.id AND s.deleted = 0) AS split, "
       'SUM(vl.debit) AS d, SUM(vl.credit) AS c, '
       '(SELECT GROUP_CONCAT(COALESCE(i.short_code, i.name) || \' \' || il.qty || \'×\' || (il.rate / 100.0), \', \') '
       ' FROM inventory_lines il JOIN items i ON i.id = il.item_id WHERE il.voucher_id = v.id AND il.deleted = 0) AS items '
@@ -355,8 +359,11 @@ class LedgerRepo {
       final c = (r['c'] as num).toInt();
       bal += d - c;
       final items = _cleanItems(r['items'] as String?);
+      final split = (r['split'] as String?)?.split('|');
       final parts = [
         if (items != null) items,
+        if (split != null)
+          '${r['pay_name']} ₹${Money.fmt(((r['paid'] as int?) ?? 0) - int.parse(split[0]))} + ${split[1]} ₹${Money.fmt(int.parse(split[0]))}',
         if ((r['narration'] as String?)?.isNotEmpty ?? false) r['narration'] as String,
       ];
       out.add(StatementRow(r['id'] as String, r['vdate'] as String, VoucherType.fromCode(r['vtype'] as String),
@@ -519,7 +526,10 @@ class LedgerRepo {
       ' WHERE vl2.voucher_id = v.id AND vl2.deleted = 0 AND vl2.ledger_id NOT IN ($ph) '
       " AND l2.grp NOT IN ('sales','purchase','sales_return','purchase_return')) x) AS other, "
       'pty.name AS party_name '
-      'FROM voucher_lines vl JOIN vouchers v ON v.id = vl.voucher_id JOIN ledgers ml ON ml.id = vl.ledger_id '
+      // a विभागून transfer counts as part of its entry: one bill, रोख 1,800 + फोनपे 1,200
+      'FROM voucher_lines vl JOIN vouchers s ON s.id = vl.voucher_id '
+      "JOIN vouchers v ON v.id = CASE WHEN s.status LIKE 'split:%' THEN substr(s.status, 7) ELSE s.id END "
+      'JOIN ledgers ml ON ml.id = vl.ledger_id '
       'LEFT JOIN ledgers pty ON pty.id = v.party_id '
       'WHERE vl.ledger_id IN ($ph) AND vl.deleted = 0 AND vl.vdate = ? '
       'GROUP BY v.id, vl.ledger_id ORDER BY v.created_at',

@@ -128,6 +128,10 @@ class _VoucherScreenState extends State<VoucherScreen> {
   String date = todayIso();
   Ledger? party;
   String? payId; // null = udhar
+  // विभागून: part of the money by a second mode (रोख + फोनपे)
+  String? splitId;
+  bool splitOn = false;
+  final splitCtl = TextEditingController();
   List<Ledger> moneyAccounts = [];
   List<Item> items = [];
   final lines = <_LineCtl>[];
@@ -196,6 +200,10 @@ class _VoucherScreenState extends State<VoucherScreen> {
   int get totalBeforeRound =>
       (hasItems && !(historyBill && lines.isEmpty) ? itemsTotal : (Money.parse(amount.text) ?? 0)) + hamali + transport + gst;
   int get total => totalBeforeRound + roundOff;
+  bool get splitAllowed => hasPay && !isHistory && payId != null && VoucherService.splitTypes.contains(type);
+  /// The money that moves now (bill: paid now; जमा / दिले: the amount).
+  int get moneyNow => creditAllowed ? (Money.parse(paid.text) ?? total) : total;
+  int get splitAmt => splitOn && splitAllowed && splitId != null ? (Money.parse(splitCtl.text) ?? 0) : 0;
 
   List<LedgerGroup> get partyGroups => switch (type) {
     // one person can be both customer and supplier
@@ -281,6 +289,11 @@ class _VoucherScreenState extends State<VoucherScreen> {
       }
       paid.text = v.paid == 0 ? '' : Money.fmt(v.paid).replaceAll(',', '');
       paidTouched = true;
+      if (await app.vouchers.splitOf(v.id) case (final sid, final amt)) {
+        splitOn = true;
+        splitId = sid;
+        splitCtl.text = Money.fmt(amt).replaceAll(',', '');
+      }
       narration.text = v.narration ?? '';
       hasteCtl.text = v.haste ?? '';
       ref.text = v.refNo ?? '';
@@ -565,6 +578,7 @@ class _VoucherScreenState extends State<VoucherScreen> {
     if (creditAllowed && party == null && payId == null) {
       return toast(context, t('err_party'), error: true);
     }
+    if (splitAmt > 0 && splitAmt >= moneyNow) return toast(context, t('err_split'), error: true);
     final input = VoucherInput(
       type: type,
       date: date,
@@ -605,7 +619,10 @@ class _VoucherScreenState extends State<VoucherScreen> {
     }
     setState(() => saving = true);
     try {
-      await app.vouchers.save(input, app.actor, existingId: editing?.id);
+      final savedId = await app.vouchers.save(input, app.actor, existingId: editing?.id);
+      if (splitAllowed || editing != null) {
+        await app.vouchers.saveSplit(savedId, app.actor, ledgerId: splitAllowed ? splitId : null, amount: splitAmt);
+      }
       if (!mounted) return;
       var msg = t('saved');
       if (isHistory && party != null) {
@@ -642,6 +659,9 @@ class _VoucherScreenState extends State<VoucherScreen> {
           hasteSuggestions = [];
           party = null;
           payId = creditAllowed ? (_isBuying ? null : app.vouchers.sys('cash')) : payId;
+          splitOn = false;
+          splitId = null;
+          splitCtl.clear();
           saving = false;
         });
       } else {
@@ -811,6 +831,7 @@ class _VoucherScreenState extends State<VoucherScreen> {
                   }
                   setState(() {
                     payId = id;
+                    if (splitId == id) splitId = null;
                     paidTouched = false;
                     if (id == null) paid.clear();
                     _syncPaid();
@@ -830,6 +851,7 @@ class _VoucherScreenState extends State<VoucherScreen> {
                   ),
               ],
             ],
+            if (splitAllowed) _splitCard(app),
             if (historyBill) ...[
               const SizedBox(height: 12),
               AmountField(
@@ -1391,6 +1413,82 @@ class _VoucherScreenState extends State<VoucherScreen> {
   /// either spelling – "reti" finds रेती); tap one to put it on the bill.
   /// A number typed with the name is the quantity ("reti 3"). Enter still
   /// understands short codes like "M 5×273".
+  /// विभागून: "+ दुसऱ्या मार्गाने पण" → second mode + its amount; the
+  /// first mode gets the rest.
+  Widget _splitCard(AppController app) {
+    final t = app.t;
+    final scheme = Theme.of(context).colorScheme;
+    String name(String? id) => moneyAccounts.where((a) => a.id == id).map((a) => a.display(app.english)).firstOrNull ?? '';
+    if (!splitOn) {
+      return Align(
+        alignment: Alignment.centerLeft,
+        child: TextButton.icon(
+          key: const Key('split_add'),
+          icon: const Icon(Icons.call_split),
+          label: Text(t('split_add')),
+          onPressed: () => setState(() {
+            splitOn = true;
+            // the usual other one: cash ↔ first PhonePe
+            final cash = app.vouchers.sys('cash');
+            splitId = moneyAccounts.where((a) => a.id != payId && (payId == cash ? a.group == LedgerGroup.upi : a.id == cash)).firstOrNull?.id ??
+                moneyAccounts.where((a) => a.id != payId).firstOrNull?.id;
+          }),
+        ),
+      );
+    }
+    final rest = moneyNow - splitAmt;
+    return Card(
+      margin: const EdgeInsets.only(top: 12),
+      color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 6, 4, 12),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Icon(Icons.call_split, size: 18, color: scheme.primary),
+            const SizedBox(width: 6),
+            Expanded(child: Text(t('split_title'), style: const TextStyle(fontWeight: FontWeight.w700))),
+            IconButton(
+              tooltip: t('cancel'),
+              icon: const Icon(Icons.close, size: 20),
+              onPressed: () => setState(() {
+                splitOn = false;
+                splitCtl.clear();
+              }),
+            ),
+          ]),
+          Wrap(spacing: 6, runSpacing: 6, children: [
+            for (final a in moneyAccounts)
+              if (a.id != payId)
+                ChoiceChip(
+                  label: Text(a.display(app.english)),
+                  selected: splitId == a.id,
+                  onSelected: (_) => setState(() => splitId = a.id),
+                ),
+          ]),
+          const SizedBox(height: 10),
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: AmountField(
+              key: const Key('split_amount'),
+              controller: splitCtl,
+              label: t('split_by').replaceAll('{mode}', name(splitId)),
+              onChanged: (_) => setState(() {}),
+            ),
+          ),
+          const SizedBox(height: 8),
+          // the result in one line: रोख ₹3,000 + फोनपे ₹2,000 = ₹5,000
+          Text(
+            splitAmt > 0
+                ? '${name(payId)} ₹${Money.fmt(rest)}  +  ${name(splitId)} ₹${Money.fmt(splitAmt)}  =  ₹${Money.fmt(moneyNow)}'
+                : t('split_help').replaceAll('{mode}', name(payId)),
+            style: TextStyle(
+                fontWeight: FontWeight.w600, color: splitAmt > 0 && rest <= 0 ? Colors.red.shade700 : scheme.onSurfaceVariant),
+          ),
+        ]),
+      ),
+    );
+  }
+
   String _typed = ''; // the item box text before a pick clears it
   Widget _quickEntry(AppController app) {
     final t = app.t;
