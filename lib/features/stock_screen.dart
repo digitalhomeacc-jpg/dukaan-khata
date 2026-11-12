@@ -829,7 +829,8 @@ class _RegisterGrid extends StatelessWidget {
 
 class ItemForm extends StatefulWidget {
   final Item? existing;
-  const ItemForm({super.key, this.existing});
+  final bool autoSave; // self-check only (demo)
+  const ItemForm({super.key, this.existing, this.autoSave = false});
   static Future<void> open(BuildContext context, {Item? existing}) async {
     // always the saved values: the stock card keeps the item as it was when
     // opened, and saving that old copy would undo an edit made a minute ago
@@ -860,6 +861,13 @@ class _ItemFormState extends State<ItemForm> {
   void initState() {
     super.initState();
     _loadSubs();
+    if (widget.autoSave) {
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        final route = ModalRoute.of(context);
+        await _save();
+        if (mounted && (route?.isCurrent ?? false)) Navigator.pop(context, 'not saved');
+      });
+    }
   }
 
   Future<void> _loadSubs() async {

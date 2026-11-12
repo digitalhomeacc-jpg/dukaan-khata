@@ -88,7 +88,8 @@ class _StaffBalance extends StatelessWidget {
 
 class StaffForm extends StatefulWidget {
   final Ledger? existing;
-  const StaffForm({super.key, this.existing});
+  final bool autoSave; // self-check only (demo)
+  const StaffForm({super.key, this.existing, this.autoSave = false});
   static Future<void> open(BuildContext context, {Ledger? existing}) async {
     // always the saved values, not a copy from an older screen
     final fresh = existing == null ? null : await App.read(context).ledgers.byId(existing.id) ?? existing;
@@ -100,6 +101,18 @@ class StaffForm extends StatefulWidget {
 }
 
 class _StaffFormState extends State<StaffForm> {
+  @override
+  void initState() {
+    super.initState();
+    if (widget.autoSave) {
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        final route = ModalRoute.of(context);
+        await _save();
+        if (mounted && (route?.isCurrent ?? false)) Navigator.pop(context, 'not saved');
+      });
+    }
+  }
+
   late final e = widget.existing;
   late final name = TextEditingController(text: e?.name);
   late final nameEn = TextEditingController(text: e?.nameEn);
@@ -136,7 +149,9 @@ class _StaffFormState extends State<StaffForm> {
           // shown without its sign: a "we owe him" opening stays that way
           openingBalance: (Money.parse(opening.text) ?? 0) * (e!.openingBalance < 0 ? -1 : 1));
     }
-    await app.ledgers.setStaffPay(id, salary: Money.parse(salary.text) ?? 0, cut: Money.parse(cut.text) ?? 0);
+    // only when it was changed (an untouched form writes nothing)
+    final sal = Money.parse(salary.text) ?? 0, ct = Money.parse(cut.text) ?? 0;
+    if (sal != (e?.salary ?? 0) || ct != (e?.salaryCut ?? 0)) await app.ledgers.setStaffPay(id, salary: sal, cut: ct);
     if (mounted) Navigator.pop(context);
   }
 

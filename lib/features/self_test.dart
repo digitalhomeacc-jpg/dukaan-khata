@@ -5,6 +5,11 @@ import '../accounting/models.dart';
 import '../accounting/voucher_service.dart';
 import '../core/money.dart';
 import '../state/app_controller.dart';
+import 'booking_screen.dart';
+import 'parties_screen.dart';
+import 'recurring_screen.dart';
+import 'staff_screen.dart';
+import 'stock_screen.dart';
 import 'voucher_screen.dart';
 
 /// Demo build only: proves the edit screen changes nothing by itself.
@@ -18,6 +23,11 @@ class EditSelfTest {
   static Future<Map<String, Object?>> snapshot(AppController app) async {
     final db = app.db, b = app.businessId;
     return {
+      // every saved detail of every account and item
+      for (final r in await db.getAll('SELECT * FROM ledgers WHERE business_id = ? ORDER BY id', [b]))
+        'account ${r['name']} (${r['id']})': r.entries.map((e) => '${e.key}=${e.value}').join(' | '),
+      for (final r in await db.getAll('SELECT * FROM items WHERE business_id = ? ORDER BY id', [b]))
+        'item ${r['name']} (${r['id']})': r.entries.map((e) => '${e.key}=${e.value}').join(' | '),
       for (final r in await db.getAll(
           'SELECT l.id, l.name, l.opening_balance + COALESCE((SELECT SUM(debit - credit) FROM voucher_lines WHERE ledger_id = l.id AND deleted = 0), 0) AS bal '
           'FROM ledgers l WHERE l.business_id = ?',
@@ -138,6 +148,41 @@ class EditSelfTest {
     await vs.save(VoucherInput(type: VoucherType.history, date: old, partyId: s, payLedgerId: '${historyKindPrefix}paid', amount: 200000), a);
     await vs.save(VoucherInput(type: VoucherType.history, date: old, partyId: s, payLedgerId: '${historyKindPrefix}purchase', items: [ItemLine(y, 40, 6000)]), a);
     await vs.save(VoucherInput(type: VoucherType.history, date: old, partyId: c, payLedgerId: '${historyKindPrefix}opening', amount: 1500000), a);
+
+    // accounts with every field filled, both opening signs
+    final full = await lr.create(
+        name: 'पूर्ण ग्राहक', nameEn: 'Full Customer', group: LedgerGroup.customer, phone: '98765 43210', address: 'Main Road', pageNo: '1/2',
+        gstin: '27abcde1234f1z5', openingBalance: 123456, creditLimit: 5000000);
+    await lr.setInterestRate(full, 150);
+    await lr.create(name: 'Advance Customer', group: LedgerGroup.customer, pageNo: '100', openingBalance: -75050);
+    await lr.create(name: 'Full Supplier', group: LedgerGroup.supplier, phone: '020-123456', address: 'MIDC', openingBalance: -990000, creditLimit: 100);
+    await lr.create(name: 'Supplier Owes Us', group: LedgerGroup.supplier, openingBalance: 4400);
+    await lr.create(name: 'Full Driver', group: LedgerGroup.transporter, phone: '9000000001', openingBalance: -70000);
+    await lr.create(name: 'Selftest Bank 2', group: LedgerGroup.bank, shortCode: 'z9', openingBalance: 1000000);
+    await lr.create(name: 'Selftest Expense', group: LedgerGroup.expense, openingBalance: 0);
+    // staff: salary + cut, advance owed / salary owed to him
+    final st1 = await lr.create(name: 'Staff Advance', group: LedgerGroup.staff, phone: '9000000002', openingBalance: 500000);
+    await lr.setStaffPay(st1, salary: 1200000, cut: 100000);
+    final st2 = await lr.create(name: 'Staff We Owe', group: LedgerGroup.staff, openingBalance: 0);
+    await app.db.execute('UPDATE ledgers SET opening_balance = ?, address = ?, page_no = ?, credit_limit = ? WHERE id = ?', [-300000, 'Village', '77', 2500, st2]);
+    // items: every field, a custom unit, a subcategory, 3-decimal opening stock
+    await sr.save(
+        name: 'पूर्ण माल', nameEn: 'Full Item', category: 'plumbing', unit: 'ट्रिप', shortCode: 'fi9', saleRate: 123450, purchaseRate: 100005,
+        openingQty: 12.345, openingRate: 99999, lowStock: 2.5, subcategory: 'टाकी');
+    await sr.save(name: 'Plain Item', category: 'other', unit: 'nos');
+    // bookings: customer (with advance), supplier, a closed one, one from before the books
+    await app.bookings.save(vs, a, date: today, partyId: c, customer: true, items: [ItemLine(x, 200, 27500)], advance: 2000000, advanceLedgerId: cash, note: 'site');
+    await app.bookings.save(vs, a, date: today, partyId: s, customer: false, items: [ItemLine(y, 1000, 5800), ItemLine(x, 50.5, 24000)]);
+    final closed = await app.bookings.save(vs, a, date: today, partyId: c, customer: true, items: [ItemLine(hidden, 5, 12000)]);
+    await app.bookings.setClosed(closed, true);
+    await app.bookings.save(vs, a, date: old, partyId: c, customer: true, items: [ItemLine(x, 30, 27000)], advance: 500000);
+    // monthly charge (already charged this month) and monthly payment
+    final month = today.substring(0, 7);
+    final tpl = await app.recurring.save(vs, a, partyId: c, startMonth: month, lines: [ItemLine(svc, 1, 800000), ItemLine(svc, 1, 0)], note: 'rent + water');
+    final r = (await app.recurring.list()).firstWhere((t) => t.id == tpl);
+    await app.recurring.charge(vs, a, r, month, [ItemLine(svc, 1, 800000), ItemLine(svc, 1, 35000)], narration: 'rent');
+    await app.recurring.savePayment(vs, a, ledgerId: vs.sys('freight'), payFromId: bank, startMonth: month, amount: 250000, note: 'loan interest');
+    await app.recurring.savePayment(vs, a, ledgerId: s, payFromId: cash, startMonth: month);
   }
 
   /// Runs the check and returns what moved (empty = the edit screen is exact).
@@ -173,6 +218,48 @@ class EditSelfTest {
           problems.add('${r['vtype']}: $k  $d');
         }
       }
+    }
+    // the other edit forms: every account, staff member, item, booking and monthly template
+    Future<void> resave(String what, Widget Function() form) async {
+      final before = await snapshot(app);
+      if (!context.mounted) return;
+      final res = await Navigator.push<String>(context, MaterialPageRoute(builder: (_) => form()));
+      n++;
+      if (res != null) {
+        problems.add('$what: $res');
+        return;
+      }
+      final after = await snapshot(app);
+      for (final k in {...before.keys, ...after.keys}) {
+        if ('${before[k]}' != '${after[k]}') {
+          final x = '${before[k]}'.split(' | '), y = '${after[k]}'.split(' | ');
+          final d = x.length == y.length && x.length > 1
+              ? [for (var i = 0; i < x.length; i++) if (x[i] != y[i]) '${x[i]} → ${y[i]}'].join(', ')
+              : '${before[k]} → ${after[k]}';
+          problems.add('$what: $k  $d');
+        }
+      }
+    }
+
+    for (final l in [...await app.ledgers.list(LedgerGroup.values), ...await app.ledgers.hidden()]) {
+      await resave(
+          'account form ${l.name}',
+          () => l.group == LedgerGroup.staff ? StaffForm(existing: l, autoSave: true) : PartyForm(group: l.group, existing: l, autoSave: true));
+    }
+    for (final r in await app.db.getAll('SELECT id FROM items WHERE business_id = ?', [app.businessId])) {
+      final it = (await app.stock.byId(r['id'] as String))!;
+      await resave('item form ${it.name}', () => ItemForm(existing: it, autoSave: true));
+    }
+    for (final r in await app.db.getAll(
+        "SELECT id, vtype FROM vouchers WHERE business_id = ? AND deleted = 0 AND vtype IN ('booking', 'recurring', 'recurring_pay')", [app.businessId])) {
+      final id = r['id'] as String;
+      await resave(
+          '${r['vtype']} form',
+          () => switch (r['vtype']) {
+                'booking' => BookingScreen(editId: id, autoSave: true),
+                'recurring' => RecurringForm(editId: id, autoSave: true),
+                _ => RecurringPayForm(editId: id, autoSave: true),
+              });
     }
     final deep = await app.vouchers.deepCheck();
     problems.addAll(deep.map((d) => 'deep check ${d.$1.type.code} #${d.$1.vno}: ${d.$2}'));

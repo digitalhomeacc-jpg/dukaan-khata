@@ -176,7 +176,8 @@ class _PartiesScreenState extends State<PartiesScreen> {
 class PartyForm extends StatefulWidget {
   final LedgerGroup group;
   final Ledger? existing;
-  const PartyForm({super.key, required this.group, this.existing});
+  final bool autoSave; // self-check only (demo): save untouched and close
+  const PartyForm({super.key, required this.group, this.existing, this.autoSave = false});
 
   static Future<void> open(BuildContext context, LedgerGroup group, {Ledger? existing}) async {
     // always the saved values, not a copy from an older screen (saving a stale
@@ -191,6 +192,18 @@ class PartyForm extends StatefulWidget {
 }
 
 class _PartyFormState extends State<PartyForm> {
+  @override
+  void initState() {
+    super.initState();
+    if (widget.autoSave) {
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        final route = ModalRoute.of(context);
+        await _save();
+        if (mounted && (route?.isCurrent ?? false)) Navigator.pop(context, 'not saved');
+      });
+    }
+  }
+
   late final name = TextEditingController(text: widget.existing?.name);
   late final nameEn = TextEditingController(text: widget.existing?.nameEn);
   late final phone = TextEditingController(text: widget.existing?.phone);

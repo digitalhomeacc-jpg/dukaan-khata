@@ -24,7 +24,8 @@ class _BookRow {
 class BookingScreen extends StatefulWidget {
   final String? partyId;
   final String? editId;
-  const BookingScreen({super.key, this.partyId, this.editId});
+  final bool autoSave; // self-check only (demo)
+  const BookingScreen({super.key, this.partyId, this.editId, this.autoSave = false});
   static Future<void> open(BuildContext context, {String? partyId, String? editId}) => Navigator.push(
       context, MaterialPageRoute(builder: (_) => BookingScreen(partyId: partyId, editId: editId)));
   @override
@@ -75,6 +76,13 @@ class _BookingScreenState extends State<BookingScreen> {
       rows.add(_BookRow());
     }
     if (mounted) setState(() => loading = false);
+    if (mounted && widget.autoSave) {
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        final route = ModalRoute.of(context);
+        await _save();
+        if (mounted && (route?.isCurrent ?? false)) Navigator.pop(context, 'not saved');
+      });
+    }
   }
 
   int get total => rows.fold(0, (s, r) => s + (r.q * r.r).round());

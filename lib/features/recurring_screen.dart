@@ -142,7 +142,8 @@ class RecurringListScreen extends StatelessWidget {
 class RecurringForm extends StatefulWidget {
   final String? partyId;
   final String? editId;
-  const RecurringForm({super.key, this.partyId, this.editId});
+  final bool autoSave; // self-check only (demo)
+  const RecurringForm({super.key, this.partyId, this.editId, this.autoSave = false});
   static Future<void> open(BuildContext context, {String? partyId, String? editId}) =>
       Navigator.push(context, MaterialPageRoute(builder: (_) => RecurringForm(partyId: partyId, editId: editId)));
   @override
@@ -183,6 +184,13 @@ class _RecurringFormState extends State<RecurringForm> {
       rows.add(_Row());
     }
     if (mounted) setState(() => loading = false);
+    if (mounted && widget.autoSave) {
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        final route = ModalRoute.of(context);
+        await _save();
+        if (mounted && (route?.isCurrent ?? false)) Navigator.pop(context, 'not saved');
+      });
+    }
   }
 
   Future<void> _save() async {
@@ -561,7 +569,8 @@ class _DueChargesScreenState extends State<DueChargesScreen> {
 /// दरमहा देणे: a payment made every month – loan interest, light bill, internet …
 class RecurringPayForm extends StatefulWidget {
   final String? editId;
-  const RecurringPayForm({super.key, this.editId});
+  final bool autoSave; // self-check only (demo)
+  const RecurringPayForm({super.key, this.editId, this.autoSave = false});
   static Future<void> open(BuildContext context, {String? editId}) =>
       Navigator.push(context, MaterialPageRoute(builder: (_) => RecurringPayForm(editId: editId)));
   @override
@@ -596,6 +605,13 @@ class _RecurringPayFormState extends State<RecurringPayForm> {
       note.text = r.note ?? '';
     }
     if (mounted) setState(() => loading = false);
+    if (mounted && widget.autoSave) {
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        final route = ModalRoute.of(context);
+        await _save();
+        if (mounted && (route?.isCurrent ?? false)) Navigator.pop(context, 'not saved');
+      });
+    }
   }
 
   Future<void> _save() async {
