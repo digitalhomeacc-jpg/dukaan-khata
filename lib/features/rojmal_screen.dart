@@ -352,11 +352,24 @@ class _DayEndCard extends StatelessWidget {
                 ),
             ],
             if (c.freightPaid != 0) ...[
-              const SizedBox(height: 8),
-              Row(children: [
-                Expanded(child: Text(t('freight_paid_today'), style: Theme.of(context).textTheme.bodySmall)),
-                Text(Money.fmt(c.freightPaid), style: Theme.of(context).textTheme.bodySmall),
-              ]),
+              const SizedBox(height: 4),
+              // tap: that day's भाडे entries (goods brought in etc.)
+              InkWell(
+                key: const Key('freight_today'),
+                onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => ReportView(
+                            load: () => app.reports.ledgerStatement('${app.businessId}:freight', from: c.date, to: c.date)))),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  child: Row(children: [
+                    Expanded(child: Text(t('freight_paid_today'))),
+                    Text(Money.fmt(c.freightPaid)),
+                    const Icon(Icons.chevron_right, size: 18),
+                  ]),
+                ),
+              ),
             ],
           ],
           Align(
