@@ -7,6 +7,7 @@ import '../accounting/bookings.dart';
 import '../accounting/interest.dart';
 import '../accounting/ledger_repo.dart';
 import '../accounting/models.dart';
+import '../accounting/voucher_service.dart';
 import '../accounting/reports.dart' show NaturalKey;
 import '../core/money.dart';
 import '../core/theme.dart';
@@ -20,6 +21,8 @@ import 'interest_screen.dart';
 import 'recurring_screen.dart';
 import 'staff_screen.dart';
 import 'promise_screen.dart';
+import 'report_view.dart';
+import 'supplier_match_screen.dart';
 import 'voucher_screen.dart';
 
 /// Customer / supplier list – the digital INDEX page.
@@ -77,7 +80,7 @@ class _PartiesScreenState extends State<PartiesScreen> {
           ),
         ),
         Expanded(
-          child: LiveBuilder<(List<Ledger>, Map<String, List<GoodsOwed>>, Map<String, List<Booking>>)>(
+          child: LiveBuilder<(List<Ledger>, Map<String, List<GoodsOwed>>, Map<String, List<Booking>>, Map<String, int>)>(
             reloadKey: '${_q.text}|$sort',
             load: () async {
               // उसना माल per party, shown under the name
@@ -106,10 +109,10 @@ class _PartiesScreenState extends State<PartiesScreen> {
                 case _Sort.due:
                   list.sort((a, b) => isCust ? b.balance.compareTo(a.balance) : a.balance.compareTo(b.balance));
               }
-              return (list, goods, booked);
+              return (list, goods, booked, await app.ledgers.daysUnpaid());
             },
             builder: (context, data) {
-              final (list, goods, booked) = data;
+              final (list, goods, booked, days) = data;
               final total = list.fold<int>(0, (s, l) => s + l.balance);
               return Column(children: [
                 Container(
@@ -157,7 +160,7 @@ class _PartiesScreenState extends State<PartiesScreen> {
                                     style: const TextStyle(color: AppColors.ink, fontWeight: FontWeight.w600, fontSize: 13),
                                   ),
                               ]),
-                              trailing: BalanceText(l.balance, supplier: !isCust),
+                              trailing: BalanceText(l.balance, supplier: !isCust, days: days[l.id]),
                               onTap: () => KhataScreen.open(context, l.id),
                             );
                           },
@@ -430,10 +433,64 @@ class KhataScreen extends StatefulWidget {
 
 class _KhataScreenState extends State<KhataScreen> {
   final _shotKey = GlobalKey();
+  int? unpaidDays; // days since this balance was last paid towards
   String? from;
   String? to;
 
   bool _sharing = false; // drawing the customer's copy (no vehicle names)
+
+  /// कंपनी सूट: a credit note from the supplier (trade / quarterly / cash /
+  /// yearly discount). Lowers what we owe; no money moves.
+  Future<void> _companyDiscount(Ledger l) async {
+    final app = App.read(context);
+    final t = app.t;
+    final amt = TextEditingController(), note = TextEditingController();
+    var kind = 'trade';
+    var date = todayIso();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setD) => AlertDialog(
+          title: Text(t('co_discount')),
+          content: SingleChildScrollView(
+            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(t('co_discount_help'), style: Theme.of(ctx).textTheme.bodySmall),
+              const SizedBox(height: 10),
+              AmountField(key: const Key('co_discount_amt'), controller: amt, label: t('amount'), autofocus: true, onChanged: (_) {}),
+              const SizedBox(height: 10),
+              Wrap(spacing: 6, runSpacing: 6, children: [
+                for (final k in const ['trade', 'quarter', 'cash', 'year', 'other'])
+                  ChoiceChip(label: Text(t('co_kind_$k')), selected: kind == k, onSelected: (_) => setD(() => kind = k)),
+              ]),
+              const SizedBox(height: 10),
+              DateField(date: date, label: t('date'), first: Books.start, onChanged: (d) => setD(() => date = d)),
+              const SizedBox(height: 10),
+              TextField(controller: note, decoration: InputDecoration(labelText: t('narration'), hintText: 'Apr 26, CN no. …')),
+            ]),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(t('cancel'))),
+            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(t('save'))),
+          ],
+        ),
+      ),
+    );
+    final a = Money.parse(amt.text) ?? 0;
+    if (ok != true || a <= 0 || !mounted) return;
+    try {
+      await app.vouchers.save(
+          VoucherInput(
+              type: VoucherType.payment,
+              date: date,
+              partyId: l.id,
+              discount: a,
+              narration: '${t('co_discount_short')} – ${t('co_kind_$kind')}${note.text.trim().isEmpty ? '' : ' · ${note.text.trim()}'}'),
+          app.actor);
+      if (mounted) toast(context, '${t('saved')} · ${t('co_discount_short')} ₹${Money.fmt(a)}');
+    } catch (e) {
+      if (mounted) toast(context, errText(context, e), error: true);
+    }
+  }
 
   Future<void> _shareImage(Statement st) async {
     final app = App.read(context);
@@ -457,7 +514,10 @@ class _KhataScreenState extends State<KhataScreen> {
     final t = app.t;
     return LiveBuilder<Statement>(
       reloadKey: '$from|$to',
-      load: () => app.ledgers.statement(widget.ledgerId, from: from, to: to),
+      load: () async {
+        unpaidDays = (await app.ledgers.daysUnpaid())[widget.ledgerId];
+        return app.ledgers.statement(widget.ledgerId, from: from, to: to);
+      },
       builder: (context, st) {
         final l = st.ledger;
         final isCust = l.group == LedgerGroup.customer;
@@ -510,6 +570,21 @@ class _KhataScreenState extends State<KhataScreen> {
                       if (context.mounted) await BookingScreen.open(context, partyId: l.id);
                     case 'interest':
                       if (context.mounted) await InterestScreen.open(context, l.id);
+                    case 'co_discount':
+                      if (context.mounted) await _companyDiscount(l);
+                    case 'co_match':
+                      if (context.mounted) await SupplierMatchScreen.open(context, l);
+                    case 'real_cost':
+                      if (context.mounted) {
+                        // the last 12 months, so quarterly and yearly discounts are in
+                        final now = DateTime.now();
+                        final start = isoDate(DateTime(now.year - 1, now.month + 1, 1));
+                        await Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) => ReportView(
+                                    load: () => app.reports.supplierCost(l.id, start.compareTo(Books.start) < 0 ? Books.start : start, todayIso()))));
+                      }
                     case 'goods_out':
                       if (context.mounted) await VoucherScreen.open(context, VoucherType.goodsOut, partyId: l.id);
                     case 'goods_in':
@@ -538,6 +613,12 @@ class _KhataScreenState extends State<KhataScreen> {
                     PopupMenuItem(value: 'v_receipt', child: Text(t('receipt'))),
                   ],
                   if (l.group == LedgerGroup.staff) PopupMenuItem(value: 'advance_back', child: Text(t('advance_back'))),
+                  // the company's credit notes and what its goods really cost (owner)
+                  if (app.actor.isOwner && l.group.isParty && l.balance <= 0 || app.actor.isOwner && isSup) ...[
+                    PopupMenuItem(value: 'co_discount', child: Text(t('co_discount'))),
+                    PopupMenuItem(value: 'real_cost', child: Text(t('r_real_cost'))),
+                    PopupMenuItem(value: 'co_match', child: Text(t('sm_title'))),
+                  ],
                   if (l.group.isParty) PopupMenuItem(value: 'booking', child: Text(t('booking_new'))),
                   if (l.group.isParty && app.actor.isOwner) PopupMenuItem(value: 'recurring', child: Text(t('recurring'))),
                   if (app.actor.isOwner && l.group.isParty)
@@ -579,9 +660,24 @@ class _KhataScreenState extends State<KhataScreen> {
                 const SizedBox(width: 8),
                 IconButton.filledTonal(icon: const Icon(Icons.share), tooltip: t('statement'), onPressed: () => _shareImage(st)),
                 const Spacer(),
-                BalanceText(st.closing, supplier: isSup, size: 22),
+                BalanceText(st.closing, supplier: isSup, size: 22, days: from == null && to == null ? unpaidDays : null),
               ]),
             ),
+            // one tap: the whole balance as a जमा (customer) / payment (supplier)
+            if (l.group.isParty && l.balance != 0 && from == null && to == null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.tonalIcon(
+                    key: const Key('settle_full'),
+                    icon: Icon(l.balance > 0 ? Icons.south_west : Icons.north_east, size: 18),
+                    label: Text(t(l.balance > 0 ? 'settle_full_in' : 'settle_full_out').replaceAll('{amt}', Money.fmt(l.balance, abs: true))),
+                    onPressed: () => VoucherScreen.open(context, l.balance > 0 ? VoucherType.receipt : VoucherType.payment,
+                        partyId: l.id, amount: l.balance.abs()),
+                  ),
+                ),
+              ),
             _OpenPromises(partyId: l.id),
             _GoodsOwedCard(party: l),
             _BookingsBanner(party: l),

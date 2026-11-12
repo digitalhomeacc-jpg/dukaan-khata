@@ -77,7 +77,9 @@ class BalanceText extends StatelessWidget {
   final int balance;
   final bool supplier;
   final double size;
-  const BalanceText(this.balance, {super.key, this.supplier = false, this.size = 16});
+  /// Days since this balance was last paid towards (shown small, when given).
+  final int? days;
+  const BalanceText(this.balance, {super.key, this.supplier = false, this.size = 16, this.days});
   @override
   Widget build(BuildContext context) {
     final app = App.of(context);
@@ -93,6 +95,12 @@ class BalanceText extends StatelessWidget {
         Text('₹${Money.fmt(balance, abs: true)}',
             style: TextStyle(color: color, fontSize: size, fontWeight: FontWeight.bold)),
         Text(owesUs ? app.t('they_owe') : app.t('we_owe'), style: TextStyle(color: color, fontSize: size * 0.7)),
+        if (days != null && days! > 0)
+          Text(app.t('days_unpaid').replaceAll('{n}', '$days'),
+              style: TextStyle(
+                  fontSize: 11,
+                  // quiet until it is old: grey → amber after a month → red after two
+                  color: days! > 60 ? Colors.red.shade400 : days! > 30 ? Colors.orange.shade700 : Colors.grey.shade600)),
       ],
     );
   }

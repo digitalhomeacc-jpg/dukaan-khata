@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../accounting/bookings.dart';
 import '../accounting/models.dart';
 import '../core/money.dart';
 import '../core/theme.dart';
@@ -35,16 +36,17 @@ class HomeScreen extends StatelessWidget {
           IconButton(tooltip: t('lock'), icon: const Icon(Icons.lock_outline), onPressed: app.lock),
         ],
       ),
-      body: LiveBuilder<(Map<String, int>, List<Item>, List<Voucher>, int, int)>(
+      body: LiveBuilder<(Map<String, int>, List<Item>, List<Voucher>, int, int, List<Booking>)>(
         load: () async => (
           await app.ledgers.dashboard(today),
           (await app.stock.list()).where((i) => i.lowStock > 0 && i.stock <= i.lowStock).toList(),
           (await app.ledgers.dayBook(today)).reversed.take(12).toList(),
           await app.ledgers.promisesDue(today),
           app.actor.isOwner ? (await app.recurring.due(today)).length : 0, // दरमहा आकार to charge
+          (await app.bookings.list(customer: false)).where((b) => b.open && !b.old).toList(), // orders on the way
         ),
         builder: (context, data) {
-          final (d, low, recent, due, monthly) = data;
+          final (d, low, recent, due, monthly, incoming) = data;
           return ListView(padding: const EdgeInsets.fromLTRB(16, 4, 16, 24), children: [
             _SearchField(onTap: () => SearchScreen.open(context), hint: t('search_all_hint')),
             if (due > 0) ...[
@@ -78,6 +80,45 @@ class HomeScreen extends StatelessWidget {
                   title: Text(t('recurring_due').replaceAll('{n}', '$monthly'), style: const TextStyle(fontWeight: FontWeight.w700)),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () => DueChargesScreen.open(context),
+                ),
+              ),
+            ],
+            // येणारा माल: orders placed with suppliers – one tap when the truck arrives
+            if (incoming.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Card(
+                margin: EdgeInsets.zero,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 10, 8, 8),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Row(children: [
+                      Icon(Icons.local_shipping_outlined, size: 20, color: scheme.primary),
+                      const SizedBox(width: 8),
+                      Text(t('incoming'), style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+                    ]),
+                    for (final b in incoming.take(4))
+                      Row(children: [
+                        Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 4),
+                            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                              Text(b.partyName, style: const TextStyle(fontWeight: FontWeight.w600)),
+                              Text(
+                                  b.lines
+                                      .where((l) => l.remaining > 0)
+                                      .map((l) => '${l.item.display(app.english)} ${fmtQty(l.remaining)} ${t('unit_${l.item.unit}')}')
+                                      .join(', '),
+                                  style: Theme.of(context).textTheme.bodySmall),
+                            ]),
+                          ),
+                        ),
+                        FilledButton.tonal(
+                          key: Key('incoming_${b.id}'),
+                          onPressed: () => VoucherScreen.open(context, VoucherType.purchase, partyId: b.partyId),
+                          child: Text(t('incoming_arrived')),
+                        ),
+                      ]),
+                  ]),
                 ),
               ),
             ],

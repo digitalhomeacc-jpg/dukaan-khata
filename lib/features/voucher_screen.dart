@@ -31,6 +31,7 @@ class VoucherScreen extends StatefulWidget {
   final String? historyKind; // old entry: sale | purchase | received | paid
   /// Self-check only (demo build): load the entry, save it untouched, close.
   final bool autoSave;
+  final String? presetDate; // e.g. the date of a company statement line
   const VoucherScreen({
     super.key,
     required this.type,
@@ -41,6 +42,7 @@ class VoucherScreen extends StatefulWidget {
     this.presetNarration,
     this.historyKind,
     this.autoSave = false,
+    this.presetDate,
   });
 
   static Future<void> open(
@@ -50,11 +52,12 @@ class VoucherScreen extends StatefulWidget {
     bool expense = false,
     int? amount,
     String? narration,
+    String? date,
   }) => Navigator.push(
     context,
     MaterialPageRoute(
-      builder: (_) =>
-          VoucherScreen(type: type, partyId: partyId, expenseMode: expense, presetAmount: amount, presetNarration: narration),
+      builder: (_) => VoucherScreen(
+          type: type, partyId: partyId, expenseMode: expense, presetAmount: amount, presetNarration: narration, presetDate: date),
     ),
   );
 
@@ -363,6 +366,7 @@ class _VoucherScreenState extends State<VoucherScreen> {
       if (isHistory) date = isoDate(parseIso(Books.start).subtract(const Duration(days: 1)));
       if (widget.presetAmount != null && widget.presetAmount! > 0) amount.text = _plain(widget.presetAmount!);
       if (widget.presetNarration != null) narration.text = widget.presetNarration!;
+      if (widget.presetDate != null && !Books.isHistory(widget.presetDate!)) date = widget.presetDate!;
       // sensible default payment account
       if (creditAllowed) {
         // purchases are usually on credit; a sale without a name is a cash sale
@@ -630,7 +634,8 @@ class _VoucherScreenState extends State<VoucherScreen> {
     final amountOnly = historyBill && lines.isEmpty;
     if (hasItems && lines.isEmpty && !amountOnly) return toast(context, t('err_items'), error: true);
     if (amountOnly && (Money.parse(amount.text) ?? 0) <= 0) return toast(context, t('err_amount'), error: true);
-    if (!hasItems && total <= 0) return toast(context, t('err_amount'), error: true);
+    // (a company credit note is a payment of ₹0 with only a सूट)
+    if (!hasItems && total <= 0 && (Money.parse(discount.text) ?? 0) <= 0) return toast(context, t('err_amount'), error: true);
     final needsParty = const {VoucherType.receipt, VoucherType.payment, VoucherType.contra, VoucherType.history, VoucherType.goodsOut, VoucherType.goodsIn}.contains(type);
     if (needsParty && party == null) return toast(context, t('err_party'), error: true);
     if (creditAllowed && party == null && payId == null) {
@@ -837,6 +842,24 @@ class _VoucherScreenState extends State<VoucherScreen> {
             if (hasItems) ...[
               const SizedBox(height: 12),
               _quickEntry(app),
+              if (_lastBill.isNotEmpty && lines.isEmpty && editing == null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: ActionChip(
+                      key: const Key('repeat_last'),
+                      avatar: const Icon(Icons.replay, size: 18),
+                      label: Text(
+                        '${t('repeat_last')} (${shortDate(_lastBillDate!)}): '
+                        '${_lastBill.map((l) => '${items.firstWhere((i) => i.id == l.itemId).display(app.english)} ${fmtQty(l.qty)}').join(', ')}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      onPressed: _repeatLastBill,
+                    ),
+                  ),
+                ),
               const SizedBox(height: 8),
               _itemChips(app),
               const SizedBox(height: 8),
@@ -1068,6 +1091,38 @@ class _VoucherScreenState extends State<VoucherScreen> {
       [party!.id],
     );
     if (mounted) setState(() => hasteSuggestions = [for (final r in rows) r['haste'] as String]);
+    await _loadLastBill();
+  }
+
+  /// मागचे बिल पुन्हा: this party's last bill of the same kind, to repeat in one tap.
+  List<ItemLine> _lastBill = [];
+  String? _lastBillDate;
+  Future<void> _loadLastBill() async {
+    _lastBill = [];
+    if (party == null || editing != null || (type != VoucherType.sale && type != VoucherType.purchase)) return;
+    final app = App.read(context);
+    final r = await app.db.getOptional(
+        'SELECT id, vdate FROM vouchers WHERE party_id = ? AND vtype = ? AND deleted = 0 ORDER BY vdate DESC, created_at DESC LIMIT 1',
+        [party!.id, type.code]);
+    if (r == null) return;
+    final (_, ls) = await app.vouchers.load(r['id'] as String);
+    // only items still on sale
+    final keep = [for (final l in ls) if (items.any((i) => i.id == l.itemId)) l];
+    if (mounted) {
+      setState(() {
+        _lastBill = keep;
+        _lastBillDate = r['vdate'] as String;
+      });
+    }
+  }
+
+  void _repeatLastBill() {
+    setState(() {
+      for (final l in _lastBill) {
+        lines.add(_LineCtl(items.firstWhere((i) => i.id == l.itemId), l.qty, l.rate));
+      }
+      _syncPaid();
+    });
   }
 
   bool get _isBuying => type == VoucherType.purchase || type == VoucherType.purchaseReturn || (isHistory && hKind == 'purchase');

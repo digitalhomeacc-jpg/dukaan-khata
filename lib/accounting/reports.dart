@@ -317,6 +317,61 @@ class Reports {
     );
   }
 
+  /// खरी किंमत: what a supplier's goods really cost after the company's
+  /// discounts (trade / quarterly / cash / yearly credit notes), month by month.
+  /// A discount counts in the month its credit note is dated.
+  Future<ReportTable> supplierCost(String supplierId, String from, String to) async {
+    final sup = (await ledgers.byId(supplierId))!;
+    final buys = await db.getAll(
+      "SELECT substr(il.vdate, 1, 7) AS m, SUM(CASE WHEN v.vtype = 'purchase' THEN il.qty ELSE -il.qty END) AS q, "
+      "SUM(CASE WHEN v.vtype = 'purchase' THEN il.amount ELSE -il.amount END) AS a "
+      'FROM inventory_lines il JOIN vouchers v ON v.id = il.voucher_id '
+      "WHERE v.party_id = ? AND v.deleted = 0 AND il.deleted = 0 AND v.vtype IN ('purchase', 'purchase_return') AND il.vdate BETWEEN ? AND ? "
+      'GROUP BY m',
+      [supplierId, from, to],
+    );
+    final disc = await db.getAll(
+      'SELECT substr(vl.vdate, 1, 7) AS m, SUM(vl.credit - vl.debit) AS d FROM voucher_lines vl JOIN vouchers v ON v.id = vl.voucher_id '
+      'WHERE v.party_id = ? AND v.deleted = 0 AND vl.deleted = 0 AND vl.ledger_id = ? AND vl.vdate BETWEEN ? AND ? GROUP BY m',
+      [supplierId, '$businessId:discount_recd', from, to],
+    );
+    final months = <String, (double, int, int)>{}; // month → qty, bought, discount
+    for (final r in buys) {
+      months[r['m'] as String] = ((r['q'] as num).toDouble(), (r['a'] as num).toInt(), 0);
+    }
+    for (final r in disc) {
+      final m = r['m'] as String, old = months[m] ?? (0.0, 0, 0);
+      months[m] = (old.$1, old.$2, (r['d'] as num).toInt());
+    }
+    String rate(int amount, double qty) => qty <= 0 ? '' : Money.fmt((amount / qty).round());
+    var tq = 0.0, ta = 0, td = 0;
+    final keys = months.keys.toList()..sort();
+    final rows = <List<String>>[];
+    for (final m in keys) {
+      final (q, a, d) = months[m]!;
+      tq += q;
+      ta += a;
+      td += d;
+      rows.add(['${m.substring(5)}/${m.substring(2, 4)}', fmtQty(q), Money.fmt(a), d == 0 ? '' : Money.fmt(d), Money.fmt(a - d), rate(a, q), rate(a - d, q)]);
+    }
+    return ReportTable(
+      title: '${tr('r_real_cost')} – ${sup.name}',
+      subtitle: '${_range(from, to)} · ${tr('real_cost_note')}',
+      columns: [
+        ReportColumn(tr('month'), flex: 2),
+        ReportColumn.num(tr('qty'), flex: 2),
+        ReportColumn.num(tr('purchase'), flex: 3),
+        ReportColumn.num(tr('discount'), flex: 3),
+        ReportColumn.num(tr('net_cost'), flex: 3),
+        ReportColumn.num(tr('bill_rate'), flex: 2),
+        ReportColumn.num(tr('net_rate'), flex: 2),
+      ],
+      rows: rows,
+      // over the whole period: the discounts of the year spread over everything bought
+      totals: [tr('total'), fmtQty(tq), Money.fmt(ta), Money.fmt(td), Money.fmt(ta - td), rate(ta, tq), rate(ta - td, tq)],
+    );
+  }
+
   Future<ReportTable> moneyBook(List<String> ledgerIds, String title, String from, String to) async {
     final rows = <List<String>>[];
     final refs = <String?>[];

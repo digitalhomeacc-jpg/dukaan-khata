@@ -25,16 +25,17 @@ class BookingScreen extends StatefulWidget {
   final String? partyId;
   final String? editId;
   final bool autoSave; // self-check only (demo)
-  const BookingScreen({super.key, this.partyId, this.editId, this.autoSave = false});
-  static Future<void> open(BuildContext context, {String? partyId, String? editId}) => Navigator.push(
-      context, MaterialPageRoute(builder: (_) => BookingScreen(partyId: partyId, editId: editId)));
+  final bool supplier; // open as an order placed with a supplier
+  const BookingScreen({super.key, this.partyId, this.editId, this.autoSave = false, this.supplier = false});
+  static Future<void> open(BuildContext context, {String? partyId, String? editId, bool supplier = false}) => Navigator.push(
+      context, MaterialPageRoute(builder: (_) => BookingScreen(partyId: partyId, editId: editId, supplier: supplier)));
   @override
   State<BookingScreen> createState() => _BookingScreenState();
 }
 
 class _BookingScreenState extends State<BookingScreen> {
   Ledger? party;
-  bool customer = true;
+  late bool customer = !widget.supplier;
   String date = todayIso();
   List<Item> items = [];
   List<Ledger> moneyAccounts = [];

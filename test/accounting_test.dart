@@ -957,6 +957,40 @@ void main() {
     expect(await lr.balanceAt(hotel), 0);
   });
 
+  test('कंपनी सूट: credit note lowers what we owe, no cash; real cost per unit after discounts', () async {
+    final sup = await lr.create(name: 'Cement Co', group: LedgerGroup.supplier);
+    final w = items['W']!;
+    final today = todayIso();
+    final cash0 = await lr.balanceAt(vs.sys('cash'));
+    await vs.save(VoucherInput(type: VoucherType.purchase, date: today, partyId: sup, items: [ItemLine(w.id, 100, rs(320))]), owner);
+    await vs.save(VoucherInput(type: VoucherType.purchaseReturn, date: today, partyId: sup, items: [ItemLine(w.id, 10, rs(320))]), owner);
+    expect(await lr.balanceAt(sup), -rs(28800));
+    // trade discount ₹2,700 → we owe 26,100; cash untouched
+    final cn = await vs.save(VoucherInput(type: VoucherType.payment, date: today, partyId: sup, discount: rs(2700), narration: 'कंपनी सूट – ट्रेड'), owner);
+    expect(await lr.balanceAt(sup), -rs(26100));
+    expect(await lr.balanceAt(vs.sys('cash')), cash0);
+    expect(await lr.balanceAt(vs.sys('discount_recd')), -rs(2700));
+    expect((await lr.cashBook([vs.sys('cash')], today)).rows.where((r) => r.voucherId == cn), isEmpty);
+    // re-saved untouched (as the edit screen would) – still exact
+    await vs.save(await vs.inputOf(cn), owner, existingId: cn);
+    expect(await lr.balanceAt(sup), -rs(26100));
+    expect(await vs.deepCheck(), isEmpty);
+    final rep = await Reports(db, biz, (k) => k).supplierCost(sup, today.substring(0, 8) + '01', today);
+    // 90 bags, ₹28,800 billed, ₹2,700 discount → 320 billed, 290 net per bag
+    expect(rep.totals, ['total', '90', Money.fmt(rs(28800)), Money.fmt(rs(2700)), Money.fmt(rs(26100)), '320', '290']);
+  });
+
+  test('days since a balance was last paid', () async {
+    final a = await lr.create(name: 'Never Paid', group: LedgerGroup.customer, openingBalance: rs(500));
+    final b = await lr.create(name: 'Paid Today', group: LedgerGroup.customer, openingBalance: rs(500));
+    final c = await lr.create(name: 'Settled', group: LedgerGroup.customer);
+    await vs.save(VoucherInput(type: VoucherType.receipt, date: todayIso(), partyId: b, payLedgerId: vs.sys('cash'), amount: rs(100)), owner);
+    final d = await lr.daysUnpaid();
+    expect(d[a], parseIso(todayIso()).difference(parseIso(Books.start)).inDays); // since the books start
+    expect(d.containsKey(b), isFalse); // paid today → nothing to show
+    expect(d.containsKey(c), isFalse); // no balance
+  });
+
   test('search: words in any order, page no., phone, amount, bill no.', () async {
     final id = await lr.create(name: 'सुरेश जाधव', nameEn: 'Suresh Jadhav', group: LedgerGroup.customer, pageNo: '29', phone: '98500 12345');
     await lr.create(name: 'सुरेश मोरे', nameEn: 'Suresh More', group: LedgerGroup.customer, pageNo: '63');

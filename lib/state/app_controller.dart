@@ -212,6 +212,19 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Small per-device notes (today's labourer count, minimum hamali …).
+  int prefInt(String key, int fallback) => _prefs.getInt(key) ?? fallback;
+  Future<void> setPrefInt(String key, int v) async {
+    await _prefs.setInt(key, v);
+    notifyListeners();
+  }
+
+  String prefStr(String key) => _prefs.getString(key) ?? '';
+  Future<void> setPrefStr(String key, String v) async {
+    await _prefs.setString(key, v);
+    notifyListeners();
+  }
+
   String backupUrl = '';
 
   /// The Drive backup script's web-app link, shared by every owner's phone.

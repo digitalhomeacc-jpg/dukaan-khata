@@ -119,6 +119,34 @@ class LedgerRepo {
   /// Customers (or suppliers) list. Also includes people from the other side
   /// who have traded this way – a supplier who bought from us appears among
   /// customers, marked `dual` – so one person keeps one khata.
+  /// Days since each party's balance was last paid towards: the last day a
+  /// customer paid us (or we paid a supplier); if never, since their first
+  /// entry (or the books start for an opening balance). Parties with a
+  /// balance only. Key = ledger id.
+  Future<Map<String, int>> daysUnpaid() async {
+    final rows = await db.getAll(
+      'SELECT l.id, l.opening_balance, $_balanceExpr AS balance, '
+      '(SELECT MAX(vdate) FROM voucher_lines WHERE ledger_id = l.id AND deleted = 0 AND credit > 0) AS last_cr, '
+      '(SELECT MAX(vdate) FROM voucher_lines WHERE ledger_id = l.id AND deleted = 0 AND debit > 0) AS last_dr, '
+      '(SELECT MIN(vdate) FROM voucher_lines WHERE ledger_id = l.id AND deleted = 0) AS first '
+      "FROM ledgers l WHERE l.business_id = ? AND l.grp IN ('customer', 'supplier')",
+      [businessId],
+    );
+    final today = parseIso(todayIso());
+    final out = <String, int>{};
+    for (final r in rows) {
+      final bal = (r['balance'] as num).toInt();
+      if (bal == 0) continue;
+      // they owe us → their last payment (a credit); we owe them → our last payment (a debit)
+      final last = (bal > 0 ? r['last_cr'] : r['last_dr']) as String?;
+      final since = last ?? (((r['opening_balance'] as int?) ?? 0) != 0 ? Books.start : r['first'] as String?);
+      if (since == null) continue;
+      final d = today.difference(parseIso(since)).inDays;
+      if (d > 0) out[r['id'] as String] = d;
+    }
+    return out;
+  }
+
   Future<List<Ledger>> parties(LedgerGroup g) async {
     final other = g == LedgerGroup.customer ? 'supplier' : 'customer';
     final mine = g == LedgerGroup.customer ? "'sale','sales_return'" : "'purchase','purchase_return'";

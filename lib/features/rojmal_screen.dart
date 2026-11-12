@@ -8,7 +8,9 @@ import '../core/theme.dart';
 import '../shared/export.dart';
 import '../shared/widgets.dart';
 import '../state/app_controller.dart';
+import 'booking_screen.dart';
 import 'cash_count_screen.dart';
+import 'day_close_screen.dart';
 import 'report_view.dart';
 import 'voucher_screen.dart';
 
@@ -218,6 +220,23 @@ class _RojmalScreenState extends State<RojmalScreen> {
               },
             ),
           ListTile(
+            leading: const Icon(Icons.nightlight_round),
+            title: Text(t('day_close')),
+            onTap: () {
+              Navigator.pop(context);
+              DayCloseScreen.open(context);
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.local_shipping_outlined),
+            title: Text(t('incoming_add')),
+            subtitle: Text(t('incoming_add_sub')),
+            onTap: () {
+              Navigator.pop(context);
+              BookingScreen.open(context, supplier: true);
+            },
+          ),
+          ListTile(
             leading: const Icon(Icons.calculate_outlined),
             title: Text(t('cash_count')),
             subtitle: Text(t('cash_count_sub')),
@@ -252,7 +271,13 @@ class _DayEndCard extends StatelessWidget {
     final app = App.of(context);
     final t = app.t;
     final c = charges;
-    final pending = c.hamaliToPay - c.hamaliPaid;
+    // आज किती हमाल: each gets at least the minimum; a shortfall is paid from pocket
+    final hamals = app.prefInt('hamals_${c.date}', 0);
+    final minEach = app.prefInt('hamal_min', 300) * 100;
+    final minTotal = hamals * minEach;
+    final pocket = minTotal > c.hamaliToPay ? minTotal - c.hamaliToPay : 0;
+    final toPay = c.hamaliToPay + pocket;
+    final pending = toPay - c.hamaliPaid;
     final owedTotal = c.transporters.fold<int>(0, (s, d) => s + (d.owed > 0 ? d.owed : 0));
     Widget money(int v, {Color? color, bool bold = false}) => Text(Money.fmt(v),
         style: TextStyle(color: color, fontWeight: bold ? FontWeight.bold : null, fontFeatures: const [FontFeature.tabularFigures()]));
@@ -277,15 +302,62 @@ class _DayEndCard extends StatelessWidget {
             Expanded(child: Text(t('hamali_to_pay'), style: const TextStyle(fontWeight: FontWeight.w600))),
             money(c.hamaliToPay, bold: true),
           ]),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Row(children: [
+              Expanded(child: Text(t('hamal_count'), style: const TextStyle(fontWeight: FontWeight.w600))),
+              IconButton.filledTonal(
+                  key: const Key('hamal_minus'),
+                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(Icons.remove, size: 18),
+                  onPressed: hamals > 0 ? () => app.setPrefInt('hamals_${c.date}', hamals - 1) : null),
+              SizedBox(width: 36, child: Text('$hamals', textAlign: TextAlign.center, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800))),
+              IconButton.filledTonal(
+                  key: const Key('hamal_plus'),
+                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(Icons.add, size: 18),
+                  onPressed: () => app.setPrefInt('hamals_${c.date}', hamals + 1)),
+            ]),
+          ),
+          if (hamals > 0) ...[
+            InkWell(
+              // tap to change the ₹300 minimum
+              onTap: () async {
+                final ctl = TextEditingController(text: '${minEach ~/ 100}');
+                final v = await showDialog<String>(
+                  context: context,
+                  builder: (ctx) => AlertDialog(
+                    title: Text(t('hamal_rate_q')),
+                    content: TextField(controller: ctl, autofocus: true, keyboardType: TextInputType.number),
+                    actions: [FilledButton(onPressed: () => Navigator.pop(ctx, ctl.text), child: Text(t('save')))],
+                  ),
+                );
+                final n = int.tryParse(normalizeDigits(v ?? '').trim());
+                if (n != null && n > 0) await app.setPrefInt('hamal_min', n);
+              },
+              child: Row(children: [
+                Expanded(child: Text('${t('hamal_min').replaceAll('{r}', '${minEach ~/ 100}').replaceAll('{n}', '$hamals')}  ✎')),
+                money(minTotal),
+              ]),
+            ),
+            if (pocket > 0)
+              Row(children: [
+                Expanded(child: Text('+ ${t('hamal_pocket')}', style: TextStyle(color: Colors.red.shade700, fontWeight: FontWeight.w600))),
+                money(pocket, color: Colors.red.shade700, bold: true),
+              ]),
+            Row(children: [
+              Expanded(child: Text(t('hamal_each'))),
+              money((toPay / hamals).round()),
+            ]),
+          ],
           Row(children: [Expanded(child: Text('− ${t('hamali_paid')}')), money(c.hamaliPaid)]),
           Row(children: [
             // left to give the labourers / paid more than taken / all settled
             Expanded(
-              child: Text(t(c.hamaliProfit > 0 ? 'hamali_left' : c.hamaliProfit < 0 ? 'hamali_over' : 'hamali_settled'),
+              child: Text(t(pending > 0 ? 'hamali_left' : pending < 0 ? 'hamali_over' : 'hamali_settled'),
                   style: const TextStyle(fontWeight: FontWeight.bold)),
             ),
-            money(c.hamaliProfit.abs(),
-                color: c.hamaliProfit > 0 ? AppColors.haldi : c.hamaliProfit < 0 ? Colors.red.shade700 : Colors.green.shade700, bold: true),
+            money(pending.abs(), color: pending > 0 ? AppColors.haldi : pending < 0 ? Colors.red.shade700 : Colors.green.shade700, bold: true),
           ]),
           Wrap(alignment: WrapAlignment.end, spacing: 4, children: [
             TextButton.icon(
@@ -297,7 +369,10 @@ class _DayEndCard extends StatelessWidget {
               icon: const Icon(Icons.payments_outlined, size: 18),
               label: Text(t('pay_labourers')),
               onPressed: () => VoucherScreen.open(context, VoucherType.payment,
-                  partyId: '${app.businessId}:hamali', expense: true, amount: pending > 0 ? pending : null),
+                  partyId: '${app.businessId}:hamali',
+                  expense: true,
+                  amount: pending > 0 ? pending : null,
+                  narration: hamals > 0 ? '$hamals ${t('hamal_count')}' : null),
             ),
           ]),
           if (c.hasTransport) ...[
@@ -372,8 +447,18 @@ class _DayEndCard extends StatelessWidget {
               ),
             ],
           ],
+          const SizedBox(height: 6),
           Align(
-            alignment: Alignment.centerRight,
+            alignment: Alignment.centerLeft, // clear of the + button
+            child: FilledButton.icon(
+              key: const Key('day_close'),
+              icon: const Icon(Icons.nightlight_round, size: 18),
+              label: Text(t('day_close')),
+              onPressed: () => DayCloseScreen.open(context, date: c.date),
+            ),
+          ),
+          Align(
+            alignment: Alignment.centerLeft,
             child: TextButton.icon(
               key: const Key('charges_details'),
               icon: const Icon(Icons.list_alt, size: 18),

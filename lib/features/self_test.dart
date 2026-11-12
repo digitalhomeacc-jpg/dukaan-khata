@@ -132,6 +132,7 @@ class EditSelfTest {
     // जमा / पैसे दिले with सूट, expense, contra
     await vs.save(VoucherInput(type: VoucherType.receipt, date: today, partyId: c, payLedgerId: upi, amount: 4350000, discount: 800, haste: 'Son'), a);
     await vs.save(VoucherInput(type: VoucherType.payment, date: today, partyId: s, payLedgerId: bank, amount: 100000, discount: 500), a);
+    await vs.save(VoucherInput(type: VoucherType.payment, date: today, partyId: s, discount: 18377200, narration: 'कंपनी सूट – ट्रेड'), a); // credit note
     await vs.save(VoucherInput(type: VoucherType.payment, date: today, partyId: vs.sys('freight'), payLedgerId: cash, amount: 30000, narration: 'tractor'), a);
     await vs.save(VoucherInput(type: VoucherType.payment, date: today, partyId: d, payLedgerId: cash, amount: 70000), a);
     await vs.save(VoucherInput(type: VoucherType.contra, date: today, partyId: bank, payLedgerId: cash, amount: 500000, narration: 'deposit'), a);
