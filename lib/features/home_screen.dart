@@ -74,7 +74,7 @@ class HomeScreen extends StatelessWidget {
                 child: ListTile(
                   key: const Key('home_monthly_due'),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                  leading: const Icon(Icons.event_repeat, color: AppColors.ink),
+                  leading: Icon(Icons.event_repeat, color: scheme.primary),
                   title: Text(t('recurring_due').replaceAll('{n}', '$monthly'), style: const TextStyle(fontWeight: FontWeight.w700)),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () => DueChargesScreen.open(context),
@@ -84,9 +84,9 @@ class HomeScreen extends StatelessWidget {
             const SizedBox(height: 14),
             _ActionGrid(),
             const SizedBox(height: 18),
-            _Panel(title: t('today'), children: [
-              _Figure(t('today_sales'), d['sales']!, AppColors.sale),
-              _Figure(t('today_collection'), d['collections']!, AppColors.paid),
+            _TodayHero(title: t('today'), date: shortDate(today), figures: [
+              (t('today_sales'), d['sales']!, Icons.trending_up),
+              (t('today_collection'), d['collections']!, Icons.south_west),
             ]),
             // shop-wide totals (balances, total udhaari) are for owners only
             if (app.actor.isOwner) _Panel(title: t('balances'), children: [
@@ -183,26 +183,35 @@ class _ActionGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = App.of(context).t;
+    final dark = Theme.of(context).brightness == Brightness.dark;
     Widget big(String label, String sub, IconData icon, Color c, VoidCallback onTap) => Expanded(
           child: Material(
-            color: c.withValues(alpha: 0.09),
-            borderRadius: BorderRadius.circular(16),
+            color: Color.alphaBlend(c.withValues(alpha: dark ? 0.16 : 0.07), Theme.of(context).cardTheme.color!),
+            elevation: dark ? 0 : 1.5,
+            shadowColor: c.withValues(alpha: 0.35),
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(18), side: BorderSide(color: c.withValues(alpha: dark ? 0.35 : 0.16))),
             child: InkWell(
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(18),
               onTap: onTap,
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(14, 14, 10, 14),
+                padding: const EdgeInsets.fromLTRB(12, 16, 8, 16),
                 child: Row(children: [
                   Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(color: c, borderRadius: BorderRadius.circular(12)),
-                    child: Icon(icon, color: Colors.white, size: 24),
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                          begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color.lerp(c, Colors.white, 0.22)!, c]),
+                      borderRadius: BorderRadius.circular(14),
+                      boxShadow: [BoxShadow(color: c.withValues(alpha: 0.35), blurRadius: 8, offset: const Offset(0, 3))],
+                    ),
+                    child: Icon(icon, color: Colors.white, size: 26),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text(label, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: c)),
+                      Text(label, style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800, color: dark ? Color.lerp(c, Colors.white, c == AppColors.purchase ? 0.6 : 0.35) : c)),
                       Text(sub, maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.bodySmall),
                     ]),
                   ),
@@ -213,7 +222,7 @@ class _ActionGrid extends StatelessWidget {
         );
     Widget small(String label, IconData icon, VoidCallback onTap) => Expanded(
           child: OutlinedButton.icon(
-            style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 6)),
+            style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 6), shape: const StadiumBorder()),
             onPressed: onTap,
             icon: Icon(icon, size: 18),
             label: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
@@ -256,7 +265,7 @@ class _Header extends StatelessWidget {
             style: Theme.of(context).textTheme.labelLarge?.copyWith(
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                   letterSpacing: 0.4,
-                  fontWeight: FontWeight.w600,
+                  fontWeight: FontWeight.w700,
                 )),
       );
 }
@@ -271,7 +280,7 @@ class _Panel extends StatelessWidget {
         _Header(title),
         Card(
           child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 6),
+            padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 6),
             child: Row(children: [
               for (var i = 0; i < children.length; i++) ...[
                 if (i > 0) Container(width: 1, height: 36, color: Theme.of(context).dividerTheme.color),
@@ -296,7 +305,65 @@ class _Figure extends StatelessWidget {
         FittedBox(
           fit: BoxFit.scaleDown,
           child: Text('₹${Money.fmt(value)}',
-              style: TextStyle(fontSize: 19, fontWeight: FontWeight.w700, color: color, fontFeatures: const [FontFeature.tabularFigures()])),
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: color, fontFeatures: const [FontFeature.tabularFigures()])),
         ),
       ]);
+}
+
+/// आज: the day's two headline figures on an ink-blue card.
+class _TodayHero extends StatelessWidget {
+  final String title;
+  final String date;
+  final List<(String, int, IconData)> figures;
+  const _TodayHero({required this.title, required this.date, required this.figures});
+  @override
+  Widget build(BuildContext context) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 6),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: dark ? const [Color(0xFF1B3857), Color(0xFF244D78)] : const [Color(0xFF1F4E79), Color(0xFF2E6DA6)],
+        ),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [BoxShadow(color: const Color(0xFF1F4E79).withValues(alpha: dark ? 0.0 : 0.30), blurRadius: 14, offset: const Offset(0, 6))],
+      ),
+      padding: const EdgeInsets.fromLTRB(18, 14, 18, 18),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Text(title, style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700)),
+          const Spacer(),
+          Text(date, style: TextStyle(color: Colors.white.withValues(alpha: 0.75), fontSize: 13)),
+        ]),
+        const SizedBox(height: 12),
+        Row(children: [
+          for (var i = 0; i < figures.length; i++) ...[
+            if (i > 0) Container(width: 1, height: 44, margin: const EdgeInsets.symmetric(horizontal: 14), color: Colors.white24),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Row(children: [
+                  Icon(figures[i].$3, size: 15, color: Colors.white70),
+                  const SizedBox(width: 5),
+                  Flexible(
+                    child: Text(figures[i].$1,
+                        maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white70, fontSize: 13)),
+                  ),
+                ]),
+                const SizedBox(height: 2),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text('₹${Money.fmt(figures[i].$2)}',
+                      style: const TextStyle(
+                          color: Colors.white, fontSize: 26, fontWeight: FontWeight.w800, fontFeatures: [FontFeature.tabularFigures()])),
+                ),
+              ]),
+            ),
+          ],
+        ]),
+      ]),
+    );
+  }
 }
