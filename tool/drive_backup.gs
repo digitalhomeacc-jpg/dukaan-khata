@@ -23,6 +23,22 @@ function setup() {
   backupNow();
 }
 
+/** The app's "Backup now" button opens this (Deploy → Web app, access: Anyone).
+ *  It only takes a backup and answers how many rows went in – no shop data. */
+function doGet() {
+  const lock = LockService.getScriptLock();
+  let out;
+  try {
+    lock.waitLock(120000);
+    out = { ok: true, shops: backupNow() };
+  } catch (e) {
+    out = { ok: false, error: String(e && e.message || e) };
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
+  }
+  return ContentService.createTextOutput(JSON.stringify(out)).setMimeType(ContentService.MimeType.JSON);
+}
+
 /** Takes a backup now. */
 function backupNow() {
   const props = PropertiesService.getScriptProperties();
@@ -57,11 +73,13 @@ function backupNow() {
   const folder = getFolder_();
   const shops = getAll('businesses', 'id=not.is.null');
   if (shops.length === 0) throw new Error('No shop found for ' + email);
+  const done = [];
   for (const shop of shops) {
-    const tables = {};
+    const tables = {}, counts = {};
     let count = 0;
     for (const t of TABLES) {
       tables[t] = getAll(t, (t === 'businesses' ? 'id=eq.' : 'business_id=eq.') + encodeURIComponent(shop.id));
+      counts[t] = tables[t].length;
       count += tables[t].length;
     }
     const json = JSON.stringify({
@@ -74,9 +92,11 @@ function backupNow() {
     const stamp = Utilities.formatDate(new Date(), 'Asia/Kolkata', 'yyyy-MM-dd HH-mm');
     const name = 'Dukaan Khata ' + (shop.name || shop.id) + ' ' + stamp + '.json';
     folder.createFile(Utilities.newBlob(json, 'application/json', name));
-    console.log('Saved ' + name + ' (' + count + ' rows)');
+    console.log('Saved ' + name + ' (' + count + ' rows) ' + JSON.stringify(counts));
+    done.push({ file: name, rows: count, tables: counts });
   }
   prune_(folder);
+  return done;
 }
 
 function getFolder_() {

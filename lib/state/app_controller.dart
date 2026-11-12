@@ -208,8 +208,28 @@ class AppController extends ChangeNotifier {
     shopNameEn = (r['name_en'] as String?) ?? '';
     shopPhone = (r['phone'] as String?) ?? '';
     shopGstin = (r['gstin'] as String?) ?? '';
+    backupUrl = (r['backup_url'] as String?) ?? '';
     notifyListeners();
   }
+
+  String backupUrl = '';
+
+  /// The Drive backup script's web-app link, shared by every owner's phone.
+  Future<void> saveBackupUrl(String url) async {
+    final before = await _shopSnap();
+    await db.execute('UPDATE businesses SET backup_url = ? WHERE id = ?', [url.trim().isEmpty ? null : url.trim(), businessId]);
+    await AuditLog.write(db,
+        businessId: businessId!, recordId: businessId!, action: 'edit', kind: 'shop', title: businessName, before: before, after: await _shopSnap());
+    await loadBooks();
+  }
+
+  /// Rows of each synced table on this phone – to compare with a backup.
+  Future<Map<String, int>> localCounts() async => {
+        for (final t in appTables.where((t) => !t.localOnly))
+          t.name: ((await db.get('SELECT COUNT(*) AS n FROM ${t.name} WHERE ${t.name == 'businesses' ? 'id' : 'business_id'} = ?',
+                  [businessId]))['n'] as num)
+              .toInt(),
+      };
 
   Future<void> saveShopDetails({
     required String name,
@@ -243,6 +263,7 @@ class AppController extends ChangeNotifier {
       'gstin': r['gstin'],
       'books_start': r['books_start'],
       'fy_start_month': r['fy_start_month'],
+      'backup_url': r['backup_url'] == null ? null : '✓',
     };
   }
 

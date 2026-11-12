@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../accounting/models.dart';
+import '../core/drive_backup.dart';
 import '../core/config.dart';
 import '../core/money.dart';
 import '../shared/party_import.dart';
@@ -124,6 +125,17 @@ class SettingsScreen extends StatelessWidget {
               ));
             },
           ),
+          if (app.cloud)
+            ListTile(
+              key: const Key('drive_backup'),
+              leading: const Icon(Icons.add_to_drive),
+              title: Text(t('drive_backup')),
+              subtitle: Text(t(app.backupUrl.isEmpty ? 'drive_backup_setup' : 'drive_backup_sub')),
+              trailing: app.backupUrl.isEmpty
+                  ? null
+                  : IconButton(tooltip: t('drive_link'), icon: const Icon(Icons.link), onPressed: () => _driveLink(context)),
+              onTap: () => app.backupUrl.isEmpty ? _driveLink(context) : _driveBackup(context),
+            ),
           ListTile(
             leading: const Icon(Icons.history),
             title: Text(t('audit')),
@@ -147,6 +159,109 @@ class SettingsScreen extends StatelessWidget {
         Center(child: Text('Dukaan Khata · ${t('version')} ${AppConfig.build}', style: Theme.of(context).textTheme.bodySmall)),
         const SizedBox(height: 24),
       ]),
+    );
+  }
+
+  /// Paste / change the Drive backup script's web-app link.
+  Future<void> _driveLink(BuildContext context) async {
+    final app = App.read(context);
+    final t = app.t;
+    final c = TextEditingController(text: app.backupUrl);
+    final url = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(t('drive_link')),
+        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(t('drive_link_help'), style: Theme.of(ctx).textTheme.bodySmall),
+          const SizedBox(height: 8),
+          TextField(controller: c, autofocus: true, decoration: const InputDecoration(hintText: 'https://script.google.com/macros/s/…/exec')),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: Text(t('cancel'))),
+          FilledButton(onPressed: () => Navigator.pop(ctx, c.text.trim()), child: Text(t('save'))),
+        ],
+      ),
+    );
+    if (url == null) return;
+    if (url.isNotEmpty && !RegExp(r'^https://script\.google\.com/.+/exec$').hasMatch(url)) {
+      if (context.mounted) toast(context, t('drive_link_bad'), error: true);
+      return;
+    }
+    await app.saveBackupUrl(url);
+    if (context.mounted) toast(context, t('saved'));
+  }
+
+  /// Takes a Drive backup now, then checks it against this phone, table by table.
+  Future<void> _driveBackup(BuildContext context) async {
+    final app = App.read(context);
+    final t = app.t;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(content: Row(children: [
+        const CircularProgressIndicator(),
+        const SizedBox(width: 16),
+        Expanded(child: Text(t('drive_backup_running'))),
+      ])),
+    );
+    DriveBackupResult? res;
+    Object? err;
+    try {
+      res = await runDriveBackup(app.backupUrl);
+    } catch (e) {
+      err = e;
+    }
+    final local = await app.localCounts();
+    final pending = await app.pendingUploads();
+    if (!context.mounted) return;
+    Navigator.pop(context);
+    if (res == null) {
+      toast(context, '$err', error: true);
+      return;
+    }
+    final names = {...local.keys, ...res.tables.keys};
+    final same = names.every((n) => (local[n] ?? 0) == (res!.tables[n] ?? 0));
+    final localTotal = local.values.fold(0, (a, b) => a + b);
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        icon: Icon(same ? Icons.verified : Icons.info_outline, color: same ? Colors.green.shade700 : Colors.orange.shade800, size: 36),
+        title: Text(t(same ? 'drive_ok' : 'drive_diff')),
+        content: SingleChildScrollView(
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(res!.file, style: Theme.of(ctx).textTheme.bodySmall),
+            const SizedBox(height: 10),
+            Table(
+              columnWidths: const {0: FlexColumnWidth(3), 1: FlexColumnWidth(2), 2: FlexColumnWidth(2)},
+              children: [
+                TableRow(children: [
+                  Text(t('drive_table'), style: const TextStyle(fontWeight: FontWeight.bold)),
+                  Text('Drive', textAlign: TextAlign.right, style: const TextStyle(fontWeight: FontWeight.bold)),
+                  Text(t('drive_phone'), textAlign: TextAlign.right, style: const TextStyle(fontWeight: FontWeight.bold)),
+                ]),
+                for (final n in names)
+                  TableRow(children: [
+                    Text(t('tbl_$n')),
+                    Text('${res.tables[n] ?? 0}', textAlign: TextAlign.right),
+                    Text('${local[n] ?? 0}${(local[n] ?? 0) == (res.tables[n] ?? 0) ? ' ✓' : ' ✗'}',
+                        textAlign: TextAlign.right,
+                        style: TextStyle(color: (local[n] ?? 0) == (res.tables[n] ?? 0) ? Colors.green.shade700 : Colors.red.shade700)),
+                  ]),
+                TableRow(children: [
+                  Text(t('total'), style: const TextStyle(fontWeight: FontWeight.bold)),
+                  Text('${res.rows}', textAlign: TextAlign.right, style: const TextStyle(fontWeight: FontWeight.bold)),
+                  Text('$localTotal', textAlign: TextAlign.right, style: const TextStyle(fontWeight: FontWeight.bold)),
+                ]),
+              ],
+            ),
+            if (!same) ...[
+              const SizedBox(height: 10),
+              Text(t(pending > 0 ? 'drive_diff_pending' : 'drive_diff_help').replaceAll('{n}', '$pending')),
+            ],
+          ]),
+        ),
+        actions: [FilledButton(onPressed: () => Navigator.pop(ctx), child: Text(t('ok')))],
+      ),
     );
   }
 

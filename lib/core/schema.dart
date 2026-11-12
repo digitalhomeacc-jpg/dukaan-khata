@@ -37,6 +37,7 @@ const List<TableDef> appTables = [
     ColDef.t('gstin'),
     ColDef.t('books_start'), // YYYY-MM-DD – first day of the books
     ColDef.i('fy_start_month'), // 4 = April
+    ColDef.t('backup_url'), // Google Drive backup script's web-app link (owner)
     ColDef.t('created_at'),
   ]),
   TableDef('members', [
