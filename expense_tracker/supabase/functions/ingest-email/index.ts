@@ -92,6 +92,37 @@ Deno.serve(async (req) => {
       .eq("user_id", userId).in("email_id", ids)
     : { data: [] };
   const existing = new Map((existingRows ?? []).map((r) => [r.email_id as string, r]));
+  // Emails already attached to a statement entry.
+  const { data: attachedRows } = ids.length
+    ? await supabase.from("transactions").select("email_ref").eq("user_id", userId).in("email_ref", ids)
+    : { data: [] };
+  const attached = new Set((attachedRows ?? []).map((r) => r.email_ref as string));
+  // Statement entries an old email may describe (resyncing far back): same account, amount and direction,
+  // within a day. Loaded lazily, once per batch.
+  let stmtRows: Array<{ id: string; account_id: string | null; amount: number; direction: string; txn_at: string; payee_vpa: string | null; merchant: string | null }> | null = null;
+  const usedStmt = new Set<string>();
+  const istDay = (iso: string) => new Date(new Date(iso).getTime() + 330 * 60_000).toISOString().slice(0, 10);
+  const statementTwin = async (accountId: string | null, amount: number, direction: string, at: string) => {
+    if (!accountId) return null;
+    if (stmtRows === null) {
+      const dates = messages.map((m) => new Date(String(m.date ?? "")).getTime()).filter((n) => !Number.isNaN(n));
+      if (!dates.length) return null;
+      const from = new Date(Math.min(...dates) - 3 * 86_400_000).toISOString();
+      const to = new Date(Math.max(...dates) + 2 * 86_400_000).toISOString();
+      const { data } = await supabase.from("transactions")
+        .select("id, account_id, amount, direction, txn_at, payee_vpa, merchant")
+        .eq("user_id", userId).eq("source", "statement").is("email_ref", null)
+        .gte("txn_at", from).lte("txn_at", to).limit(5000);
+      stmtRows = (data ?? []) as typeof stmtRows;
+    }
+    const day = new Date(`${istDay(at)}T12:00:00Z`).getTime();
+    const near = stmtRows!.filter((r) => !usedStmt.has(r.id) && r.account_id === accountId && Number(r.amount) === amount &&
+      r.direction === direction && Math.abs(new Date(`${istDay(r.txn_at)}T12:00:00Z`).getTime() - day) <= 86_400_000);
+    const best = near.find((r) => istDay(r.txn_at) === istDay(at)) ?? near[0] ?? null;
+    if (best) usedStmt.add(best.id);
+    return best;
+  };
+  let attachedNow = 0;
 
   const lenderEvents: Array<{ email: EmailInput; ev: LenderEvent }> = [];
   const readings: Array<Record<string, unknown>> = [];
@@ -144,6 +175,20 @@ Deno.serve(async (req) => {
       }
       const rule = categoryFor(t.merchant, (`${email.subject} ${email.body}`.match(/VPA:?\s*\S+@[\w.\-]+/i) ?? [""])[0]);
       const old = existing.get(email.id);
+      if (!old && attached.has(email.id)) continue;
+      const twin = old ? null : await statementTwin(accountId, t.amount, t.direction, t.txnAt);
+      if (twin) {
+        // Already in the app from a statement: add the email's details to it instead of a second entry.
+        await supabase.from("transactions").update({
+          email_ref: email.id,
+          email_subject: row.email_subject, email_body: row.email_body, email_from: row.email_from,
+          email_received_at: row.email_received_at,
+          payee_vpa: twin.payee_vpa ?? row.payee_vpa,
+          ...(twin.merchant ? {} : { merchant: row.merchant }),
+        }).eq("id", twin.id);
+        attachedNow++;
+        continue;
+      }
       if (!old) {
         inserts.push({ ...row, user_id: userId, source: "email", email_id: email.id, category_id: rule });
       } else if (!old.edited) {
@@ -239,8 +284,9 @@ Deno.serve(async (req) => {
   return json(200, {
     ok: true,
     received: messages.length,
-    parsed: inserts.length + updates.length,
+    parsed: inserts.length + updates.length + attachedNow,
     added,
+    matchedStatement: attachedNow,
     updated,
     unreadable: unparsed.filter((u) => u.kind === "unreadable").length,
     lender: unparsed.filter((u) => u.kind === "lender").length + lenderEvents.length,

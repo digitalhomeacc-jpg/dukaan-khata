@@ -57,10 +57,17 @@ function syncBankEmails() {
   var lastSec = Number(props.getProperty('lastSyncEpoch') || 0);
   // Overlap by 6 hours: emails can arrive late. The server skips duplicates.
   var sinceSec = lastSec ? lastSec - 6 * 3600 : nowSec - CONFIG.BACKFILL_DAYS * 86400;
+  var totals = sendRange_(sinceSec, null);
+  props.setProperty('lastSyncEpoch', String(nowSec));
+  return totals;
+}
 
+/** Finds bank emails from [sinceSec] (to [untilSec], when given) and sends them in batches. */
+function sendRange_(sinceSec, untilSec) {
   var cfg = serverConfig_();
   var senders = cfg.senders.concat(CONFIG.EXTRA_SENDERS || []);
-  var query = 'from:(' + senders.join(' OR ') + ') {' + cfg.keywords.join(' ') + '} after:' + sinceSec;
+  var query = 'from:(' + senders.join(' OR ') + ') {' + cfg.keywords.join(' ') + '} after:' + sinceSec +
+    (untilSec ? ' before:' + untilSec : '');
 
   var messages = [];
   var start = 0;
@@ -68,7 +75,8 @@ function syncBankEmails() {
     var threads = GmailApp.search(query, start, 100);
     threads.forEach(function (thread) {
       thread.getMessages().forEach(function (m) {
-        if (m.getDate().getTime() / 1000 < sinceSec) return;
+        var sec = m.getDate().getTime() / 1000;
+        if (sec < sinceSec || (untilSec && sec >= untilSec)) return;
         if (!isBankSender_(m.getFrom(), senders)) return;
         messages.push({
           id: m.getId(),
@@ -83,12 +91,11 @@ function syncBankEmails() {
     start += 100;
   }
 
-  var totals = { received: 0, parsed: 0, added: 0, updated: 0, unreadable: 0, lender: 0 };
+  var totals = { received: 0, parsed: 0, added: 0, updated: 0, matchedStatement: 0, unreadable: 0, lender: 0 };
   for (var i = 0; i < messages.length || i === 0; i += BATCH_SIZE) {
     var r = post_(messages.slice(i, i + BATCH_SIZE)); // an empty batch still marks "last sync"
     Object.keys(totals).forEach(function (k) { totals[k] += r[k] || 0; });
   }
-  props.setProperty('lastSyncEpoch', String(nowSec));
   return totals;
 }
 
@@ -98,7 +105,37 @@ function resyncLast30Days() {
   Logger.log(JSON.stringify(syncBankEmails()));
 }
 
-/** Shows what the script can see, to find out why nothing arrives. Run it and read the log. */
+/**
+ * Sends every bank email since 1 April 2025, a month at a time. Google stops a run after 6 minutes, so
+ * this saves where it got to and starts itself again a minute later until it is done (watch Executions).
+ * Payments already in the app from a statement get the email's details added, not a second entry.
+ */
+function resyncSinceApril2025() {
+  checkConfig_();
+  var props = PropertiesService.getUserProperties();
+  var started = Date.now();
+  var cursor = Number(props.getProperty('backfillCursor') || Math.floor(new Date('2025-04-01T00:00:00+05:30').getTime() / 1000));
+  var nowSec = Math.floor(Date.now() / 1000);
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === 'resyncSinceApril2025') ScriptApp.deleteTrigger(t);
+  });
+  var month = 31 * 86400;
+  while (cursor < nowSec) {
+    if (Date.now() - started > 4 * 60 * 1000) {
+      props.setProperty('backfillCursor', String(cursor));
+      ScriptApp.newTrigger('resyncSinceApril2025').timeBased().after(60 * 1000).create();
+      Logger.log('Paused at ' + new Date(cursor * 1000).toDateString() + ': it continues by itself in a minute.');
+      return;
+    }
+    var until = Math.min(cursor + month, nowSec + 3600);
+    var r = sendRange_(cursor, until);
+    Logger.log(new Date(cursor * 1000).toDateString() + ' – ' + new Date(until * 1000).toDateString() + ': ' + JSON.stringify(r));
+    cursor = until;
+  }
+  props.deleteProperty('backfillCursor');
+  Logger.log('Done: every bank email since 1 April 2025 has been sent.');
+}
+
 function checkSetup() {
   var senders = serverConfig_().senders.concat(CONFIG.EXTRA_SENDERS || []);
   var since = Math.floor(Date.now() / 1000) - CONFIG.BACKFILL_DAYS * 86400;
