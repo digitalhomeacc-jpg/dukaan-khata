@@ -6,6 +6,7 @@ import '../logic/summary.dart';
 import '../ui/category_picker.dart';
 import '../ui/category_style.dart';
 import '../ui/format.dart';
+import '../ui/same_person_card.dart';
 import 'txn_editor.dart';
 
 enum _Period { month, three, year, all }
@@ -297,6 +298,7 @@ class PlaceDetailScreen extends StatelessWidget {
                     ],
                   ),
                 ),
+                if (looksLikePerson(g.name)) SamePersonCard(data: data, person: g.name),
                 const SizedBox(height: 16),
                 // Who is this?
                 Text('Who is this?', style: text.titleSmall),

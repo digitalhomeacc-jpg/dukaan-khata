@@ -5,6 +5,7 @@ import 'package:expense_tracker/models.dart';
 import 'package:expense_tracker/screens/budgets_screen.dart';
 import 'package:expense_tracker/screens/friends_screen.dart';
 import 'package:expense_tracker/screens/people_review_screen.dart';
+import 'package:expense_tracker/screens/places_screen.dart';
 import 'package:expense_tracker/screens/shared_expense_screen.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
@@ -75,6 +76,72 @@ void main() {
     expect(groups.single.received, 500);
     expect(sameName(groups.single.keys.single, 'vaibhav chetan parmar'), isTrue);
     expect(payeeGroups([Txn(id: 'a', amount: 500, isDebit: false, txnAt: now, merchant: 'Vaibhav C')]), isEmpty);
+  });
+
+  test('a parent\'s account behind a friend\'s UPI ID is suggested as the friend', () {
+    final now = DateTime.now();
+    final txns = [
+      Txn(
+        id: 'a',
+        amount: 400,
+        isDebit: false,
+        txnAt: now,
+        merchant: 'Vaibhav Chetan Parma',
+        details: 'UPI-VAIBHAV CHETAN PARMA-VAIBHAVPARMAR25-1@OKAXIS-HDFC0000591-6182',
+      ),
+      Txn(
+        id: 'b',
+        amount: 800,
+        isDebit: true,
+        txnAt: now,
+        merchant: 'Chetan V Parmar',
+        details: 'UPI-CHETAN V PARMAR-VAIBHAVPARMAR25@OKICICI-BARB0MALEAS-1079',
+      ),
+      Txn(id: 'c', amount: 250, isDebit: true, txnAt: now, merchant: 'Chetan V Parmar', source: 'email'),
+      Txn(
+        id: 'd',
+        amount: 90,
+        isDebit: true,
+        txnAt: now,
+        merchant: 'Ramesh Kumar',
+        details: 'UPI-RAMESH KUMAR-RAMESH12@OKSBI-SBIN0-1',
+      ),
+    ];
+    final c = samePersonCandidates(txns, 'Vaibhav Chetan Parmar');
+    expect(c, hasLength(1));
+    expect(c.single.name, 'Chetan V Parmar');
+    expect(c.single.count, 2);
+    expect(c.single.out, 1050);
+    expect(c.single.why, contains('vaibhavparmar25@okicici'));
+    expect(samePersonCandidates(txns, 'Vaibhav Chetan Parmar', skip: {'chetan v parmar'}), isEmpty);
+  });
+
+  testWidgets('a person you only got money from opens without errors', (tester) async {
+    final now = DateTime.now();
+    final data = AppData.preview(
+      categories: const [Category(id: 'fr', name: 'Friends', icon: 'group', color: 0xFF3F51B5, isLoan: true)],
+      transactions: [
+        Txn(
+          id: 'a',
+          amount: 400,
+          isDebit: false,
+          txnAt: now,
+          merchant: 'Vaibhav Chetan Parma',
+          details: 'UPI-VAIBHAV CHETAN PARMA-VAIBHAVPARMAR25-1@OKAXIS-HDFC0000591-6182',
+        ),
+        Txn(
+          id: 'b',
+          amount: 800,
+          isDebit: true,
+          txnAt: now,
+          merchant: 'Chetan V Parmar',
+          details: 'UPI-CHETAN V PARMAR-VAIBHAVPARMAR25@OKICICI-BARB0MALEAS-1079',
+        ),
+      ],
+    );
+    await pump(tester, PlaceDetailScreen(data: data, keys: const {'vaibhav chetan parma'}));
+    expect(find.text('Also Vaibhav?'), findsOneWidget);
+    expect(find.text('Chetan V Parmar'), findsOneWidget);
   });
 
   testWidgets('people review lists people, not shops', (tester) async {

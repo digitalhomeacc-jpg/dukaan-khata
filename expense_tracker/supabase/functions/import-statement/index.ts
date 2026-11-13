@@ -211,6 +211,7 @@ Deno.serve(async (req) => {
   }
   await supabase.rpc("link_loan_transactions", { p_user: user.id });
   await supabase.rpc("apply_payee_names", { p_user: user.id });
+  await supabase.rpc("fix_vpa_names", { p_user: user.id });
   await supabase.rpc("apply_vpa_rules", { p_user: user.id });
   await supabase.rpc("apply_people", { p_user: user.id });
   await supabase.rpc("link_wallet_topups", { p_user: user.id });

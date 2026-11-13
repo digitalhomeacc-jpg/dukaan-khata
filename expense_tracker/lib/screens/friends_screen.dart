@@ -6,6 +6,7 @@ import '../data/app_data.dart';
 import '../logic/summary.dart';
 import '../models.dart';
 import '../ui/format.dart';
+import '../ui/same_person_card.dart';
 import 'people_review_screen.dart';
 import 'places_screen.dart';
 import 'shared_expense_screen.dart';
@@ -541,6 +542,10 @@ class FriendDetailScreen extends StatelessWidget {
                 ],
               ],
             ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: SamePersonCard(data: data, person: person),
           ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),

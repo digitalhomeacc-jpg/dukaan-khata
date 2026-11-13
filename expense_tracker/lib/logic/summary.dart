@@ -649,7 +649,12 @@ class PayeeGroup {
   double get average => count == 0 ? 0 : _round(total / count);
   DateTime get first => txns.map((t) => t.txnAt).reduce((a, b) => a.isBefore(b) ? a : b);
   DateTime get last => txns.map((t) => t.txnAt).reduce((a, b) => a.isAfter(b) ? a : b);
-  DateTime get lastPaid => txns.where((t) => t.isDebit).map((t) => t.txnAt).reduce((a, b) => a.isAfter(b) ? a : b);
+
+  /// The last payment to it, or the last money from it when you never paid it.
+  DateTime get lastPaid {
+    final paid = txns.where((t) => t.isDebit).map((t) => t.txnAt);
+    return paid.isEmpty ? last : paid.reduce((a, b) => a.isAfter(b) ? a : b);
+  }
 
   /// The name used most often; on a tie the normally written one, then the longest
   /// (statements write names in capitals and cut them short).
@@ -688,6 +693,55 @@ class PayeeGroup {
 
 String _payeeKey(String s) =>
     s.toLowerCase().replaceAll(RegExp(r'[^a-z0-9 ]'), ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
+
+/// Other names the bank may use for [person]: payees whose UPI ID carries the person's name
+/// ("vaibhavparmar25@okicici" under "Chetan V Parmar", a parent's account) or that share a UPI ID with them.
+List<({String name, int count, double out, double into, String why})> samePersonCandidates(
+  Iterable<Txn> txns,
+  String person, {
+  Set<String> skip = const {},
+}) {
+  String letters(String s) => s.toLowerCase().replaceAll(RegExp(r'[^a-z]'), '');
+  final words = person.toLowerCase().split(RegExp(r'\s+')).map(letters).where((w) => w.length >= 3).toList();
+  if (words.length < 2) return const [];
+  final key = person.toLowerCase().replaceAll(RegExp(r'\s+'), ' ').trim();
+  final vpaRe = RegExp(r'([A-Za-z0-9._\-]{3,})@[A-Za-z]{2,}');
+  final mine = <String>{
+    for (final t in txns)
+      if (t.payeeVpa != null && t.merchant != null && sameName(_payeeKey(t.merchant!), key)) t.payeeVpa!,
+  };
+  // Which names, and why.
+  final why = <String, String>{};
+  for (final t in txns) {
+    final name = t.merchant?.trim();
+    if (name == null || name.isEmpty) continue;
+    final k = name.toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+    if (why.containsKey(k) || sameName(_payeeKey(name), key) || skip.contains(k)) continue;
+    for (final m in vpaRe.allMatches('${t.details ?? ''} ${t.emailBody ?? ''}')) {
+      final local = letters(m.group(1)!);
+      if (local.contains(words.first) && local.contains(words.last)) {
+        why[k] = 'pays from ${m.group(0)!.toLowerCase()}';
+        break;
+      }
+    }
+    if (!why.containsKey(k) && t.payeeVpa != null && mine.contains(t.payeeVpa)) why[k] = 'same UPI ID ••${t.payeeVpa}';
+  }
+  // All their payments.
+  final found = <String, ({String name, int count, double out, double into, String why})>{};
+  for (final t in txns) {
+    final k = t.merchant?.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+    if (k == null || !why.containsKey(k)) continue;
+    final prev = found[k];
+    found[k] = (
+      name: prev?.name ?? t.merchant!.trim(),
+      count: (prev?.count ?? 0) + 1,
+      out: (prev?.out ?? 0) + (t.isDebit ? t.amount : 0),
+      into: (prev?.into ?? 0) + (t.isDebit ? 0 : t.amount),
+      why: why[k]!,
+    );
+  }
+  return found.values.toList()..sort((a, b) => b.count.compareTo(a.count));
+}
 
 /// Does this payee name mean that person? Statements cut names short ("Vaibhav Chetan Parma").
 bool sameName(String payeeKey, String personKey) =>

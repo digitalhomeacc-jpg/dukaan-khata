@@ -7,7 +7,7 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../config.dart';
-import '../logic/summary.dart' show ShareTotals, shareTotals;
+import '../logic/summary.dart' show ShareTotals, samePersonCandidates, shareTotals;
 import '../models.dart';
 
 /// Live copy of the signed-in user's data, kept up to date by Supabase Realtime.
@@ -532,8 +532,34 @@ class AppData extends ChangeNotifier {
       .eq('id', id);
 
   /// "Also known as": payments from this payee name count as that friend.
-  Future<void> addAlias(String payeeName, String friendName) =>
-      _db.rpc('add_friend_alias', params: {'p_alias': payeeName, 'p_friend': friendName});
+  /// Payee names you said are not the same person as a friend.
+  Set<String> get notSame => {...((profile['not_same'] as List?) ?? const []).cast<String>()};
+
+  Future<void> markNotSame(String payeeName) async {
+    final list = {...notSame, keyOf(payeeName)}.toList();
+    profile = {...profile, 'not_same': list};
+    notifyListeners();
+    await _db.from('profiles').update({'not_same': list}).eq('id', user!.id);
+  }
+
+  /// Payees that may be [person] under another name (a parent's account, a UPI ID as the name).
+  List<({String name, int count, double out, double into, String why})> otherNamesOf(String person) =>
+      samePersonCandidates(
+        transactions,
+        person,
+        skip: {
+          ...notSame,
+          ...aliases.keys,
+          for (final e in people.entries)
+            if (e.value != 'friend' && e.value != 'shop') e.key,
+        },
+      );
+
+  Future<void> addAlias(String payeeName, String friendName) {
+    aliases = {...aliases, keyOf(payeeName): friendName};
+    notifyListeners();
+    return _db.rpc('add_friend_alias', params: {'p_alias': payeeName, 'p_friend': friendName});
+  }
 
   // ----------------------------------------------------------------- places
 
