@@ -53,6 +53,18 @@ void main() {
     expect(find.textContaining('Their part of Pizza night'), findsOneWidget);
   });
 
+  testWidgets('set what is really owed: the rest is a friend\'s spends', (tester) async {
+    await pump(tester, FriendDetailScreen(data: sample(), person: 'Rahul Kumar'));
+    expect(find.text('Rahul Kumar owes you'), findsOneWidget);
+    await tester.tap(find.text('Set balance'));
+    await tester.pumpAndSettle();
+    expect(find.text('What is really owed?'), findsOneWidget);
+    await tester.enterText(find.byType(TextField), '200');
+    await tester.pumpAndSettle();
+    expect(find.text('The other ₹300 was:'), findsOneWidget);
+    expect(find.text("Rahul's spends through me"), findsOneWidget);
+  });
+
   testWidgets('people review lists people, not shops', (tester) async {
     await pump(tester, PeopleReviewScreen(data: sample()));
     expect(find.text('Shresth Sharma'), findsOneWidget);

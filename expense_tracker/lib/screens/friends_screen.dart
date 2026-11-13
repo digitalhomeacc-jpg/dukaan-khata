@@ -361,6 +361,18 @@ class FriendDetailScreen extends StatelessWidget {
     if (ok == true && v != null && v > 0) await data.settleUp(person, v, iPaid: iPaid);
   }
 
+  /// "Not all of it is a loan": set what is really owed; the rest is kept as a note, e.g. his spends through you.
+  Future<void> _correct(BuildContext context, double balance) async {
+    final result = await showDialog<({double owed, String reason})>(
+      context: context,
+      builder: (c) => _CorrectBalanceDialog(person: person, balance: balance),
+    );
+    if (result == null) return;
+    final change = result.owed - balance; // positive: you owe more
+    if (change.abs() < 0.005) return;
+    await data.correctFriendBalance(person, change, result.reason);
+  }
+
   Future<void> _remind(double owed, List<TxnShare> open) async {
     final first = person.split(' ').first;
     final items = open
@@ -534,6 +546,16 @@ class FriendDetailScreen extends StatelessWidget {
                     label: const Text('Settle up'),
                   ),
                 ),
+                if (link == null) ...[
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => _correct(context, balance),
+                      icon: const Icon(Icons.tune),
+                      label: const Text('Set balance'),
+                    ),
+                  ),
+                ],
                 if (balance < 0) ...[
                   const SizedBox(width: 12),
                   Expanded(
@@ -652,13 +674,20 @@ class FriendDetailScreen extends StatelessWidget {
                     t.isDebit ? Icons.call_made : Icons.call_received,
                     color: t.isDebit ? Colors.green.shade700 : scheme.error,
                   ),
-                  title: Text(t.isDebit ? 'You sent' : 'You got'),
+                  title: Text(
+                    t.accountId == null && (t.note ?? '').isNotEmpty && t.note != 'Settle up'
+                        ? t.note!
+                        : (t.isDebit ? 'You sent' : 'You got'),
+                  ),
                   subtitle: Text(
                     [
                       dayLabel(t.txnAt),
                       if (AppData.keyOf(t.title) != key) 'as ${t.title}',
                       if (data.account(t.accountId) != null) data.account(t.accountId)!.name,
-                      if ((t.note ?? '').isNotEmpty) t.note!,
+                      if (t.accountId == null && t.note != 'Settle up')
+                        'balance correction'
+                      else if ((t.note ?? '').isNotEmpty)
+                        t.note!,
                     ].join(' · '),
                   ),
                   trailing: Text(money(t.amount), style: const TextStyle(fontWeight: FontWeight.w600)),
@@ -667,6 +696,108 @@ class FriendDetailScreen extends StatelessWidget {
           ],
         ],
       ),
+    );
+  }
+}
+
+class _CorrectBalanceDialog extends StatefulWidget {
+  const _CorrectBalanceDialog({required this.person, required this.balance});
+
+  final String person;
+
+  /// Positive: you owe them.
+  final double balance;
+
+  @override
+  State<_CorrectBalanceDialog> createState() => _CorrectBalanceDialogState();
+}
+
+class _CorrectBalanceDialogState extends State<_CorrectBalanceDialog> {
+  static const _reasons = ['His/her spends through me', 'Gift / let go', 'Old balance', 'Other'];
+  late var _youOwe = widget.balance >= 0;
+  late final _amount = TextEditingController(text: _plain(widget.balance.abs()));
+  var _reason = _reasons.first;
+
+  static String _plain(double v) => v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toStringAsFixed(2);
+
+  double? get _owed {
+    final v = double.tryParse(_amount.text.replaceAll(',', ''));
+    return v == null ? null : (_youOwe ? v : -v);
+  }
+
+  @override
+  void dispose() {
+    _amount.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final first = widget.person.split(' ').first;
+    final owed = _owed;
+    final diff = owed == null ? null : (widget.balance - owed).abs();
+    return AlertDialog(
+      title: const Text('What is really owed?'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SegmentedButton<bool>(
+              showSelectedIcon: false,
+              segments: [
+                const ButtonSegment(value: true, label: Text('I owe')),
+                ButtonSegment(value: false, label: Text('$first owes')),
+              ],
+              selected: {_youOwe},
+              onSelectionChanged: (v) => setState(() => _youOwe = v.first),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _amount,
+              autofocus: true,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))],
+              decoration: const InputDecoration(labelText: 'Amount', prefixText: '₹ '),
+              onChanged: (_) => setState(() {}),
+            ),
+            if (diff != null && diff >= 0.005) ...[
+              const SizedBox(height: 12),
+              Text('The other ${money(diff)} was:', style: Theme.of(context).textTheme.titleSmall),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final r in _reasons)
+                    ChoiceChip(
+                      label: Text(r == _reasons.first ? '$first\'s spends through me' : r),
+                      selected: _reason == r,
+                      onSelected: (_) => setState(() => _reason = r),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Not your spending or income, and not owed. Your bank balances do not change.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+        FilledButton(
+          onPressed: owed == null
+              ? null
+              : () => Navigator.pop(context, (
+                  owed: owed,
+                  reason: _reason == _reasons.first ? '$first\'s spends through me' : _reason,
+                )),
+          child: const Text('Save'),
+        ),
+      ],
     );
   }
 }

@@ -456,6 +456,23 @@ class AppData extends ChangeNotifier {
     });
   }
 
+  /// Changes what you owe a friend (positive: you owe more) without touching any account, e.g. part of the
+  /// money they sent was for things you bought for them.
+  Future<void> correctFriendBalance(String person, double change, String reason) async {
+    final cat = friendsCategory?.id ?? (await ensureLoanCategory()).id;
+    await _db.from('transactions').insert({
+      'amount': double.parse(change.abs().toStringAsFixed(2)),
+      'direction': change > 0 ? 'credit' : 'debit',
+      'merchant': person,
+      'method': 'other',
+      'txn_at': DateTime.now().toUtc().toIso8601String(),
+      'category_id': cat,
+      'account_id': null,
+      'source': 'manual',
+      'note': reason,
+    });
+  }
+
   // ------------------------------------------------------- bank statements
 
   /// Reads a bank statement on the server. With [dryRun] nothing is saved: it says what would be imported.
