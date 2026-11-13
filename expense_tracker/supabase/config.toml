@@ -1,0 +1,6 @@
+# Minimal Supabase CLI config. `supabase link --project-ref <ref>` connects it to your project.
+project_id = "expense-tracker"
+
+[functions.ingest-email]
+# The Gmail script authenticates with its own per-user token, not a Supabase JWT.
+verify_jwt = false
