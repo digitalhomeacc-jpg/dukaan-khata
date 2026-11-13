@@ -31,6 +31,7 @@ class Account {
     this.last4,
     this.openingBalance = 0,
     this.archived = false,
+    this.openingDate,
   });
 
   final String id;
@@ -43,6 +44,12 @@ class Account {
   final double openingBalance;
   final bool archived;
 
+  /// Start of the balance: earlier transactions are history only.
+  final DateTime? openingDate;
+
+  /// Whether a transaction at [at] changes this account's balance.
+  bool counts(DateTime at) => openingDate == null || !at.isBefore(openingDate!);
+
   factory Account.fromMap(Map<String, dynamic> m) => Account(
         id: m['id'] as String,
         name: m['name'] as String,
@@ -51,6 +58,7 @@ class Account {
         last4: m['last4'] as String?,
         openingBalance: _num(m['opening_balance']),
         archived: m['archived'] == true,
+        openingDate: m['opening_date'] == null ? null : DateTime.parse(m['opening_date'] as String),
       );
 }
 

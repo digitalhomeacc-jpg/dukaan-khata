@@ -76,4 +76,16 @@ void main() {
       expect(checkBalance(txns, hdfc, const []), isNull);
     });
   });
+
+  test('opening balance on a date: earlier transactions are history only', () {
+    final a = Account(id: 'h', name: 'HDFC', openingBalance: 5000, openingDate: DateTime(2026, 4, 1));
+    final txns = [
+      Txn(id: 'old', amount: 999, isDebit: true, txnAt: DateTime(2026, 3, 31, 23), accountId: 'h'),
+      Txn(id: 'n1', amount: 1000, isDebit: true, txnAt: DateTime(2026, 4, 1, 9), accountId: 'h'),
+      Txn(id: 'n2', amount: 300, isDebit: false, txnAt: DateTime(2026, 4, 2), accountId: 'h'),
+    ];
+    expect(accountBalances(txns, [a])['h'], 4300);
+    expect(runningBalances(txns, a), {'n1': 4000, 'n2': 4300});
+    expect(balanceAt(txns, a, DateTime(2026, 4, 1, 12)), 4000);
+  });
 }

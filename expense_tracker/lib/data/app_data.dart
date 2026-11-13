@@ -188,8 +188,11 @@ class AppData extends ChangeNotifier {
   // ---------------------------------------------------------------- accounts
 
   Future<void> saveAccount(
-      {String? id, required String name, required AccountKind kind, required double openingBalance, bool archived = false}) async {
-    final row = {'name': name.trim(), 'kind': kind.name, 'opening_balance': openingBalance, 'archived': archived};
+      {String? id, required String name, required AccountKind kind, required double openingBalance, bool archived = false, DateTime? openingDate}) async {
+    final row = {
+      'name': name.trim(), 'kind': kind.name, 'opening_balance': openingBalance, 'archived': archived,
+      'opening_date': openingDate == null ? null : '${openingDate.year.toString().padLeft(4, '0')}-${openingDate.month.toString().padLeft(2, '0')}-${openingDate.day.toString().padLeft(2, '0')}',
+    };
     if (id == null) {
       await _db.from('accounts').insert(row);
     } else {

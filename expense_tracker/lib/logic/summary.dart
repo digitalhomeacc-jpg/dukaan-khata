@@ -109,34 +109,36 @@ List<MapEntry<DateTime, List<Txn>>> groupByDay(Iterable<Txn> txns) {
 /// Current balance of each account: opening balance + money in − money out.
 /// A move between own accounts changes both sides.
 Map<String, double> accountBalances(Iterable<Txn> txns, Iterable<Account> accounts) {
+  final byId = {for (final a in accounts) a.id: a};
   final bal = {for (final a in accounts) a.id: a.openingBalance};
   for (final t in txns) {
     final signed = t.isDebit ? -t.amount : t.amount;
-    if (t.accountId != null && bal.containsKey(t.accountId)) bal[t.accountId!] = bal[t.accountId]! + signed;
-    if (t.excluded && t.counterAccountId != null && bal.containsKey(t.counterAccountId)) {
-      bal[t.counterAccountId!] = bal[t.counterAccountId]! - signed;
-    }
+    final a = byId[t.accountId];
+    if (a != null && a.counts(t.txnAt)) bal[a.id] = bal[a.id]! + signed;
+    final c = t.excluded ? byId[t.counterAccountId] : null;
+    if (c != null && c.counts(t.txnAt)) bal[c.id] = bal[c.id]! - signed;
   }
   return bal.map((k, v) => MapEntry(k, _round(v)));
 }
 
 /// Effect of a transaction on one account's balance (0 when it doesn't touch it).
-double _effect(Txn t, String accountId) {
+double _effect(Txn t, Account account) {
+  if (!account.counts(t.txnAt)) return 0;
   final signed = t.isDebit ? -t.amount : t.amount;
   var e = 0.0;
-  if (t.accountId == accountId) e += signed;
-  if (t.excluded && t.counterAccountId == accountId) e -= signed;
+  if (t.accountId == account.id) e += signed;
+  if (t.excluded && t.counterAccountId == account.id) e -= signed;
   return e;
 }
 
 /// Balance of [account] after each of its transactions, by transaction id.
 Map<String, double> runningBalances(Iterable<Txn> txns, Account account) {
-  final mine = txns.where((t) => _effect(t, account.id) != 0).toList()
+  final mine = txns.where((t) => _effect(t, account) != 0).toList()
     ..sort((a, b) => a.txnAt.compareTo(b.txnAt));
   var bal = account.openingBalance;
   final out = <String, double>{};
   for (final t in mine) {
-    bal += _effect(t, account.id);
+    bal += _effect(t, account);
     out[t.id] = _round(bal);
   }
   return out;
@@ -146,7 +148,7 @@ Map<String, double> runningBalances(Iterable<Txn> txns, Account account) {
 double balanceAt(Iterable<Txn> txns, Account account, DateTime time) {
   var bal = account.openingBalance;
   for (final t in txns) {
-    if (!t.txnAt.isAfter(time)) bal += _effect(t, account.id);
+    if (!t.txnAt.isAfter(time)) bal += _effect(t, account);
   }
   return _round(bal);
 }

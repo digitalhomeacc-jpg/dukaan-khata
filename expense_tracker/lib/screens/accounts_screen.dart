@@ -195,6 +195,7 @@ class _AccountFormState extends State<_AccountForm> {
   late AccountKind _kind = widget.existing?.kind ?? AccountKind.bank;
   late final _opening = TextEditingController(text: _openingText());
   final _now = TextEditingController();
+  late DateTime? _openingDate = widget.existing?.openingDate;
   late bool _archived = widget.existing?.archived ?? false;
   String? _error;
 
@@ -225,7 +226,8 @@ class _AccountFormState extends State<_AccountForm> {
       final now = double.tryParse(nowRaw);
       if (now == null) return setState(() => _error = 'Balance now is not a number');
       // Opening = what it must have been for the app to show this balance today.
-      final current = accountBalances(widget.data.transactions, [e])[e.id] ?? e.openingBalance;
+      final asSaved = Account(id: e.id, name: e.name, kind: _kind, openingBalance: e.openingBalance, openingDate: _openingDate);
+      final current = accountBalances(widget.data.transactions, [asSaved])[e.id] ?? e.openingBalance;
       final movement = current - e.openingBalance;
       final wanted = _kind == AccountKind.card ? -now : now;
       final opening = wanted - movement;
@@ -239,6 +241,7 @@ class _AccountFormState extends State<_AccountForm> {
         // A card's opening figure is what you owed, stored as a negative balance.
         openingBalance: _kind == AccountKind.card ? -entered : entered,
         archived: _archived,
+        openingDate: _openingDate,
       );
       if (mounted) Navigator.pop(context);
     } catch (e) {
@@ -301,9 +304,28 @@ class _AccountFormState extends State<_AccountForm> {
             decoration: InputDecoration(
               labelText: _kind == AccountKind.card ? 'Amount owed before using the app' : 'Opening balance',
               prefixText: '₹ ',
-              helperText: 'Before your first transaction in the app',
+              helperText: _openingDate == null ? 'Before your first transaction in the app' : null,
             ),
           ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            icon: const Icon(Icons.event),
+            label: Text(_openingDate == null
+                ? 'On which date? (optional)'
+                : 'Opening balance on ${_openingDate!.day}/${_openingDate!.month}/${_openingDate!.year}'),
+            onPressed: () async {
+              final d = await showDatePicker(
+                context: context,
+                initialDate: _openingDate ?? DateTime(DateTime.now().year, 4, 1),
+                firstDate: DateTime(2015),
+                lastDate: DateTime.now(),
+              );
+              if (d != null) setState(() => _openingDate = d);
+            },
+          ),
+          if (_openingDate != null)
+            Text('Transactions before this date stay as history but do not change the balance.',
+                style: Theme.of(context).textTheme.bodySmall),
           if (widget.existing != null) ...[
             const SizedBox(height: 12),
             TextField(
