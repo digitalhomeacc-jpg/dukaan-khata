@@ -326,8 +326,10 @@ class _BankRecordCardState extends State<BankRecordCard> {
   /// The readable part of a bank email: its body without links and the long footer.
   static String _emailText(String body) {
     var t = body.replaceAll(RegExp(r'https?://\S+'), '').replaceAll(RegExp(r'[ \t]+'), ' ');
-    final end = RegExp(r'(?i)(warm regards|regards,|this is a system.generated|do not reply|please do not|disclaimer)')
-        .firstMatch(t);
+    final end = RegExp(
+      r'(warm regards|regards,|this is a system.generated|do not reply|please do not|disclaimer)',
+      caseSensitive: false,
+    ).firstMatch(t);
     if (end != null) t = t.substring(0, end.start);
     return t.split('\n').map((l) => l.trim()).where((l) => l.isNotEmpty).join('\n').trim();
   }

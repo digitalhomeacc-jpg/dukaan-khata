@@ -154,6 +154,39 @@ void main() {
     expect(find.text('Add missing entry'), findsOneWidget);
   });
 
+  testWidgets('details of a payment from a bank email open, with the email', (tester) async {
+    final now = DateTime.now();
+    final data = AppData.preview(
+      categories: const [],
+      accounts: const [Account(id: 'h', name: 'HDFC A/c ••6516', kind: AccountKind.bank)],
+      transactions: [
+        Txn(
+          id: 'e',
+          amount: 200,
+          isDebit: true,
+          txnAt: now,
+          merchant: 'Ravi Kumar',
+          source: 'email',
+          accountId: 'h',
+          payeeVpa: '0678@y',
+          emailSubject: 'You have done a UPI txn. Check details!',
+          emailBody:
+              'Dear Customer,\n\nRs.200.00 is debited from your account ending 6516 towards VPA '
+              '*****0678@ybl (RAVI KUMAR) on 04-11-26.\n\nUPI transaction reference no.: 668101105272.\n\n'
+              'Warm Regards,\nHDFC Bank\nhttps://example.com/x',
+        ),
+      ],
+    );
+    await pump(tester, TxnEditor(data: data, existing: data.transactions.single));
+    expect(tester.takeException(), isNull);
+    expect(find.text('Bank email'), findsOneWidget);
+    expect(find.text('668101105272'), findsOneWidget);
+    await tester.tap(find.text('Show the bank email'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('is debited from your account'), findsOneWidget);
+    expect(find.textContaining('Warm Regards'), findsNothing);
+  });
+
   testWidgets('editor for an email transaction', (tester) async {
     final data = sample();
     await pump(tester, TxnEditor(data: data, existing: data.transactions.first));
