@@ -73,9 +73,11 @@ begin
     from public.loans l
    where t.user_id = p_user and l.user_id = p_user and not l.closed
      and t.loan_id is null and t.loan_role is null and not t.edited
-     and coalesce(t.merchant_key, '') <> ''
+     and (coalesce(t.merchant_key, '') <> '' or t.email_body is not null)
      and exists (select 1 from unnest(l.aliases) a
-                  where t.merchant_key = lower(a) or t.merchant_key like lower(a) || ' %');
+                  where t.merchant_key = lower(a) or t.merchant_key like lower(a) || ' %'
+                     -- payment codes like 'fibe.cf.fibe7@cashfree…': in the payee or the email text
+                     or (a ~ '[.@]' and (t.merchant_key like lower(a) || '%' or t.email_body ilike '%' || a || '%')));
   get diagnostics n = row_count;
 
   insert into public.loan_events (user_id, loan_id, kind, amount, event_at, txn_id, note)

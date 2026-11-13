@@ -14,7 +14,7 @@ String _short(DateTime d) => DateFormat(d.year == DateTime.now().year ? 'd MMM' 
 /// Known lenders: what the card is called and which payee names mean them.
 const lenderPresets = <String, ({String name, LoanKind kind, List<String> aliases})>{
   'kreditbee': (name: 'KreditBee', kind: LoanKind.emi, aliases: ['kreditbee', 'krazybee', 'krazybee services', 'kbmas']),
-  'fibe': (name: 'Fibe', kind: LoanKind.emi, aliases: ['fibe', 'earlysalary', 'social worth technologies']),
+  'fibe': (name: 'Fibe', kind: LoanKind.emi, aliases: ['fibe', 'earlysalary', 'social worth technologies', 'fibe.cf.']),
   'slice': (name: 'Slice borrow', kind: LoanKind.creditLine, aliases: ['slice', 'slice borrow', 'slice small finance bank']),
 };
 
