@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../accounting/bookings.dart';
+import '../accounting/ledger_repo.dart';
 import '../accounting/models.dart';
 import '../core/money.dart';
 import '../core/theme.dart';
@@ -36,7 +37,7 @@ class HomeScreen extends StatelessWidget {
           IconButton(tooltip: t('lock'), icon: const Icon(Icons.lock_outline), onPressed: app.lock),
         ],
       ),
-      body: LiveBuilder<(Map<String, int>, List<Item>, List<Voucher>, int, int, List<Booking>)>(
+      body: LiveBuilder<(Map<String, int>, List<Item>, List<Voucher>, int, int, List<Booking>, List<AccountFix>)>(
         load: () async => (
           await app.ledgers.dashboard(today),
           (await app.stock.list()).where((i) => i.lowStock > 0 && i.stock <= i.lowStock).toList(),
@@ -44,11 +45,27 @@ class HomeScreen extends StatelessWidget {
           await app.ledgers.promisesDue(today),
           app.actor.isOwner ? (await app.recurring.due(today)).length : 0, // दरमहा आकार to charge
           (await app.bookings.list(customer: false)).where((b) => b.open && !b.old).toList(), // orders on the way
+          app.actor.isOwner ? await app.ledgers.resetDamage() : const <AccountFix>[], // wiped built-in accounts
         ),
         builder: (context, data) {
-          final (d, low, recent, due, monthly, incoming) = data;
+          final (d, low, recent, due, monthly, incoming, damage) = data;
           return ListView(padding: const EdgeInsets.fromLTRB(16, 4, 16, 24), children: [
             _SearchField(onTap: () => SearchScreen.open(context), hint: t('search_all_hint')),
+            if (damage.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Material(
+                color: scheme.errorContainer,
+                borderRadius: BorderRadius.circular(14),
+                child: ListTile(
+                  key: const Key('home_fix_accounts'),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  leading: Icon(Icons.report_gmailerrorred, color: scheme.error),
+                  title: Text(t('fix_title'), style: const TextStyle(fontWeight: FontWeight.w700)),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => _fixAccounts(context, damage),
+                ),
+              ),
+            ],
             if (due > 0) ...[
               const SizedBox(height: 10),
               Material(
@@ -407,4 +424,40 @@ class _TodayHero extends StatelessWidget {
       ]),
     );
   }
+}
+
+/// Shows what an app bug wiped from the built-in accounts and puts the
+/// figures from the change history back on confirm.
+Future<void> _fixAccounts(BuildContext context, List<AccountFix> fixes) async {
+  final app = App.read(context);
+  final t = app.t;
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: Text(t('fix_title')),
+      content: SingleChildScrollView(
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+          Text(t('fix_body')),
+          const SizedBox(height: 12),
+          for (final f in fixes) ...[
+            Text(f.name, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+            for (final c in f.changes.entries)
+              Padding(
+                padding: const EdgeInsets.only(left: 8, top: 2),
+                child: Text('${t('fix_f_${c.key}')}: ${t('fix_now')} ${c.value.$1.isEmpty ? '0' : c.value.$1}'
+                    '  →  ${t('fix_was')} ${c.value.$2.isEmpty ? '0' : c.value.$2}'),
+              ),
+            const SizedBox(height: 8),
+          ],
+        ]),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(t('cancel'))),
+        FilledButton(key: const Key('fix_restore'), onPressed: () => Navigator.pop(ctx, true), child: Text(t('fix_restore'))),
+      ],
+    ),
+  );
+  if (ok != true) return;
+  await app.ledgers.repair(fixes);
+  if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t('fix_done'))));
 }

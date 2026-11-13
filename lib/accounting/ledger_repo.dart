@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:sqlite_async/sqlite_async.dart';
 
 import '../core/audit.dart';
@@ -356,6 +358,61 @@ class LedgerRepo {
     await _log(id, archived ? 'hide' : 'unhide', before, await _snap(id));
   }
 
+  /// Built-in accounts (रोख, फोनपे, बँक…) whose details no longer match their
+  /// last recorded change. That can only happen through a change that skipped
+  /// the history: the Nov 2026 bug where a phone re-created these accounts
+  /// blank (opening 0). Each fix lists field → (now, was) from the history.
+  Future<List<AccountFix>> resetDamage() async {
+    final out = <AccountFix>[];
+    final rows = await db.getAll('SELECT * FROM ledgers WHERE business_id = ? AND system = 1 ORDER BY name', [businessId]);
+    for (final r in rows) {
+      final id = r['id'] as String;
+      final a = await db.getOptional('SELECT snapshot, at FROM audit_log WHERE voucher_id = ? ORDER BY at DESC LIMIT 1', [id]);
+      if (a == null) continue;
+      Map<String, dynamic>? after;
+      try {
+        final snap = jsonDecode(a['snapshot'] as String? ?? '{}') as Map<String, dynamic>;
+        if (snap['kind'] != 'ledger') continue;
+        after = (snap['after'] as Map?)?.cast<String, dynamic>();
+      } catch (_) {
+        continue;
+      }
+      if (after == null) continue;
+      final cur = await _snap(id);
+      final fix = AccountFix(id, '${r['name'] ?? ''}', '${a['at'] ?? ''}', '${r['created_at'] ?? ''}');
+      for (final k in const ['name', 'name_en', 'page_no', 'opening_balance', 'credit_limit', 'hidden']) {
+        if (k == 'name' && !after.containsKey('name')) continue;
+        final was = '${after[k] ?? ''}', now = '${cur[k] ?? ''}';
+        if (was != now) fix.changes[k] = (now, was);
+      }
+      if (fix.changes.isNotEmpty) out.add(fix);
+    }
+    return out;
+  }
+
+  /// Puts the recorded values back (each restore is itself recorded).
+  Future<void> repair(List<AccountFix> fixes) async {
+    for (final f in fixes) {
+      final before = await _snap(f.id);
+      String? was(String k) => f.changes[k]?.$2;
+      final sets = <String>[], args = <Object?>[];
+      void put(String col, Object? v) {
+        sets.add('$col = ?');
+        args.add(v);
+      }
+
+      if (was('name') case final v? when v.isNotEmpty) put('name', v);
+      if (was('name_en') case final v?) put('name_en', v.isEmpty ? null : v);
+      if (was('page_no') case final v?) put('page_no', v.isEmpty ? null : v);
+      if (was('opening_balance') case final v?) put('opening_balance', Money.parse(v) ?? 0);
+      if (was('credit_limit') case final v?) put('credit_limit', Money.parse(v) ?? 0);
+      if (was('hidden') case final v?) put('archived', v.isEmpty ? 0 : 1);
+      if (sets.isEmpty) continue;
+      await db.execute('UPDATE ledgers SET ${sets.join(', ')} WHERE id = ?', [...args, f.id]);
+      await _log(f.id, 'edit', before, await _snap(f.id));
+    }
+  }
+
   String? _n(String? s) => (s == null || s.trim().isEmpty) ? null : s.trim();
 
   /// Balance as at end of [date] (inclusive). null = all time.
@@ -671,4 +728,11 @@ class LedgerRepo {
       'payable': -payable,
     };
   }
+}
+
+/// One built-in account to put back: field → (now, was).
+class AccountFix {
+  AccountFix(this.id, this.name, this.lastChange, this.createdAt);
+  final String id, name, lastChange, createdAt;
+  final changes = <String, (String, String)>{};
 }

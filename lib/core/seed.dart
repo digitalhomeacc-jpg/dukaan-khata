@@ -108,9 +108,11 @@ Future<void> seedBusiness(SqliteWriteContext db, String businessId, {bool withIt
 }
 
 /// Adds built-in ledgers introduced by app updates to an existing shop.
-Future<void> ensureSystemLedgers(SqliteWriteContext db, String businessId) async {
+/// [only]: the ids the server confirmed missing (cloud); null = local shop.
+Future<void> ensureSystemLedgers(SqliteWriteContext db, String businessId, {Set<String>? only}) async {
   for (final l in seedLedgers) {
     final id = systemLedgerId(businessId, l.key);
+    if (only != null && !only.contains(id)) continue;
     if (await db.getOptional('SELECT id FROM ledgers WHERE id = ?', [id]) != null) continue;
     await db.execute(
       'INSERT INTO ledgers (id, business_id, name, name_en, grp, short_code, opening_balance, '

@@ -156,7 +156,19 @@ class AppController extends ChangeNotifier {
       db.waitForFirstSync().then((_) async {
         await loadBooks();
         if (actor.isOwner && businessId == bid) {
-          await db.writeTransaction((tx) => ensureSystemLedgers(tx, bid));
+          // Built-in accounts are added only when the SERVER says they are
+          // missing. A phone whose data is still arriving must never re-create
+          // रोख / फोनपे: that once replaced the real accounts and wiped their
+          // opening balances. No answer from the server → add nothing.
+          try {
+            final ids = [for (final l in seedLedgers) systemLedgerId(bid, l.key)];
+            final onServer = {
+              for (final r in await _sb.from('ledgers').select('id').eq('business_id', bid).inFilter('id', ids)) r['id'] as String
+            };
+            if (onServer.isNotEmpty) {
+              await db.writeTransaction((tx) => ensureSystemLedgers(tx, bid, only: ids.where((i) => !onServer.contains(i)).toSet()));
+            }
+          } catch (_) {/* offline: try again next time */}
           await _vouchers?.detachHistoryLines(); // old entries are reference only
         }
       }).ignore();
