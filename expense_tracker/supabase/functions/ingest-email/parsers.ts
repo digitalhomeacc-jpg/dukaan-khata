@@ -570,6 +570,7 @@ const KNOWN_PAYEES: Array<[RegExp, string]> = [
   [/\b(netflix|prime video|hotstar|spotify|youtube|bookmyshow|pvr|inox|apple media|google play|steam)\b/i, "Entertainment"],
   [/\b(apollo|pharmacy|medical|medplus|1mg|pharmeasy|hospital|clinic|diagnostic|lab)\b/i, "Health"],
   [/\b(makemytrip|goibibo|indigo|air india|vistara|akasa|oyo|airbnb|cleartrip)\b/i, "Travel"],
+  [/\b(zerodha|groww|upstox|angel one|angelone|kite|coin by|indmoney|smallcase|vested|mutual fund|\bmf\b|sip|nippon|hdfc amc|sbi mf|icici pru|kuvera|paytm money|dhan|ppf|nps)\b/i, "Investments"],
   [/\bcashback\b/i, "Other"],
 ];
 

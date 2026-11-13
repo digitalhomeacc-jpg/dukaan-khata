@@ -45,4 +45,28 @@ void main() {
         shares: shareTotals(const [TxnShare(id: 's', txnId: 'p', person: 'Rahul', amount: 600)]));
     expect(g.single.total, 300);
   });
+
+  test('money that came back from a place (Zerodha withdrawals, refunds)', () {
+    final g = payeeGroups([
+      t('a', 10000, DateTime(2026, 1, 1), 'Zerodha Broking', cat: 'inv'),
+      t('b', 5000, DateTime(2026, 2, 1), 'Zerodha Broking Limited Dscnb Account', cat: 'inv'),
+      t('c', 12000, DateTime(2026, 3, 1), 'Zerodha Broking', debit: false, cat: 'inv'),
+    ]);
+    expect(g.single.count, 2);
+    expect(g.single.total, 15000);
+    expect(g.single.received, 12000);
+    expect(g.single.net, -3000);
+    expect(g.single.byMonth.length, 2);
+  });
+
+  test('investments are not spending or income', () {
+    final s = summarize([
+      t('a', 10000, DateTime(2026, 1, 1), 'Zerodha Broking', cat: 'inv'),
+      t('b', 50, DateTime(2026, 1, 2), 'Chai'),
+      t('c', 12000, DateTime(2026, 1, 3), 'Zerodha Broking', debit: false, cat: 'inv'),
+    ], DateTime(2026, 1), loanCategoryIds: {'inv'});
+    expect(s.spent, 50);
+    expect(s.received, 0);
+  });
 }
+

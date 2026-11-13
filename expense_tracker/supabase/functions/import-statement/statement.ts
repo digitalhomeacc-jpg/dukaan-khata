@@ -68,7 +68,8 @@ export function readNarration(n: string): { merchant: string | null; method: Met
   if (/INSTAALERTCHG|SMS\s*ALERT|ALERT\s*CHG/i.test(s)) return { merchant: "Bank alert charges", method: "other", rrn, atm: false };
   if (/^(UPIRET|REV-UPI|UPI\s*REV)/i.test(s)) return { merchant: "UPI refund", method: "upi", rrn, atm: false };
   if (/stipend/i.test(s)) return { merchant: "Stipend", method: "netbanking", rrn, atm: false };
-  let m = s.match(/^UPI[-\/](.+?)-([^-\s]*@[^-\s]+)(?:-|$)/i);
+  // Name first, then the UPI ID (which may itself contain a dash: "7822965946-2@ybl").
+  let m = s.match(/^UPI[-\/]([^-]+?)-([^\s]*@[^-\s]+)(?:-|$)/i);
   if (m) return { merchant: cleanMerchant(m[1]), method: "upi", rrn, atm: false };
   m = s.match(/^UPI[-\/]([^-]+)-/i);
   if (m) return { merchant: cleanMerchant(m[1]), method: "upi", rrn, atm: false };

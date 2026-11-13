@@ -50,7 +50,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
   @override
   Widget build(BuildContext context) {
     final data = widget.data;
-    final loans = data.loanCategoryIds;
+    final loans = data.notSpendingCategoryIds;
     final summary = summarize(
       _accountId == null ? data.transactions : data.transactions.where((t) => t.accountId == _accountId),
       _month,

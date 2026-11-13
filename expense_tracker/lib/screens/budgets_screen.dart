@@ -43,7 +43,7 @@ class BudgetsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final month = summarize(data.transactions, monthStart(DateTime.now()),
-        loanCategoryIds: data.loanCategoryIds, shares: data.shareTotalsNow);
+        loanCategoryIds: data.notSpendingCategoryIds, shares: data.shareTotalsNow);
     final progress = {for (final p in budgetProgress(data.budgets, month)) p.budget.categoryId: p};
     Widget row(Category? c) {
       final p = progress[c?.id];

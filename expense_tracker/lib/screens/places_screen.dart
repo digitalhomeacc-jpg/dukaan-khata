@@ -96,7 +96,7 @@ class _PlacesViewState extends State<PlacesView> {
             leading: CategoryAvatar(data.category(g.categoryId)),
             title: Text(g.name, maxLines: 1, overflow: TextOverflow.ellipsis),
             subtitle: Text(
-              '${g.count}× · avg ${money(g.average)} · last ${dayLabel(g.last)}',
+              '${g.count}× · avg ${money(g.average)} · last ${dayLabel(g.lastPaid)}',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
@@ -104,8 +104,10 @@ class _PlacesViewState extends State<PlacesView> {
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                Text(money(g.total), style: const TextStyle(fontWeight: FontWeight.w600)),
-                if (i < 3 && !_byAmount)
+                Text('−${money(g.total)}', style: const TextStyle(fontWeight: FontWeight.w600)),
+                if (g.received > 0)
+                  Text('+${money(g.received)}', style: TextStyle(fontSize: 12, color: Colors.green.shade700))
+                else if (i < 3 && !_byAmount)
                   Text(['Most frequent', '2nd', '3rd'][i], style: TextStyle(fontSize: 11, color: scheme.primary)),
               ],
             ),
@@ -151,16 +153,27 @@ class PlaceDetailScreen extends StatelessWidget {
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 16),
               child: Row(children: [
-                stat('spent', money(g.total)),
-                stat('visits', '${g.count}'),
-                stat('average', money(g.average)),
+                stat('paid', money(g.total)),
+                if (g.received > 0) stat('came back', money(g.received)),
+                if (g.received > 0)
+                  stat(g.net >= 0 ? 'net in' : 'net out', money(g.net.abs()))
+                else ...[
+                  stat('payments', '${g.count}'),
+                  stat('average', money(g.average)),
+                ],
               ]),
             ),
           ),
+          if (g.received > 0)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text('${g.count} payments out (avg ${money(g.average)}), ${g.receivedCount} back',
+                  style: TextStyle(color: scheme.onSurfaceVariant)),
+            ),
           const SizedBox(height: 8),
           Text(
             'About ${g.perMonth >= 1 ? g.perMonth.toStringAsFixed(g.perMonth >= 10 ? 0 : 1) : '<1'} times a month · '
-            'first ${DateFormat('d MMM yyyy').format(g.first)} · last ${dayLabel(g.last)}',
+            'first ${DateFormat('d MMM yyyy').format(g.first)} · last ${dayLabel(g.lastPaid)}',
             style: TextStyle(color: scheme.onSurfaceVariant),
           ),
           if (g.spellings.length > 1) ...[
@@ -182,6 +195,28 @@ class PlaceDetailScreen extends StatelessWidget {
                   onSelected: (_) => data.categorizePlace(g.keys, c.id),
                 ),
             ],
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            icon: const Icon(Icons.swap_horiz),
+            label: const Text('Not spending: it\'s my own account'),
+            onPressed: () async {
+              final yes = await showDialog<bool>(
+                context: context,
+                builder: (c) => AlertDialog(
+                  title: Text('Is ${g.name} your own account?'),
+                  content: const Text('Then money to and from it is a move between your accounts: not counted as spending or income.'),
+                  actions: [
+                    TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancel')),
+                    FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Yes, my account')),
+                  ],
+                ),
+              );
+              if (yes == true) {
+                await data.markOwnAccount(g.keys);
+                if (context.mounted) Navigator.pop(context);
+              }
+            },
           ),
           const SizedBox(height: 20),
           Text('By month', style: text.titleSmall),
@@ -210,7 +245,8 @@ class PlaceDetailScreen extends StatelessWidget {
               dense: true,
               title: Text('${dayLabel(t.txnAt)}, ${timeLabel(t.txnAt)}'),
               subtitle: data.account(t.accountId) == null ? null : Text(data.account(t.accountId)!.name),
-              trailing: Text(money(data.shareTotalsNow.own(t)), style: const TextStyle(fontWeight: FontWeight.w600)),
+              trailing: Text(signedMoney(data.shareTotalsNow.own(t), isDebit: t.isDebit),
+                  style: TextStyle(fontWeight: FontWeight.w600, color: t.isDebit ? null : Colors.green.shade700)),
               onTap: () => openTxnEditor(context, data, existing: t),
             ),
         ],

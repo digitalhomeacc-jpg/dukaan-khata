@@ -70,3 +70,7 @@ test("bank charges, reversals, stipend and loan payouts", () => {
   assert.equal(readNarration("IMPS-600000000010-EARLYSALARY SERVICES-ICIC-XXXX1234-LOAN").merchant, "Earlysalary Services");
 });
 
+test("UPI ID with a dash does not end up in the name", () => {
+  assert.equal(readNarration("UPI-ROHAN DESAI SHI-7822965946-2@YBL-SBIN0011426-600000000011-PAYMENT").merchant, "Rohan Desai Shi");
+});
+

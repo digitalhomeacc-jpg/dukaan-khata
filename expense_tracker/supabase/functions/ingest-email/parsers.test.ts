@@ -418,3 +418,9 @@ test("well-known payees get a default category", () => {
   assert.equal(defaultCategoryName("Aayush medical and general store"), "Health");
   assert.equal(defaultCategoryName("Sanket Pramod Patil"), null);
 });
+
+test("investment platforms default to Investments", () => {
+  assert.equal(defaultCategoryName("Zerodha Broking Limited DSCNB Account"), "Investments");
+  assert.equal(defaultCategoryName("Groww"), "Investments");
+  assert.equal(defaultCategoryName("Nippon India Mutual Fund"), "Investments");
+});

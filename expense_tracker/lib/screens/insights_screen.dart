@@ -23,8 +23,11 @@ class _InsightsScreenState extends State<InsightsScreen> {
   @override
   Widget build(BuildContext context) {
     final data = widget.data;
-    final s = summarize(data.transactions, _month, loanCategoryIds: data.loanCategoryIds, shares: data.shareTotalsNow);
-    final trend = monthlySpend(data.transactions, _month, 6, loanCategoryIds: data.loanCategoryIds, shares: data.shareTotalsNow);
+    final s = summarize(data.transactions, _month, loanCategoryIds: data.notSpendingCategoryIds, shares: data.shareTotalsNow);
+    final trend = monthlySpend(data.transactions, _month, 6, loanCategoryIds: data.notSpendingCategoryIds, shares: data.shareTotalsNow);
+    final inv = data.investmentCategoryIds;
+    final invested = data.transactions.where((t) => inv.contains(t.categoryId) && !t.excluded && inMonth(t.txnAt, _month))
+        .fold(0.0, (v, t) => v + (t.isDebit ? t.amount : -t.amount));
     final text = Theme.of(context).textTheme;
 
     final overview = ListView(
@@ -56,6 +59,16 @@ class _InsightsScreenState extends State<InsightsScreen> {
                 ),
               ),
             const SizedBox(height: 24),
+          ],
+          if (invested.abs() >= 1) ...[
+            Card.filled(
+              child: ListTile(
+                leading: const Icon(Icons.savings_outlined),
+                title: Text(invested > 0 ? 'Invested ${money(invested)} this month' : 'Took ${money(-invested)} out of investments'),
+                subtitle: const Text('Zerodha, mutual funds… Not counted as spending or income.'),
+              ),
+            ),
+            const SizedBox(height: 16),
           ],
           Text('Last 6 months', style: text.titleMedium),
           const SizedBox(height: 12),

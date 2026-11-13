@@ -171,6 +171,10 @@ class AppData extends ChangeNotifier {
   }
 
   Set<String> get loanCategoryIds => {for (final c in categories) if (c.isLoan) c.id};
+  Set<String> get investmentCategoryIds => {for (final c in categories) if (c.isInvestment) c.id};
+
+  /// Categories whose money is neither spending nor income: friends and investments.
+  Set<String> get notSpendingCategoryIds => {...loanCategoryIds, ...investmentCategoryIds};
   Category? get loanCategory => categories.where((c) => c.isLoan).firstOrNull;
 
   Account? account(String? id) {
@@ -409,6 +413,10 @@ class AppData extends ChangeNotifier {
       _db.rpc('add_friend_alias', params: {'p_alias': payeeName, 'p_friend': friendName});
 
   // ----------------------------------------------------------------- places
+
+  /// "These are my own accounts": every payment with this place is a move, not spending or income.
+  Future<void> markOwnAccount(Iterable<String> merchantKeys) => _db.from('transactions')
+      .update({'excluded': true, 'needs_review': false}).inFilter('merchant_key', merchantKeys.toList()).eq('edited', false);
 
   /// Files every payment to this place (all its spellings) under a category, now and later.
   Future<void> categorizePlace(Iterable<String> merchantKeys, String? categoryId) async {

@@ -477,15 +477,26 @@ class PayeeGroup {
   final List<Txn> txns = [];
   final Map<String, int> _names = {};
   final Map<String?, int> _cats = {};
+
+  /// Money paid to this place.
   double total = 0;
 
-  int get count => txns.length;
+  /// Money that came back from it (refunds, withdrawals from an investment account).
+  double received = 0;
+  int receivedCount = 0;
+
+  /// Money in minus money out: negative means it cost you.
+  double get net => _round(received - total);
+
+  /// Number of payments made to it.
+  int get count => txns.where((t) => t.isDebit).length;
 
   /// The different ways the bank wrote this place's name.
   List<String> get spellings => _names.keys.toList();
   double get average => count == 0 ? 0 : _round(total / count);
   DateTime get first => txns.map((t) => t.txnAt).reduce((a, b) => a.isBefore(b) ? a : b);
   DateTime get last => txns.map((t) => t.txnAt).reduce((a, b) => a.isAfter(b) ? a : b);
+  DateTime get lastPaid => txns.where((t) => t.isDebit).map((t) => t.txnAt).reduce((a, b) => a.isAfter(b) ? a : b);
 
   /// The name used most often; on a tie the normally written one, then the longest
   /// (statements write names in capitals and cut them short).
@@ -507,7 +518,7 @@ class PayeeGroup {
   /// Spending per month, oldest first.
   List<MapEntry<DateTime, double>> get byMonth {
     final m = <DateTime, double>{};
-    for (final t in txns) {
+    for (final t in txns.where((t) => t.isDebit)) {
       final k = monthStart(t.txnAt);
       m[k] = (m[k] ?? 0) + t.amount;
     }
@@ -516,20 +527,23 @@ class PayeeGroup {
 
   /// Visits per month over the time between the first and last visit (at least one month).
   double get perMonth {
-    final months = (last.year - first.year) * 12 + last.month - first.month + 1;
-    return count / months;
+    final paid = txns.where((t) => t.isDebit).map((t) => t.txnAt).toList();
+    if (paid.isEmpty) return 0;
+    final a = paid.reduce((x, y) => x.isBefore(y) ? x : y), b = paid.reduce((x, y) => x.isAfter(y) ? x : y);
+    return paid.length / ((b.year - a.year) * 12 + b.month - a.month + 1);
   }
 }
 
 String _payeeKey(String s) => s.toLowerCase().replaceAll(RegExp(r'[^a-z0-9 ]'), ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
 
-/// Spending grouped by where it went: same payee under different spellings, a name a
-/// statement cut short, or another name for a friend all count as one place.
+/// Money grouped by where it went (and what came back from there): same payee under
+/// different spellings, a name a statement cut short, or another name for a friend all
+/// count as one place. Only places you paid are listed.
 List<PayeeGroup> payeeGroups(Iterable<Txn> txns,
     {DateTime? from, Set<String> loanCategoryIds = const {}, ShareTotals shares = ShareTotals.none, Map<String, String> aliases = const {}}) {
   final rows = <(Txn, String, double)>[];
   for (final t in txns) {
-    if (!t.isDebit || !counts(t, loanCategoryIds) || (from != null && t.txnAt.isBefore(from))) continue;
+    if (!counts(t, loanCategoryIds) || (from != null && t.txnAt.isBefore(from))) continue;
     final name = t.merchant?.trim();
     if (name == null || name.isEmpty) continue;
     final own = shares.own(t);
@@ -555,14 +569,20 @@ List<PayeeGroup> payeeGroups(Iterable<Txn> txns,
     final g = groups.putIfAbsent(canon[k]!, () => PayeeGroup(canon[k]!));
     g.keys.add(t.merchant!.toLowerCase().replaceAll(RegExp(r'\s+'), ' ').trim());
     g.txns.add(t);
-    g.total += own;
+    if (t.isDebit) {
+      g.total += own;
+    } else {
+      g.received += own;
+      g.receivedCount++;
+    }
     final shown = t.merchant!.replaceAll(RegExp(r'\s+'), ' ').replaceAll(RegExp(r'[\s.,;:-]+$'), '').trim();
     g._names[shown] = (g._names[shown] ?? 0) + 1;
     g._cats[t.categoryId] = (g._cats[t.categoryId] ?? 0) + 1;
   }
   for (final g in groups.values) {
     g.total = _round(g.total);
+    g.received = _round(g.received);
     g.txns.sort((a, b) => b.txnAt.compareTo(a.txnAt));
   }
-  return groups.values.toList()..sort((a, b) => b.count != a.count ? b.count.compareTo(a.count) : b.total.compareTo(a.total));
+  return groups.values.where((g) => g.count > 0).toList()..sort((a, b) => b.count != a.count ? b.count.compareTo(a.count) : b.total.compareTo(a.total));
 }

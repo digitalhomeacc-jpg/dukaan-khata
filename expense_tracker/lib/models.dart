@@ -1,7 +1,8 @@
 double _num(Object? v) => v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
 
 class Category {
-  const Category({required this.id, required this.name, required this.icon, required this.color, this.isLoan = false});
+  const Category(
+      {required this.id, required this.name, required this.icon, required this.color, this.isLoan = false, this.isInvestment = false});
 
   final String id;
   final String name;
@@ -11,12 +12,16 @@ class Category {
   /// Money borrowed from / lent to friends: kept out of spending and income.
   final bool isLoan;
 
+  /// Money put into / taken out of investments (Zerodha, mutual funds): not spending or income.
+  final bool isInvestment;
+
   factory Category.fromMap(Map<String, dynamic> m) => Category(
         id: m['id'] as String,
         name: m['name'] as String,
         icon: (m['icon'] as String?) ?? 'label',
         color: (m['color'] as num?)?.toInt() ?? 0xFF607D8B,
         isLoan: m['kind'] == 'loan',
+        isInvestment: m['kind'] == 'investment',
       );
 }
 
