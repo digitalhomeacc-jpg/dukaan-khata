@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../data/app_data.dart';
 import 'accounts_screen.dart';
 import 'insights_screen.dart';
+import '../main.dart' show pendingInviteCode;
 import 'friends_screen.dart';
 import 'settings_screen.dart';
 import 'transactions_screen.dart';
@@ -22,6 +23,20 @@ class HomeShell extends StatefulWidget {
 class _HomeShellState extends State<HomeShell> {
   late final AppData data = widget.data ?? AppData(Supabase.instance.client);
   var _tab = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    final code = pendingInviteCode;
+    if (code != null && widget.data == null) {
+      pendingInviteCode = null;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        setState(() => _tab = 2);
+        showAcceptInvite(context, data, code: code);
+      });
+    }
+  }
 
   @override
   void dispose() {

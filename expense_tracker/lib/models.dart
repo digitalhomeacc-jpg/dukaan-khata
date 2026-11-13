@@ -332,3 +332,83 @@ class Budget {
   factory Budget.fromMap(Map<String, dynamic> m) =>
       Budget(id: m['id'] as String, categoryId: m['category_id'] as String?, amount: _num(m['amount']));
 }
+
+/// A connection with a friend who also uses the app.
+class FriendLink {
+  const FriendLink({required this.id, required this.a, this.b, required this.aNameForB, this.bNameForA, required this.code});
+
+  final String id;
+  final String a;
+  final String? b;
+  final String aNameForB;
+  final String? bNameForA;
+  final String code;
+
+  bool get active => b != null;
+
+  /// The other person's user id and their name in my list.
+  String? otherOf(String me) => me == a ? b : a;
+  String nameFor(String me) => me == a ? aNameForB : (bNameForA ?? '');
+
+  factory FriendLink.fromMap(Map<String, dynamic> m) => FriendLink(
+        id: m['id'] as String,
+        a: m['a'] as String,
+        b: m['b'] as String?,
+        aNameForB: m['a_name_for_b'] as String,
+        bNameForA: m['b_name_for_a'] as String?,
+        code: m['code'] as String,
+      );
+}
+
+/// One shared record between two connected friends: [debtor] owes [creditor] [amount].
+class SharedEntry {
+  const SharedEntry({
+    required this.id, required this.linkId, required this.creditor, required this.debtor, required this.amount,
+    required this.kind, required this.at, required this.createdBy, this.description, this.creditorTxn, this.debtorTxn,
+    this.deletedBy, this.deletedAt,
+  });
+
+  final String id;
+  final String linkId;
+  final String creditor;
+  final String debtor;
+  final double amount;
+  final String kind;
+  final DateTime at;
+  final String createdBy;
+  final String? description;
+  final String? creditorTxn;
+  final String? debtorTxn;
+  final String? deletedBy;
+  final DateTime? deletedAt;
+
+  bool get deleted => deletedAt != null;
+
+  factory SharedEntry.fromMap(Map<String, dynamic> m) => SharedEntry(
+        id: m['id'] as String,
+        linkId: m['link_id'] as String,
+        creditor: m['creditor'] as String,
+        debtor: m['debtor'] as String,
+        amount: _num(m['amount']),
+        kind: m['kind'] as String,
+        at: DateTime.parse(m['at'] as String).toLocal(),
+        createdBy: m['created_by'] as String,
+        description: m['description'] as String?,
+        creditorTxn: m['creditor_txn'] as String?,
+        debtorTxn: m['debtor_txn'] as String?,
+        deletedBy: m['deleted_by'] as String?,
+        deletedAt: m['deleted_at'] == null ? null : DateTime.parse(m['deleted_at'] as String).toLocal(),
+      );
+}
+
+/// "Was this ₹500 from Vijay the ₹500 Rahul says he paid you?"
+class MatchQuestion {
+  const MatchQuestion({required this.id, required this.entryId, required this.txnId});
+
+  final String id;
+  final String entryId;
+  final String txnId;
+
+  factory MatchQuestion.fromMap(Map<String, dynamic> m) =>
+      MatchQuestion(id: m['id'] as String, entryId: m['entry_id'] as String, txnId: m['txn_id'] as String);
+}

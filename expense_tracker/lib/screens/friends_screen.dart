@@ -10,7 +10,42 @@ import 'people_review_screen.dart';
 import 'shared_expense_screen.dart';
 import 'txn_editor.dart';
 
-/// Splitwise-style: who owes whom, shared expenses, settle up.
+const _appLink = 'https://digitalhomeacc-jpg.github.io/expense-tracker/';
+
+class FriendRow {
+  FriendRow(this.person, this.balance, this.link);
+
+  final String person;
+
+  /// Positive: you owe them. Negative: they owe you.
+  final double balance;
+  final FriendLink? link;
+
+  bool get settled => balance.abs() < 0.005;
+}
+
+/// Everyone in your Friends list: from your own payments, and connected friends' shared record.
+List<FriendRow> friendRows(AppData data) {
+  final rows = <String, FriendRow>{};
+  for (final l in loanBalances(data.transactions, data.loanCategoryIds, shares: data.shares, aliases: data.aliases)) {
+    final link = data.linkFor(l.person);
+    rows[AppData.keyOf(l.person)] = FriendRow(
+        l.person, link == null || data.me == null ? l.balance : sharedBalance(data.sharedEntries, link.id, data.me!), link);
+  }
+  for (final link in data.links.where((l) => l.active)) {
+    final name = data.me == null ? '' : link.nameFor(data.me!);
+    if (name.isEmpty) continue;
+    rows.putIfAbsent(AppData.keyOf(name), () => FriendRow(name, sharedBalance(data.sharedEntries, link.id, data.me!), link));
+  }
+  final out = rows.values.toList()
+    ..sort((a, b) {
+      if (a.settled != b.settled) return a.settled ? 1 : -1;
+      return b.balance.abs().compareTo(a.balance.abs());
+    });
+  return out;
+}
+
+/// Splitwise-style: who owes whom, shared expenses, settle up, connected friends.
 class FriendsScreen extends StatelessWidget {
   const FriendsScreen({super.key, required this.data});
 
@@ -18,10 +53,10 @@ class FriendsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final balances = loanBalances(data.transactions, data.loanCategoryIds, shares: data.shares);
-    final owedToYou = balances.where((l) => l.balance < 0).fold(0.0, (s, l) => s - l.balance);
-    final youOwe = balances.where((l) => l.balance > 0).fold(0.0, (s, l) => s + l.balance);
-    final toReview = peopleToReview(data.transactions, decided: data.decidedPeople).length;
+    final rows = friendRows(data);
+    final owedToYou = rows.where((r) => r.balance < 0).fold(0.0, (s, r) => s - r.balance);
+    final youOwe = rows.where((r) => r.balance > 0).fold(0.0, (s, r) => s + r.balance);
+    final toReview = peopleToReview(data.transactions, decided: {...data.decidedPeople, ...data.aliases.keys}).length;
     final scheme = Theme.of(context).colorScheme;
 
     Widget total(String label, double v, Color color) => Expanded(
@@ -38,7 +73,16 @@ class FriendsScreen extends StatelessWidget {
         );
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Friends')),
+      appBar: AppBar(
+        title: const Text('Friends'),
+        actions: [
+          IconButton(
+            tooltip: 'Enter an invite code',
+            icon: const Icon(Icons.person_add_alt_1),
+            onPressed: () => showAcceptInvite(context, data),
+          ),
+        ],
+      ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => openSharedExpense(context, data),
         icon: const Icon(Icons.call_split),
@@ -62,6 +106,7 @@ class FriendsScreen extends StatelessWidget {
               ),
             ),
           ),
+          for (final q in data.questions) _QuestionCard(data: data, question: q),
           if (toReview > 0)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
@@ -77,7 +122,7 @@ class FriendsScreen extends StatelessWidget {
                 ),
               ),
             ),
-          if (balances.isEmpty)
+          if (rows.isEmpty)
             const Padding(
               padding: EdgeInsets.all(24),
               child: Text(
@@ -86,23 +131,125 @@ class FriendsScreen extends StatelessWidget {
                 textAlign: TextAlign.center,
               ),
             ),
-          for (final l in balances)
+          for (final r in rows)
             ListTile(
-              leading: CircleAvatar(child: Text(l.person.isEmpty ? '?' : l.person[0].toUpperCase())),
-              title: Text(l.person),
-              subtitle: Text(l.settled ? 'Settled up' : (l.balance > 0 ? 'You owe' : 'Owes you')),
+              leading: Badge(
+                isLabelVisible: r.link != null,
+                backgroundColor: Colors.green.shade700,
+                label: const Icon(Icons.link, size: 10, color: Colors.white),
+                child: CircleAvatar(child: Text(r.person.isEmpty ? '?' : r.person[0].toUpperCase())),
+              ),
+              title: Text(r.person),
+              subtitle: Text([
+                r.settled ? 'Settled up' : (r.balance > 0 ? 'You owe' : 'Owes you'),
+                if (r.link != null) 'connected',
+              ].join(' · ')),
               trailing: Text(
-                l.settled ? '' : money(l.balance.abs()),
-                style: TextStyle(fontWeight: FontWeight.w600, color: l.balance > 0 ? scheme.error : Colors.green.shade700),
+                r.settled ? '' : money(r.balance.abs()),
+                style: TextStyle(fontWeight: FontWeight.w600, color: r.balance > 0 ? scheme.error : Colors.green.shade700),
               ),
               onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
-                builder: (_) => ListenableBuilder(listenable: data, builder: (_, _) => FriendDetailScreen(data: data, person: l.person)),
+                builder: (_) => ListenableBuilder(listenable: data, builder: (_, _) => FriendDetailScreen(data: data, person: r.person)),
               )),
             ),
         ],
       ),
     );
   }
+}
+
+/// "Was this ₹500 from Vijay Sharma the ₹500 Rahul says he paid you?"
+class _QuestionCard extends StatelessWidget {
+  const _QuestionCard({required this.data, required this.question});
+
+  final AppData data;
+  final MatchQuestion question;
+
+  @override
+  Widget build(BuildContext context) {
+    final e = data.sharedEntries.where((x) => x.id == question.entryId).firstOrNull;
+    final t = data.txn(question.txnId);
+    if (e == null || t == null || data.me == null) return const SizedBox.shrink();
+    final link = data.links.where((l) => l.id == e.linkId).firstOrNull;
+    final friend = link?.nameFor(data.me!) ?? 'Your friend';
+    final theyPaid = e.creditor != data.me;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: Card.outlined(
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(children: [
+                Icon(Icons.help_outline, color: Theme.of(context).colorScheme.primary),
+                const SizedBox(width: 8),
+                const Expanded(child: Text('Same payment?', style: TextStyle(fontWeight: FontWeight.w600))),
+              ]),
+              const SizedBox(height: 6),
+              Text(theyPaid
+                  ? 'Was ${money(t.amount)} ${t.isDebit ? 'to' : 'from'} ${t.title} (${dayLabel(t.txnAt)}) the ${money(e.amount)} $friend says they paid you?'
+                  : 'Was ${money(t.amount)} to ${t.title} (${dayLabel(t.txnAt)}) the ${money(e.amount)} $friend says you paid them?'),
+              const SizedBox(height: 4),
+              Text('Yes also remembers ${t.title} as $friend.', style: Theme.of(context).textTheme.bodySmall),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(onPressed: () => data.answerMatch(question.id, false), child: const Text('No')),
+                  FilledButton(onPressed: () => data.answerMatch(question.id, true), child: const Text('Yes, same')),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Enter a friend's invite code (or open their invite link).
+Future<void> showAcceptInvite(BuildContext context, AppData data, {String? code}) async {
+  final codeCtl = TextEditingController(text: code ?? '');
+  final nameCtl = TextEditingController();
+  String? error;
+  await showDialog<void>(
+    context: context,
+    builder: (c) => StatefulBuilder(
+      builder: (c, set) => AlertDialog(
+        title: const Text('Connect with a friend'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(controller: codeCtl, decoration: const InputDecoration(labelText: 'Invite code')),
+            const SizedBox(height: 12),
+            TextField(
+              controller: nameCtl,
+              textCapitalization: TextCapitalization.words,
+              decoration: const InputDecoration(labelText: 'Your friend\'s name', helperText: 'As it shows in your bank, e.g. Rahul Kumar'),
+            ),
+            if (error != null) Padding(padding: const EdgeInsets.only(top: 8), child: Text(error!, style: TextStyle(color: Theme.of(c).colorScheme.error))),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c), child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () async {
+              if (codeCtl.text.trim().isEmpty || nameCtl.text.trim().isEmpty) return set(() => error = 'Enter the code and the name');
+              try {
+                await data.acceptInvite(codeCtl.text, nameCtl.text);
+                if (c.mounted) Navigator.pop(c);
+              } catch (e) {
+                final msg = e.toString();
+                final m = RegExp(r'message: ([^,]+)').firstMatch(msg);
+                set(() => error = m?.group(1) ?? msg);
+              }
+            },
+            child: const Text('Connect'),
+          ),
+        ],
+      ),
+    ),
+  );
 }
 
 class FriendDetailScreen extends StatelessWidget {
@@ -113,7 +260,8 @@ class FriendDetailScreen extends StatelessWidget {
 
   Future<void> _settle(BuildContext context, double balance) async {
     final iPaid = balance > 0;
-    final amount = TextEditingController(text: balance.abs() < 0.005 ? '' : balance.abs().toStringAsFixed(balance.abs() == balance.abs().roundToDouble() ? 0 : 2));
+    final amount = TextEditingController(
+        text: balance.abs() < 0.005 ? '' : balance.abs().toStringAsFixed(balance.abs() == balance.abs().roundToDouble() ? 0 : 2));
     final ok = await showDialog<bool>(
       context: context,
       builder: (c) => AlertDialog(
@@ -150,17 +298,84 @@ class FriendDetailScreen extends StatelessWidget {
     await launchUrl(Uri.parse('https://wa.me/?text=${Uri.encodeComponent(text)}'), mode: LaunchMode.externalApplication);
   }
 
+  Future<void> _invite(BuildContext context) async {
+    try {
+      final code = await data.inviteFriend(person);
+      final text = 'Hi ${person.split(' ').first}, I track our payments in Expense Tracker. Join so what we send each other '
+          'and share shows up in both our apps: $_appLink#invite-$code\n'
+          'Or in the app: Friends → Enter invite code: $code';
+      await launchUrl(Uri.parse('https://wa.me/?text=${Uri.encodeComponent(text)}'), mode: LaunchMode.externalApplication);
+    } catch (e) {
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not make an invite: $e')));
+    }
+  }
+
+  Future<void> _alias(BuildContext context) async {
+    final known = <String>{
+      for (final t in data.transactions)
+        if (t.fromEmail || t.source == 'statement')
+          if (looksLikePerson(t.merchant) && AppData.keyOf(t.merchant!) != AppData.keyOf(person)) t.merchant!.trim(),
+    }.toList()
+      ..sort();
+    final ctl = TextEditingController();
+    final picked = await showDialog<String>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: Text('Also known as'),
+        content: SizedBox(
+          width: 360,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('Does $person sometimes pay from another account, like a parent\'s? Pick that name: its payments then count as $person.',
+                  style: Theme.of(c).textTheme.bodySmall),
+              const SizedBox(height: 8),
+              TextField(controller: ctl, decoration: const InputDecoration(labelText: 'Name as the bank shows it')),
+              const SizedBox(height: 8),
+              Flexible(
+                child: ListView(
+                  shrinkWrap: true,
+                  children: [for (final n in known.take(40)) ListTile(dense: true, title: Text(n), onTap: () => Navigator.pop(c, n))],
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(c, ctl.text.trim()), child: const Text('Add')),
+        ],
+      ),
+    );
+    if (picked != null && picked.isNotEmpty) await data.addAlias(picked, person);
+  }
+
+  String _entryText(SharedEntry e, String me) {
+    final mine = e.creditor == me;
+    final what = e.description == null || e.description!.isEmpty ? '' : ' · ${e.description}';
+    return switch (e.kind) {
+      'expense' => mine ? '$person\'s share$what' : 'Your share$what ($person paid)',
+      _ => mine ? 'You paid $person$what' : '$person paid you$what',
+    };
+  }
+
   @override
   Widget build(BuildContext context) {
-    final key = person.toLowerCase().trim();
-    final l = loanBalances(data.transactions, data.loanCategoryIds, shares: data.shares)
-        .where((x) => x.person.toLowerCase().trim() == key)
+    final key = AppData.keyOf(person);
+    final link = data.linkFor(person);
+    final pending = data.pendingInviteFor(person);
+    final me = data.me;
+    final l = loanBalances(data.transactions, data.loanCategoryIds, shares: data.shares, aliases: data.aliases)
+        .where((x) => AppData.keyOf(x.person) == key)
         .firstOrNull;
-    final balance = l?.balance ?? 0;
-    final open = data.shares.where((s) => !s.paid && s.person.toLowerCase().trim() == key).toList();
-    final paidForMe = data.transactions.where((t) => t.paidBy?.toLowerCase().trim() == key).toList();
+    final balance = link != null && me != null ? sharedBalance(data.sharedEntries, link.id, me) : (l?.balance ?? 0);
+    final open = data.shares.where((s) => !s.paid && AppData.keyOf(s.person) == key).toList();
+    final paidForMe = data.transactions.where((t) => t.paidBy != null && AppData.keyOf(t.paidBy!) == key).toList();
+    final otherNames = data.aliases.entries.where((e) => AppData.keyOf(e.value) == key).map((e) => e.key).toList();
     final scheme = Theme.of(context).colorScheme;
     final settled = balance.abs() < 0.005;
+    final entries = link == null ? const <SharedEntry>[] : (data.sharedEntries.where((e) => e.linkId == link.id).toList()
+      ..sort((a, b) => b.at.compareTo(a.at)));
 
     return Scaffold(
       appBar: AppBar(
@@ -168,12 +383,21 @@ class FriendDetailScreen extends StatelessWidget {
         actions: [
           PopupMenuButton<String>(
             onSelected: (v) async {
-              if (v == 'unfriend') {
-                await data.markFriend(person, friend: false);
-                if (context.mounted) Navigator.pop(context);
+              switch (v) {
+                case 'alias':
+                  await _alias(context);
+                case 'disconnect':
+                  if (link != null) await data.disconnect(link.id);
+                case 'unfriend':
+                  await data.markFriend(person, friend: false);
+                  if (context.mounted) Navigator.pop(context);
               }
             },
-            itemBuilder: (_) => const [PopupMenuItem(value: 'unfriend', child: Text('Not a friend (count as spending)'))],
+            itemBuilder: (_) => [
+              const PopupMenuItem(value: 'alias', child: Text('Also known as… (another account)')),
+              if (link != null) const PopupMenuItem(value: 'disconnect', child: Text('Disconnect')),
+              const PopupMenuItem(value: 'unfriend', child: Text('Not a friend (count as spending)')),
+            ],
           ),
         ],
       ),
@@ -190,6 +414,10 @@ class FriendDetailScreen extends StatelessWidget {
                 Text(money(balance.abs()),
                     style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                         color: settled ? null : (balance > 0 ? scheme.error : Colors.green.shade700))),
+                if (otherNames.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text('Also: ${otherNames.join(', ')}', style: Theme.of(context).textTheme.bodySmall),
+                ],
               ],
             ),
           ),
@@ -217,43 +445,101 @@ class FriendDetailScreen extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(height: 16),
-          for (final s in open)
-            ListTile(
-              leading: Icon(Icons.call_split, color: Colors.green.shade700),
-              title: Text('Their part of ${data.txn(s.txnId)?.title ?? 'a shared expense'}'),
-              subtitle: Text(data.txn(s.txnId) == null ? 'Owes you' : '${dayLabel(data.txn(s.txnId)!.txnAt)} · owes you'),
-              trailing: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(money(s.amount), style: const TextStyle(fontWeight: FontWeight.w600)),
-                  IconButton(tooltip: 'Paid back in cash', icon: const Icon(Icons.check_circle_outline), onPressed: () => data.markSharePaid(s.id)),
-                ],
-              ),
-              onTap: data.txn(s.txnId) == null ? null : () => openTxnEditor(context, data, existing: data.txn(s.txnId)),
-            ),
-          for (final t in paidForMe)
-            ListTile(
-              leading: Icon(Icons.call_split, color: scheme.error),
-              title: Text('$person paid: ${t.title}'),
-              subtitle: Text('${dayLabel(t.txnAt)} · your share, you owe'),
-              trailing: Text(money(t.amount), style: const TextStyle(fontWeight: FontWeight.w600)),
-              onTap: () => openTxnEditor(context, data, existing: t),
-            ),
-          for (final t in l?.txns ?? const <Txn>[])
-            if (t.paidBy == null)
+          const SizedBox(height: 12),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: link != null
+                ? Card.filled(
+                    child: ListTile(
+                      leading: Icon(Icons.link, color: Colors.green.shade700),
+                      title: const Text('Connected'),
+                      subtitle: Text('$person sees the same entries and balance in their app.'),
+                    ),
+                  )
+                : Card.outlined(
+                    child: ListTile(
+                      leading: const Icon(Icons.share),
+                      title: Text(pending == null ? 'Connect with $person' : 'Invite sent · code ${pending.code}'),
+                      subtitle: Text(pending == null
+                          ? 'If they use the app too, what you send each other and share shows up in both apps.'
+                          : 'Waiting for $person to accept. Tap to send it again.'),
+                      onTap: () => _invite(context),
+                    ),
+                  ),
+          ),
+          const SizedBox(height: 8),
+          if (link != null && me != null)
+            for (final e in entries)
               ListTile(
-                leading: Icon(t.isDebit ? Icons.call_made : Icons.call_received,
-                    color: t.isDebit ? Colors.green.shade700 : scheme.error),
-                title: Text(t.isDebit ? 'You sent' : 'You got'),
+                leading: Icon(
+                  e.kind == 'expense' ? Icons.call_split : (e.creditor == me ? Icons.call_made : Icons.call_received),
+                  color: e.deleted ? scheme.outline : (e.creditor == me ? Colors.green.shade700 : scheme.error),
+                ),
+                title: Text(_entryText(e, me),
+                    style: TextStyle(decoration: e.deleted ? TextDecoration.lineThrough : null)),
                 subtitle: Text([
-                  dayLabel(t.txnAt),
-                  if (data.account(t.accountId) != null) data.account(t.accountId)!.name,
-                  if ((t.note ?? '').isNotEmpty) t.note!,
+                  dayLabel(e.at),
+                  if (e.deleted) 'removed by ${e.deletedBy == me ? 'you' : person}' else 'added by ${e.createdBy == me ? 'you' : person}',
+                  if (!e.deleted && (e.creditor == me ? e.creditorTxn : e.debtorTxn) != null) 'in your bank',
                 ].join(' · ')),
+                trailing: Text(money(e.amount),
+                    style: TextStyle(fontWeight: FontWeight.w600, color: e.deleted ? scheme.outline : null)),
+                onLongPress: e.deleted
+                    ? null
+                    : () async {
+                        final yes = await showDialog<bool>(
+                          context: context,
+                          builder: (c) => AlertDialog(
+                            title: const Text('Remove this entry?'),
+                            content: Text('It is removed for $person too; they see that you removed it.'),
+                            actions: [
+                              TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancel')),
+                              FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Remove')),
+                            ],
+                          ),
+                        );
+                        if (yes == true) await data.deleteSharedEntry(e.id);
+                      },
+              )
+          else ...[
+            for (final s in open)
+              ListTile(
+                leading: Icon(Icons.call_split, color: Colors.green.shade700),
+                title: Text('Their part of ${data.txn(s.txnId)?.title ?? 'a shared expense'}'),
+                subtitle: Text(data.txn(s.txnId) == null ? 'Owes you' : '${dayLabel(data.txn(s.txnId)!.txnAt)} · owes you'),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(money(s.amount), style: const TextStyle(fontWeight: FontWeight.w600)),
+                    IconButton(tooltip: 'Paid back in cash', icon: const Icon(Icons.check_circle_outline), onPressed: () => data.markSharePaid(s.id)),
+                  ],
+                ),
+                onTap: data.txn(s.txnId) == null ? null : () => openTxnEditor(context, data, existing: data.txn(s.txnId)),
+              ),
+            for (final t in paidForMe)
+              ListTile(
+                leading: Icon(Icons.call_split, color: scheme.error),
+                title: Text('$person paid: ${t.title}'),
+                subtitle: Text('${dayLabel(t.txnAt)} · your share, you owe'),
                 trailing: Text(money(t.amount), style: const TextStyle(fontWeight: FontWeight.w600)),
                 onTap: () => openTxnEditor(context, data, existing: t),
               ),
+            for (final t in l?.txns ?? const <Txn>[])
+              if (t.paidBy == null)
+                ListTile(
+                  leading: Icon(t.isDebit ? Icons.call_made : Icons.call_received,
+                      color: t.isDebit ? Colors.green.shade700 : scheme.error),
+                  title: Text(t.isDebit ? 'You sent' : 'You got'),
+                  subtitle: Text([
+                    dayLabel(t.txnAt),
+                    if (AppData.keyOf(t.title) != key) 'as ${t.title}',
+                    if (data.account(t.accountId) != null) data.account(t.accountId)!.name,
+                    if ((t.note ?? '').isNotEmpty) t.note!,
+                  ].join(' · ')),
+                  trailing: Text(money(t.amount), style: const TextStyle(fontWeight: FontWeight.w600)),
+                  onTap: () => openTxnEditor(context, data, existing: t),
+                ),
+          ],
         ],
       ),
     );

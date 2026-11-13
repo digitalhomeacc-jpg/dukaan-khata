@@ -208,14 +208,18 @@ class LoanBalance {
 /// Running balance per friend over all loan transactions. Received money is
 /// borrowing (or being repaid); spent money is lending (or repaying).
 /// Unpaid shares of group payments count as money the friend owes you.
-List<LoanBalance> loanBalances(Iterable<Txn> txns, Set<String> loanCategoryIds, {Iterable<TxnShare> shares = const []}) {
+List<LoanBalance> loanBalances(Iterable<Txn> txns, Set<String> loanCategoryIds,
+    {Iterable<TxnShare> shares = const [], Map<String, String> aliases = const {}}) {
+  // "Also known as": a payee name (e.g. a parent's account) counts as that friend.
+  String canon(String name) => aliases[name.toLowerCase().replaceAll(RegExp(r'\s+'), ' ').trim()] ?? name.trim();
   final byPerson = <String, List<Txn>>{};
   final names = <String, String>{};
   final owesYou = <String, double>{};
   for (final s in shares) {
     if (s.paid) continue;
-    final key = s.person.toLowerCase().trim();
-    names.putIfAbsent(key, () => s.person.trim());
+    final person = canon(s.person);
+    final key = person.toLowerCase();
+    names.putIfAbsent(key, () => person);
     owesYou[key] = (owesYou[key] ?? 0) + s.amount;
     byPerson.putIfAbsent(key, () => []);
   }
@@ -223,15 +227,17 @@ List<LoanBalance> loanBalances(Iterable<Txn> txns, Set<String> loanCategoryIds, 
   for (final t in txns) {
     if (t.paidBy != null && t.paidBy!.trim().isNotEmpty) {
       // A friend paid for you: you owe them your share.
-      final key = t.paidBy!.toLowerCase().trim();
-      names.putIfAbsent(key, () => t.paidBy!.trim());
+      final person = canon(t.paidBy!);
+      final key = person.toLowerCase();
+      names.putIfAbsent(key, () => person);
       owedToThem[key] = (owedToThem[key] ?? 0) + t.amount;
       byPerson.putIfAbsent(key, () => []);
       continue;
     }
     if (!loanCategoryIds.contains(t.categoryId)) continue;
-    final key = t.title.toLowerCase().trim();
-    names.putIfAbsent(key, () => t.title);
+    final person = canon(t.title);
+    final key = person.toLowerCase();
+    names.putIfAbsent(key, () => person);
     byPerson.putIfAbsent(key, () => []).add(t);
   }
   final out = [
@@ -455,3 +461,8 @@ List<PayeeSummary> peopleToReview(Iterable<Txn> txns, {Set<String> decided = con
   }
   return map.values.toList()..sort((a, b) => b.count.compareTo(a.count));
 }
+
+/// Balance with a connected friend from the shared record: positive = you owe them.
+double sharedBalance(Iterable<SharedEntry> entries, String linkId, String me) => _round(entries
+    .where((e) => e.linkId == linkId && !e.deleted)
+    .fold(0.0, (s, e) => s + (e.debtor == me ? e.amount : (e.creditor == me ? -e.amount : 0))));

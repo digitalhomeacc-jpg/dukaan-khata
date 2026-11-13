@@ -49,6 +49,22 @@ class AppData extends ChangeNotifier {
         budgets = rows.map(Budget.fromMap).toList();
         notifyListeners();
       }, onError: _onError),
+      db.from('friend_links').stream(primaryKey: ['id']).listen((rows) {
+        links = rows.map(FriendLink.fromMap).toList();
+        notifyListeners();
+      }, onError: _onError),
+      db.from('shared_entries').stream(primaryKey: ['id']).order('at').listen((rows) {
+        sharedEntries = rows.map(SharedEntry.fromMap).toList();
+        notifyListeners();
+      }, onError: _onError),
+      db.from('match_questions').stream(primaryKey: ['id']).listen((rows) {
+        questions = rows.map(MatchQuestion.fromMap).toList();
+        notifyListeners();
+      }, onError: _onError),
+      db.from('friend_aliases').stream(primaryKey: ['user_id', 'alias_key']).listen((rows) {
+        aliases = {for (final r in rows) r['alias_key'] as String: r['friend_name'] as String};
+        notifyListeners();
+      }, onError: _onError),
       db.from('profiles').stream(primaryKey: ['id']).listen((rows) {
         if (rows.isNotEmpty) profile = rows.first;
         notifyListeners();
@@ -68,6 +84,11 @@ class AppData extends ChangeNotifier {
     this.balanceReadings = const [],
     this.shares = const [],
     this.budgets = const [],
+    this.links = const [],
+    this.sharedEntries = const [],
+    this.questions = const [],
+    this.aliases = const {},
+    this.myId,
     this.unread = const [],
     this.profile = const {},
   })  : _client = null,
@@ -89,6 +110,34 @@ class AppData extends ChangeNotifier {
   List<BalanceReading> balanceReadings = const [];
   List<TxnShare> shares = const [];
   List<Budget> budgets = const [];
+  List<FriendLink> links = const [];
+  List<SharedEntry> sharedEntries = const [];
+  List<MatchQuestion> questions = const [];
+
+  /// Payee name (lower case) → friend name: "Also known as".
+  Map<String, String> aliases = const {};
+
+  /// Signed-in user id (set directly in previews).
+  String? myId;
+  String? get me => myId ?? user?.id;
+
+  /// The active connection with this friend (by the name in my list), if any.
+  FriendLink? linkFor(String person) {
+    final k = keyOf(person);
+    for (final l in links) {
+      if (l.active && me != null && keyOf(l.nameFor(me!)) == k) return l;
+    }
+    return null;
+  }
+
+  /// An invite I sent to this friend that is not accepted yet.
+  FriendLink? pendingInviteFor(String person) {
+    final k = keyOf(person);
+    for (final l in links) {
+      if (!l.active && l.a == me && keyOf(l.aNameForB) == k) return l;
+    }
+    return null;
+  }
   ShareTotals? _shareTotals;
 
   /// Friends' parts of group payments, for the totals.
@@ -327,6 +376,37 @@ class AppData extends ChangeNotifier {
     }
     throw Exception('Unexpected answer from the server');
   }
+
+  // ------------------------------------------------------ connected friends
+
+  /// Makes an invite for this friend; returns the code to send them.
+  Future<String> inviteFriend(String person) async {
+    final existing = pendingInviteFor(person);
+    if (existing != null) return existing.code;
+    final row = await _db.from('friend_links').insert({'a_name_for_b': person.trim()}).select('code').single();
+    return row['code'] as String;
+  }
+
+  /// Accepts a friend's invite; their payments with you then show in both apps.
+  Future<void> acceptInvite(String code, String friendName) async {
+    await _db.rpc('accept_friend_invite', params: {'p_code': code.trim().toLowerCase(), 'p_name_for_inviter': friendName.trim()});
+    await markFriend(friendName);
+  }
+
+  Future<void> disconnect(String linkId) => _db.from('friend_links').delete().eq('id', linkId);
+
+  Future<void> answerMatch(String questionId, bool yes) =>
+      _db.rpc('answer_match', params: {'p_question': questionId, 'p_yes': yes});
+
+  /// Removes a shared entry for both of you (the other person sees who removed it).
+  Future<void> deleteSharedEntry(String id) => _db.from('shared_entries').update({
+        'deleted_at': DateTime.now().toUtc().toIso8601String(),
+        'deleted_by': me,
+      }).eq('id', id);
+
+  /// "Also known as": payments from this payee name count as that friend.
+  Future<void> addAlias(String payeeName, String friendName) =>
+      _db.rpc('add_friend_alias', params: {'p_alias': payeeName, 'p_friend': friendName});
 
   // ---------------------------------------------------------------- budgets
 

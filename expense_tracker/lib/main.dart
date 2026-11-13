@@ -5,7 +5,12 @@ import 'config.dart';
 import 'screens/home_shell.dart';
 import 'screens/login_screen.dart';
 
+/// Invite code from a link like …/expense-tracker/#invite-abc123 (web), read once at start.
+String? pendingInviteCode;
+
 Future<void> main() async {
+  final fragment = Uri.base.fragment;
+  if (fragment.startsWith('invite-')) pendingInviteCode = fragment.substring('invite-'.length);
   WidgetsFlutterBinding.ensureInitialized();
   if (AppConfig.isConfigured) {
     await Supabase.initialize(url: AppConfig.supabaseUrl, publishableKey: AppConfig.supabaseKey);
