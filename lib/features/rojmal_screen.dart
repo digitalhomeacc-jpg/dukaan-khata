@@ -193,7 +193,7 @@ class _RojmalScreenState extends State<RojmalScreen> {
         );
     // counter sales without a customer name (रोख विक्री): one line with the
     // total, tap to see each bill
-    bool walkIn(CashRow r) => r.type == VoucherType.sale && r.particulars.isEmpty && !r.varhai;
+    bool walkIn(CashRow r) => r.walkInSale;
     final groups = <String, List<CashRow>>{}; // by cash / PhonePe / bank
     for (final r in rows.where(walkIn)) {
       groups.putIfAbsent(r.code ?? '', () => []).add(r);
@@ -338,17 +338,15 @@ class _DayEndCard extends StatelessWidget {
             padding: const EdgeInsets.symmetric(vertical: 4),
             child: Row(children: [
               Expanded(child: Text(t('hamal_count'), style: const TextStyle(fontWeight: FontWeight.w600))),
-              IconButton.filledTonal(
-                  key: const Key('hamal_minus'),
-                  visualDensity: VisualDensity.compact,
-                  icon: const Icon(Icons.remove, size: 18),
-                  onPressed: hamals > 0 ? () => app.setPrefInt('hamals_${c.date}', hamals - 1) : null),
-              SizedBox(width: 36, child: Text('$hamals', textAlign: TextAlign.center, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800))),
-              IconButton.filledTonal(
-                  key: const Key('hamal_plus'),
-                  visualDensity: VisualDensity.compact,
-                  icon: const Icon(Icons.add, size: 18),
-                  onPressed: () => app.setPrefInt('hamals_${c.date}', hamals + 1)),
+              // saved number, changed only on purpose (no stray taps)
+              if (hamals > 0) ...[
+                const Icon(Icons.lock_outline, size: 16),
+                const SizedBox(width: 4),
+                Text('$hamals', key: const Key('hamal_saved'), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+                TextButton(key: const Key('hamal_edit'), onPressed: () => _setHamals(context, c.date, hamals), child: Text(t('change'))),
+              ] else
+                FilledButton.tonal(
+                    key: const Key('hamal_set'), onPressed: () => _setHamals(context, c.date, hamals), child: Text(t('hamal_set'))),
             ]),
           ),
           if (hamals > 0) ...[
@@ -574,4 +572,32 @@ class _UdhariView extends StatelessWidget {
       },
     );
   }
+}
+
+/// Hamal count for the day: picked in a box and saved with a button.
+Future<void> _setHamals(BuildContext context, String date, int current) async {
+  final app = App.read(context);
+  final t = app.t;
+  var n = current;
+  final saved = await showDialog<int>(
+    context: context,
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setD) => AlertDialog(
+        title: Text(t('hamal_count')),
+        content: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+          IconButton.filledTonal(
+              key: const Key('hamal_minus'), icon: const Icon(Icons.remove), onPressed: n > 0 ? () => setD(() => n--) : null),
+          SizedBox(
+              width: 64,
+              child: Text('$n', textAlign: TextAlign.center, style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w800))),
+          IconButton.filledTonal(key: const Key('hamal_plus'), icon: const Icon(Icons.add), onPressed: () => setD(() => n++)),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: Text(t('cancel'))),
+          FilledButton(key: const Key('hamal_save'), onPressed: () => Navigator.pop(ctx, n), child: Text(t('save'))),
+        ],
+      ),
+    ),
+  );
+  if (saved != null && saved != current) await app.setPrefInt('hamals_$date', saved);
 }

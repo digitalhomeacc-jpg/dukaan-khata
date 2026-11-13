@@ -1220,4 +1220,33 @@ void main() {
     final (v2, _) = await vs.load(id);
     expect(v2.haste, isNull);
   });
+
+  test('rojmel PDF: counter sales as one total with each bill listed under it', () async {
+    final m = items.values.first;
+    Future<void> walkIn(int rate, String pay) => vs.save(
+        VoucherInput(type: VoucherType.sale, date: '2026-11-05', payLedgerId: vs.sys(pay), paid: rs(rate),
+            items: [ItemLine(m.id, 1, rs(rate))]),
+        owner);
+    await walkIn(100, 'cash');
+    await walkIn(250, 'cash');
+    await walkIn(70, 'upi_h'); // a single PhonePe counter sale stays as it is
+    final named = await lr.create(name: 'Named', group: LedgerGroup.customer);
+    await vs.save(
+        VoucherInput(type: VoucherType.sale, date: '2026-11-05', partyId: named, payLedgerId: vs.sys('cash'), paid: rs(40),
+            items: [ItemLine(m.id, 1, rs(40))]),
+        owner);
+    final tb = await Reports(db, biz, (k) => k).moneyBook([vs.sys('cash'), vs.sys('upi_h')], 'R', '2026-11-05', '2026-11-05');
+    final head = tb.rows.indexWhere((r) => r[1].startsWith('cash_sale (2'));
+    expect(head, isNot(-1));
+    expect(tb.rows[head][3], Money.fmt(rs(350)));
+    expect(tb.highlight, {head});
+    expect(tb.rows[head + 1][3], '', reason: 'bills under the total add nothing to the column');
+    expect(tb.rows.where((r) => r[1].contains('- bill')).length, 2);
+    expect(tb.rows.where((r) => r[1] == 'Named').length, 1);
+    expect(tb.rows.where((r) => r[1] == 'cash_sale' && r[2] == 'H').length, 1);
+    // the column total is unchanged by the grouping
+    expect(tb.totals![3], Money.fmt(rs(460)));
+    final listed = tb.rows.map((r) => Money.parse(r[3]) ?? 0).fold<int>(0, (a, b) => a + b);
+    expect(listed, rs(460));
+  });
 }

@@ -89,8 +89,13 @@ class CashRow {
   final String? narration;
   /// Cash the company's driver handed over with a purchase (वराई).
   final bool varhai;
+  /// Bill number (विक्री #18).
+  final int? vno;
   CashRow(this.voucherId, this.type, this.particulars, this.inflow, this.outflow, this.code,
-      this.gstBillNeeded, this.narration, {this.varhai = false});
+      this.gstBillNeeded, this.narration, {this.varhai = false, this.vno});
+
+  /// A counter sale: no customer name (रोख विक्री).
+  bool get walkInSale => type == VoucherType.sale && particulars.isEmpty && !varhai;
 }
 
 class CashBook {
@@ -663,7 +668,7 @@ class LedgerRepo {
       [...moneyLedgerIds, date, ...moneyLedgerIds],
     );
     final rows = await db.getAll(
-      'SELECT v.id, v.vtype, v.narration, v.gst_bill_needed, ml.short_code AS code, SUM(vl.debit) AS d, SUM(vl.credit) AS c, '
+      'SELECT v.id, v.vtype, v.vno, v.narration, v.gst_bill_needed, ml.short_code AS code, SUM(vl.debit) AS d, SUM(vl.credit) AS c, '
       '(SELECT GROUP_CONCAT(x.name, \' / \') FROM (SELECT DISTINCT l2.name FROM voucher_lines vl2 JOIN ledgers l2 ON l2.id = vl2.ledger_id '
       ' WHERE vl2.voucher_id = v.id AND vl2.deleted = 0 AND vl2.ledger_id NOT IN ($ph) '
       " AND l2.grp NOT IN ('sales','purchase','sales_return','purchase_return')) x) AS other, "
@@ -700,7 +705,8 @@ class LedgerRepo {
       }
       final net = d - c;
       if (net == 0) continue;
-      out.add(CashRow(r['id'] as String, type, particulars, net > 0 ? net : 0, net < 0 ? -net : 0, code, gst, narration));
+      out.add(CashRow(r['id'] as String, type, particulars, net > 0 ? net : 0, net < 0 ? -net : 0, code, gst, narration,
+          vno: (r['vno'] as num?)?.toInt()));
     }
     return CashBook(date, (o['b'] as num).toInt(), out);
   }

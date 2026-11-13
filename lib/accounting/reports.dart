@@ -471,12 +471,45 @@ class Reports {
   Future<ReportTable> moneyBook(List<String> ledgerIds, String title, String from, String to) async {
     final rows = <List<String>>[];
     final refs = <String?>[];
+    final highlight = <int>{};
     int? opening;
     var tin = 0, tout = 0, closing = 0;
     for (var d = parseIso(from); !d.isAfter(parseIso(to)); d = d.add(const Duration(days: 1))) {
       final book = await ledgers.cashBook(ledgerIds, isoDate(d));
       opening ??= book.opening;
+      // counter sales (रोख विक्री): one total line, as written in the cash book,
+      // with each bill listed under it – per cash / PhonePe / bank
+      final counter = <String, List<CashRow>>{};
+      for (final r in book.rows.where((r) => r.walkInSale)) {
+        counter.putIfAbsent(r.code ?? '', () => []).add(r);
+      }
       for (final r in book.rows) {
+        final g = r.walkInSale ? counter[r.code ?? '']! : const <CashRow>[];
+        if (g.length >= 2) {
+          if (!identical(r, g.first)) continue;
+          final sum = g.fold<int>(0, (s, x) => s + x.inflow - x.outflow);
+          highlight.add(rows.length);
+          rows.add([
+            shortDate(book.date),
+            '${tr('cash_sale')} (${g.length} ${tr('bills')})',
+            r.code ?? '',
+            sum > 0 ? Money.fmt(sum) : '',
+            sum < 0 ? Money.fmt(-sum) : '',
+          ]);
+          refs.add(null);
+          for (final x in g) {
+            rows.add([
+              '',
+              '    - ${tr('bill')} ${x.vno != null ? '#${x.vno}' : ''}: ${Money.fmt(x.inflow - x.outflow)}'
+                  '${x.narration != null ? ' · ${x.narration}' : ''}',
+              '',
+              '',
+              '',
+            ]);
+            refs.add(x.voucherId);
+          }
+          continue;
+        }
         rows.add([
           shortDate(book.date),
           '${r.varhai ? '${tr('varhai')}${r.particulars.isNotEmpty ? ' · ${r.particulars}' : ''}' : r.particulars.isNotEmpty ? r.particulars : tr(r.type == VoucherType.sale ? 'cash_sale' : r.type == VoucherType.purchase ? 'cash_purchase' : 'vt_${r.type.code}')}${r.narration != null && r.narration != r.particulars ? ' · ${r.narration}' : ''}',
@@ -502,6 +535,7 @@ class Reports {
       ],
       rows: rows,
       rowRefs: refs,
+      highlight: highlight,
       totals: ['', tr('total'), '', Money.fmt(tin), Money.fmt(tout)],
     );
   }
