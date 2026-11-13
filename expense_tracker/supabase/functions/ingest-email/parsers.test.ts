@@ -433,3 +433,11 @@ test("payee UPI ID: last 4 + first letter of the handle", () => {
   assert.equal(findPayeeVpa("debited from your account ending 3191 towards VPA ******6712@ybl (Hotel Sagar) on 12-11-26."), "6712@y");
   assert.equal(findPayeeVpa("Sender: ROHAN (VPA: ************00-1@okicici)"), "00-1@o");
 });
+
+test("brands are found in the UPI ID or statement details too", () => {
+  assert.equal(defaultCategoryName("Ravi Kumar", "UPI-RAVI KUMAR-swiggy.stores@axb-..."), "Food & Dining");
+  assert.equal(defaultCategoryName("Payu", "ME DC SI 4160 MYNTRA DESIGNS"), "Shopping");
+  assert.equal(defaultCategoryName("Blinkit Commerce", null), "Groceries");
+  assert.equal(defaultCategoryName("Ajio", null), "Shopping");
+  assert.equal(defaultCategoryName("Ravi Kumar", "UPI-RAVI KUMAR-9000000000@ybl-..."), null);
+});

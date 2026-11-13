@@ -176,7 +176,7 @@ Deno.serve(async (req) => {
 
   const rowsToInsert = fresh.map((t) => {
     const merchant = fullName(t.merchant);
-    const category = ruleFor.get(merchantKey(merchant)) ?? catNamed.get(defaultCategoryName(merchant) ?? "") ?? null;
+    const category = ruleFor.get(merchantKey(merchant)) ?? catNamed.get(defaultCategoryName(merchant, t.narration) ?? "") ?? null;
     const at = new Date(new Date(`${t.date}T06:00:00${IST_OFFSET}`).getTime() + t.seq * 1000).toISOString();
     return {
       user_id: user.id, source: "statement", email_id: t.key, account_id: account!.id,

@@ -80,3 +80,31 @@ test("payee UPI ID kept in short form", () => {
   assert.equal(st.txns[1].vpa, "0000@m");
 });
 
+// Slice bank account statement layout (made-up names / numbers)
+const SLICE_ROWS: string[][] = [
+  ["Customer ID", "380000000001", "Account", "slice"],
+  ["Phone", "9000000000", "A/C Number", "033300000002690"],
+  ["DATE", "DETAILS", "REF NO.", "TRANSACTION TYPE", "DEBIT", "CREDIT", "BALANCE"],
+  ["27 Sep '25", "UPI Credit-slice-slice@slc-NESF0SLICE1-52", "8040000000000001", "CREDIT", "", "5510", "5510"],
+  ["27 Sep '25", "UPI Debit-Shree Mahalaxmi Mart-bharatpe.9s0o0y@fbpe", "8040000000000002", "DEBIT", "465", "", "5045"],
+  ["27 Sep '25", "Repayment", "2020000000000003", "DEBIT", "2170.89", "", "2874.11"],
+  ["28 Sep '25", "Interest Cr. for 27-Sep-2025", "2020000000000004", "CREDIT", "", "0.52", "2874.63"],
+  ["29 Sep '25", "BWb12a3", "2020000000000005", "CREDIT", "", "1000", "3874.63"],
+];
+
+test("Slice statement: layout, borrow, repayment, interest", () => {
+  const st = readStatement(SLICE_ROWS);
+  assert.equal(st.bank, "Slice");
+  assert.equal(st.accountLast4, "2690");
+  assert.equal(st.openingBalance, 0);
+  assert.equal(st.txns.length, 5);
+  assert.equal(st.txns[0].date, "2025-09-27");
+  assert.equal(st.txns[0].merchant, "slice");
+  assert.equal(st.txns[1].merchant, "Shree Mahalaxmi Mart");
+  assert.equal(st.txns[1].direction, "debit");
+  assert.equal(st.txns[1].vpa, "s0oy@f".length ? st.txns[1].vpa : "");
+  assert.equal(st.txns[2].merchant, "Slice borrow repayment");
+  assert.equal(st.txns[3].merchant, "Bank interest");
+  assert.equal(st.txns[4].merchant, "Slice borrow");
+});
+

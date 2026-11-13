@@ -79,8 +79,8 @@ Deno.serve(async (req) => {
   const { data: cats } = await supabase.from("categories").select("id, name").eq("user_id", userId);
   const categoryNamed = new Map((cats ?? []).map((c) => [c.name as string, c.id as string]));
   /** The user's rule for this payee, else a default for well-known names (Zomato → Food & Dining). */
-  const categoryFor = (merchant: string | null): string | null =>
-    ruleFor.get(merchantKey(merchant)) ?? categoryNamed.get(defaultCategoryName(merchant) ?? "") ?? null;
+  const categoryFor = (merchant: string | null, details?: string): string | null =>
+    ruleFor.get(merchantKey(merchant)) ?? categoryNamed.get(defaultCategoryName(merchant, details) ?? "") ?? null;
 
   const accounts = await loadAccounts(userId);
   const cashId = accounts.find((a) => a.kind === "cash")?.id ?? null;
@@ -142,7 +142,7 @@ Deno.serve(async (req) => {
       if (t.balanceAfter != null && accountId) {
         readings.push({ user_id: userId, account_id: accountId, balance: t.balanceAfter, as_of: t.txnAt, email_id: email.id });
       }
-      const rule = categoryFor(t.merchant);
+      const rule = categoryFor(t.merchant, (`${email.subject} ${email.body}`.match(/VPA:?\s*\S+@[\w.\-]+/i) ?? [""])[0]);
       const old = existing.get(email.id);
       if (!old) {
         inserts.push({ ...row, user_id: userId, source: "email", email_id: email.id, category_id: rule });

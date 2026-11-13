@@ -46,7 +46,7 @@ export function statementDate(v: string): string | null {
     const y = m[3].length === 2 ? `20${m[3]}` : m[3];
     return `${y}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
   }
-  m = s.match(/^(\d{1,2})[\s\-]([A-Za-z]{3})[a-z]*[\s\-,]+(\d{2}|\d{4})$/);
+  m = s.match(/^(\d{1,2})[\s\-]([A-Za-z]{3})[a-z]*[\s\-,]+'?(\d{2}|\d{4})$/);
   if (m && STATEMENT_MONTHS[m[2].toLowerCase()]) {
     const y = m[3].length === 2 ? `20${m[3]}` : m[3];
     return `${y}-${STATEMENT_MONTHS[m[2].toLowerCase()]}-${m[1].padStart(2, "0")}`;
@@ -70,6 +70,14 @@ export function readNarration(n: string): { merchant: string | null; method: Met
   if (/INSTAALERTCHG|SMS\s*ALERT|ALERT\s*CHG/i.test(s)) return { merchant: "Bank alert charges", method: "other", rrn, atm: false };
   if (/^(UPIRET|REV-UPI|UPI\s*REV)/i.test(s)) return { merchant: "UPI refund", method: "upi", rrn, atm: false };
   if (/stipend/i.test(s)) return { merchant: "Stipend", method: "netbanking", rrn, atm: false };
+  // Slice: "BW…" is a slice borrow order paid into the account; "Repayment" pays it back.
+  if (/^BW[0-9a-z]*\b/i.test(s)) return { merchant: "Slice borrow", method: "other", rrn, atm: false };
+  if (/^repayment\b/i.test(s)) return { merchant: "Slice borrow repayment", method: "other", rrn, atm: false };
+  // Slice / other banks: "UPI Debit-NAME-VPA-…", "UPI Credit-NAME-VPA-…", "IMPS Credit-NAME-…"
+  let w = s.match(/^UPI\s+(?:Debit|Credit|Dr|Cr)\s*-\s*([^-]+?)\s*-\s*([^\s]*@[^-\s]+)?/i);
+  if (w) return { merchant: cleanMerchant(w[1]), method: "upi", rrn, atm: false };
+  w = s.match(/^IMPS\s+(?:Debit|Credit|Dr|Cr)\s*-\s*([^-]+)/i);
+  if (w) return { merchant: cleanMerchant(w[1]), method: "netbanking", rrn, atm: false };
   // Name first, then the UPI ID (which may itself contain a dash: "7822965946-2@ybl").
   let m = s.match(/^UPI[-\/]([^-]+?)-([^\s]*@[^-\s]+)(?:-|$)/i);
   if (m) return { merchant: cleanMerchant(m[1]), method: "upi", rrn, atm: false };
@@ -92,7 +100,7 @@ export function readNarration(n: string): { merchant: string | null; method: Met
 
 const COLS = {
   date: /^(txn\s*|transaction\s*)?date$/i,
-  narration: /narration|description|particulars|remarks/i,
+  narration: /narration|description|particulars|remarks|details/i,
   ref: /ref|chq|cheque/i,
   debit: /withdrawal|debit|dr\b/i,
   credit: /deposit|credit|cr\b/i,
@@ -101,14 +109,19 @@ const COLS = {
 
 /** Reads statement rows (each row an array of cell texts). */
 export function readStatement(rows: string[][]): Statement {
-  const text = rows.slice(0, 40).map((r) => r.join(" ")).join("\n");
-  const bank = /hdfc/i.test(text) ? "HDFC" : /icici/i.test(text) ? "ICICI" : /state bank|sbi/i.test(text) ? "SBI" : /axis/i.test(text) ? "Axis" : null;
-  const acc = text.match(/account\s*(?:no|number)\.?\s*:?\s*[x*]*(\d{4,})/i);
-  const period = text.match(/from\s*:?\s*(\d{1,2}\/\d{1,2}\/\d{2,4})\s*to\s*:?\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
-
-  const headerAt = rows.findIndex((r) =>
+  const headerRow = rows.findIndex((r) =>
     r.some((c) => COLS.narration.test(c)) && r.some((c) => COLS.balance.test(c)) && r.some((c) => COLS.date.test(c.trim()))
   );
+  // Bank and account come from the top of the statement, never from transaction lines
+  // (a payment to someone at HDFC must not make a Slice statement "HDFC").
+  const text = rows.slice(0, headerRow > 0 ? headerRow : 40).map((r) => r.join(" ")).join("\n");
+  // Slice is run by North East Small Finance Bank (IFSC NESF…).
+  const bank = /\bslice\b|NESF0/i.test(text) ? "Slice" : /hdfc/i.test(text) ? "HDFC" : /icici/i.test(text) ? "ICICI"
+    : /state bank|sbi/i.test(text) ? "SBI" : /axis/i.test(text) ? "Axis" : /federal/i.test(text) ? "Federal" : null;
+  const acc = text.match(/(?:account|a\/c)\s*(?:no|number)\.?\s*:?\s*[x*]*(\d{4,})/i);
+  const period = text.match(/from\s*:?\s*(\d{1,2}\/\d{1,2}\/\d{2,4})\s*to\s*:?\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
+
+  const headerAt = headerRow;
   const st: Statement = {
     bank,
     accountLast4: acc ? acc[1].slice(-4) : null,
@@ -148,7 +161,7 @@ export function readStatement(rows: string[][]): Statement {
       direction: dr && dr > 0 ? "debit" : "credit",
       closingBalance: cBal >= 0 ? amount(r[cBal]) : null,
       merchant: info.merchant,
-      vpa: vpaTail(narration.match(/^UPI[-\/][^-]+?-([^\s]*@[^-\s]+)/i)?.[1]),
+      vpa: vpaTail(narration.match(/^UPI(?:\s+(?:Debit|Credit|Dr|Cr))?\s*[-\/][^-]+?-([^\s]*@[^-\s]+)/i)?.[1]),
       method: info.method,
       atm: info.atm && !!(dr && dr > 0),
     });

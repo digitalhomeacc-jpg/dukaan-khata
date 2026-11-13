@@ -562,21 +562,23 @@ export function parseBalanceEmail(email: EmailInput): BalanceReading | null {
 
 /** Well-known payees → the name of a default category. Used when the user has no rule. */
 const KNOWN_PAYEES: Array<[RegExp, string]> = [
-  [/\b(zomato|swiggy|domino|pizza|mcdonald|kfc|burger|starbucks|cafe|restaurant|hotel|dhaba|biryani|bakery|chai|tea)\b/i, "Food & Dining"],
-  [/\b(blinkit|zepto|bigbasket|dmart|d-mart|instamart|grocer|kirana|supermarket|reliance fresh|jiomart|milk|dairy)\b/i, "Groceries"],
-  [/\b(amazon|flipkart|myntra|ajio|meesho|nykaa|tata cliq|decathlon|reliance digital|croma)\b/i, "Shopping"],
+  [/(zerodha|groww|upstox|angel ?one|indmoney|smallcase|vested|kuvera|paytm ?money|mutual ?fund|\bmf\b|\bsip\b|nippon|\bkite\b|\bdhan\b)/i, "Investments"],
+  [/(zomato|swiggy|eatsure|domino|pizza|mcdonald|\bkfc\b|burger|starbucks|subway|haldiram|barbeque|cafe|restaurant|hotel|dhaba|biryani|bakery|\bchai\b|\btea\b|chaayos|wow ?momo|behrouz|faasos|box8|rebel ?foods)/i, "Food & Dining"],
+  [/(blinkit|grofers|zepto|bigbasket|\bbb ?now|dmart|d-mart|avenue ?supermarts|instamart|swiggy ?instamart|grocer|kirana|supermarket|reliance ?fresh|smart ?bazaar|jiomart|milk|dairy|country ?delight|licious)/i, "Groceries"],
+  [/(amazon|flipkart|myntra|ajio|meesho|nykaa|tata ?cliq|decathlon|reliance ?digital|croma|lenskart|firstcry|snapdeal|shoppers ?stop|lifestyle|westside|zudio|trends|h ?& ?m|uniqlo|ikea|pepperfry|urban ?company|boat|noise)/i, "Shopping"],
   [/\b(uber|ola|rapido|metro|irctc|redbus|petrol|fuel|hp |indian oil|bharat petroleum|fastag|parking)\b/i, "Transport"],
   [/\b(airtel|jio|vodafone|vi |bsnl|recharge|electricity|bescom|msedcl|mahavitaran|tata power|gas|broadband|act fibernet|dth|tata play)\b/i, "Bills & Utilities"],
   [/\b(netflix|prime video|hotstar|spotify|youtube|bookmyshow|pvr|inox|apple media|google play|steam)\b/i, "Entertainment"],
   [/\b(apollo|pharmacy|medical|medplus|1mg|pharmeasy|hospital|clinic|diagnostic|lab)\b/i, "Health"],
   [/\b(makemytrip|goibibo|indigo|air india|vistara|akasa|oyo|airbnb|cleartrip)\b/i, "Travel"],
-  [/\b(zerodha|groww|upstox|angel one|angelone|kite|coin by|indmoney|smallcase|vested|mutual fund|\bmf\b|sip|nippon|hdfc amc|sbi mf|icici pru|kuvera|paytm money|dhan|ppf|nps)\b/i, "Investments"],
   [/\bcashback\b/i, "Other"],
 ];
 
-export function defaultCategoryName(merchant: string | null): string | null {
-  if (!merchant) return null;
-  for (const [re, name] of KNOWN_PAYEES) if (re.test(merchant)) return name;
+/** Default category for a payee; [details] (UPI ID, statement narration) helps: "paytm-…@paytm ZOMATO". */
+export function defaultCategoryName(merchant: string | null, details?: string | null): string | null {
+  const text = `${merchant ?? ""} ${details ?? ""}`.trim();
+  if (!text) return null;
+  for (const [re, name] of KNOWN_PAYEES) if (re.test(text)) return name;
   return null;
 }
 
