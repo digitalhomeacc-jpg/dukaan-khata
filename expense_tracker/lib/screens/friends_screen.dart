@@ -7,13 +7,14 @@ import '../logic/summary.dart';
 import '../models.dart';
 import '../ui/format.dart';
 import 'people_review_screen.dart';
+import 'places_screen.dart';
 import 'shared_expense_screen.dart';
 import 'txn_editor.dart';
 
 const _appLink = 'https://digitalhomeacc-jpg.github.io/expense-tracker/';
 
 class FriendRow {
-  FriendRow(this.person, this.balance, this.link);
+  FriendRow(this.person, this.balance, this.link, {this.spendsOnly = false});
 
   final String person;
 
@@ -22,6 +23,9 @@ class FriendRow {
   final FriendLink? link;
 
   bool get settled => balance.abs() < 0.005;
+
+  /// Marked a friend, but their payments count as your spends: nothing owed either way.
+  final bool spendsOnly;
 }
 
 /// Everyone in your Friends list: from your own payments, and connected friends' shared record.
@@ -30,12 +34,26 @@ List<FriendRow> friendRows(AppData data) {
   for (final l in loanBalances(data.transactions, data.loanCategoryIds, shares: data.shares, aliases: data.aliases)) {
     final link = data.linkFor(l.person);
     rows[AppData.keyOf(l.person)] = FriendRow(
-        l.person, link == null || data.me == null ? l.balance : sharedBalance(data.sharedEntries, link.id, data.me!), link);
+      l.person,
+      link == null || data.me == null ? l.balance : sharedBalance(data.sharedEntries, link.id, data.me!),
+      link,
+    );
   }
   for (final link in data.links.where((l) => l.active)) {
     final name = data.me == null ? '' : link.nameFor(data.me!);
     if (name.isEmpty) continue;
-    rows.putIfAbsent(AppData.keyOf(name), () => FriendRow(name, sharedBalance(data.sharedEntries, link.id, data.me!), link));
+    rows.putIfAbsent(
+      AppData.keyOf(name),
+      () => FriendRow(name, sharedBalance(data.sharedEntries, link.id, data.me!), link),
+    );
+  }
+  // Friends whose payments are your spends: listed too, with nothing owed.
+  for (final MapEntry(:key, :value) in data.people.entries) {
+    if (value != 'friend') continue;
+    rows.putIfAbsent(
+      key,
+      () => FriendRow(data.personNames[key] ?? key, 0, data.linkFor(data.personNames[key] ?? key), spendsOnly: true),
+    );
   }
   final out = rows.values.toList()
     ..sort((a, b) {
@@ -58,19 +76,25 @@ class FriendsScreen extends StatelessWidget {
     final youOwe = rows.where((r) => r.balance > 0).fold(0.0, (s, r) => s + r.balance);
     final toReview = peopleToReview(data.transactions, decided: {...data.decidedPeople, ...data.aliases.keys}).length;
     final scheme = Theme.of(context).colorScheme;
+    final groups = rows.any((r) => r.spendsOnly)
+        ? payeeGroups(data.transactions, shares: data.shareTotalsNow, aliases: data.aliases)
+        : const <PayeeGroup>[];
+    PayeeGroup? groupOf(String person) => groups.where((g) => g.keys.contains(AppData.keyOf(person))).firstOrNull;
 
     Widget total(String label, double v, Color color) => Expanded(
-          child: Column(
-            children: [
-              Text(label, style: TextStyle(color: scheme.onPrimaryContainer.withValues(alpha: 0.8))),
-              const SizedBox(height: 4),
-              FittedBox(
-                child: Text(money(v),
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(color: color, fontWeight: FontWeight.w600)),
-              ),
-            ],
+      child: Column(
+        children: [
+          Text(label, style: TextStyle(color: scheme.onPrimaryContainer.withValues(alpha: 0.8))),
+          const SizedBox(height: 4),
+          FittedBox(
+            child: Text(
+              money(v),
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(color: color, fontWeight: FontWeight.w600),
+            ),
           ),
-        );
+        ],
+      ),
+    );
 
     return Scaffold(
       appBar: AppBar(
@@ -116,9 +140,14 @@ class FriendsScreen extends StatelessWidget {
                   title: Text('$toReview ${toReview == 1 ? 'person' : 'people'} you paid or got money from'),
                   subtitle: const Text('Tick your friends: their money is not spending or income'),
                   trailing: const Icon(Icons.chevron_right),
-                  onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
-                    builder: (_) => ListenableBuilder(listenable: data, builder: (_, _) => PeopleReviewScreen(data: data)),
-                  )),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => ListenableBuilder(
+                        listenable: data,
+                        builder: (_, _) => PeopleReviewScreen(data: data),
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -140,17 +169,36 @@ class FriendsScreen extends StatelessWidget {
                 child: CircleAvatar(child: Text(r.person.isEmpty ? '?' : r.person[0].toUpperCase())),
               ),
               title: Text(r.person),
-              subtitle: Text([
-                r.settled ? 'Settled up' : (r.balance > 0 ? 'You owe' : 'Owes you'),
-                if (r.link != null) 'connected',
-              ].join(' · ')),
+              subtitle: Text(
+                [
+                  if (r.spendsOnly && r.settled)
+                    switch (groupOf(r.person)) {
+                      final g? =>
+                        'Your spends · paid ${money(g.total)}${g.received > 0 ? ' · got ${money(g.received)}' : ''}',
+                      null => 'Nothing owed',
+                    }
+                  else
+                    r.settled ? 'Settled up' : (r.balance > 0 ? 'You owe' : 'Owes you'),
+                  if (r.link != null) 'connected',
+                ].join(' · '),
+              ),
               trailing: Text(
                 r.settled ? '' : money(r.balance.abs()),
-                style: TextStyle(fontWeight: FontWeight.w600, color: r.balance > 0 ? scheme.error : Colors.green.shade700),
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: r.balance > 0 ? scheme.error : Colors.green.shade700,
+                ),
               ),
-              onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
-                builder: (_) => ListenableBuilder(listenable: data, builder: (_, _) => FriendDetailScreen(data: data, person: r.person)),
-              )),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => ListenableBuilder(
+                    listenable: data,
+                    builder: (_, _) => r.spendsOnly && r.settled && r.link == null && groupOf(r.person) != null
+                        ? PlaceDetailScreen(data: data, keys: groupOf(r.person)!.keys)
+                        : FriendDetailScreen(data: data, person: r.person),
+                  ),
+                ),
+              ),
             ),
         ],
       ),
@@ -181,15 +229,21 @@ class _QuestionCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(children: [
-                Icon(Icons.help_outline, color: Theme.of(context).colorScheme.primary),
-                const SizedBox(width: 8),
-                const Expanded(child: Text('Same payment?', style: TextStyle(fontWeight: FontWeight.w600))),
-              ]),
+              Row(
+                children: [
+                  Icon(Icons.help_outline, color: Theme.of(context).colorScheme.primary),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text('Same payment?', style: TextStyle(fontWeight: FontWeight.w600)),
+                  ),
+                ],
+              ),
               const SizedBox(height: 6),
-              Text(theyPaid
-                  ? 'Was ${money(t.amount)} ${t.isDebit ? 'to' : 'from'} ${t.title} (${dayLabel(t.txnAt)}) the ${money(e.amount)} $friend says they paid you?'
-                  : 'Was ${money(t.amount)} to ${t.title} (${dayLabel(t.txnAt)}) the ${money(e.amount)} $friend says you paid them?'),
+              Text(
+                theyPaid
+                    ? 'Was ${money(t.amount)} ${t.isDebit ? 'to' : 'from'} ${t.title} (${dayLabel(t.txnAt)}) the ${money(e.amount)} $friend says they paid you?'
+                    : 'Was ${money(t.amount)} to ${t.title} (${dayLabel(t.txnAt)}) the ${money(e.amount)} $friend says you paid them?',
+              ),
               const SizedBox(height: 4),
               Text('Yes also remembers ${t.title} as $friend.', style: Theme.of(context).textTheme.bodySmall),
               Row(
@@ -220,21 +274,32 @@ Future<void> showAcceptInvite(BuildContext context, AppData data, {String? code}
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            TextField(controller: codeCtl, decoration: const InputDecoration(labelText: 'Invite code')),
+            TextField(
+              controller: codeCtl,
+              decoration: const InputDecoration(labelText: 'Invite code'),
+            ),
             const SizedBox(height: 12),
             TextField(
               controller: nameCtl,
               textCapitalization: TextCapitalization.words,
-              decoration: const InputDecoration(labelText: 'Your friend\'s name', helperText: 'As it shows in your bank, e.g. Rahul Kumar'),
+              decoration: const InputDecoration(
+                labelText: 'Your friend\'s name',
+                helperText: 'As it shows in your bank, e.g. Rahul Kumar',
+              ),
             ),
-            if (error != null) Padding(padding: const EdgeInsets.only(top: 8), child: Text(error!, style: TextStyle(color: Theme.of(c).colorScheme.error))),
+            if (error != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(error!, style: TextStyle(color: Theme.of(c).colorScheme.error)),
+              ),
           ],
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(c), child: const Text('Cancel')),
           FilledButton(
             onPressed: () async {
-              if (codeCtl.text.trim().isEmpty || nameCtl.text.trim().isEmpty) return set(() => error = 'Enter the code and the name');
+              if (codeCtl.text.trim().isEmpty || nameCtl.text.trim().isEmpty)
+                return set(() => error = 'Enter the code and the name');
               try {
                 await data.acceptInvite(codeCtl.text, nameCtl.text);
                 if (c.mounted) Navigator.pop(c);
@@ -261,7 +326,10 @@ class FriendDetailScreen extends StatelessWidget {
   Future<void> _settle(BuildContext context, double balance) async {
     final iPaid = balance > 0;
     final amount = TextEditingController(
-        text: balance.abs() < 0.005 ? '' : balance.abs().toStringAsFixed(balance.abs() == balance.abs().roundToDouble() ? 0 : 2));
+      text: balance.abs() < 0.005
+          ? ''
+          : balance.abs().toStringAsFixed(balance.abs() == balance.abs().roundToDouble() ? 0 : 2),
+    );
     final ok = await showDialog<bool>(
       context: context,
       builder: (c) => AlertDialog(
@@ -277,8 +345,10 @@ class FriendDetailScreen extends StatelessWidget {
               decoration: const InputDecoration(labelText: 'Amount', prefixText: '₹ '),
             ),
             const SizedBox(height: 8),
-            Text('Paid by UPI? It is added by itself when the bank email arrives. Use this for cash.',
-                style: Theme.of(c).textTheme.bodySmall),
+            Text(
+              'Paid by UPI? It is added by itself when the bank email arrives. Use this for cash.',
+              style: Theme.of(c).textTheme.bodySmall,
+            ),
           ],
         ),
         actions: [
@@ -293,20 +363,32 @@ class FriendDetailScreen extends StatelessWidget {
 
   Future<void> _remind(double owed, List<TxnShare> open) async {
     final first = person.split(' ').first;
-    final items = open.take(3).map((s) => '${data.txn(s.txnId)?.title ?? 'a shared expense'} (${money(s.amount)})').join(', ');
-    final text = 'Hi $first, a gentle reminder: you owe me ${money(owed)}${items.isEmpty ? '' : ' for $items'}. Thanks!';
-    await launchUrl(Uri.parse('https://wa.me/?text=${Uri.encodeComponent(text)}'), mode: LaunchMode.externalApplication);
+    final items = open
+        .take(3)
+        .map((s) => '${data.txn(s.txnId)?.title ?? 'a shared expense'} (${money(s.amount)})')
+        .join(', ');
+    final text =
+        'Hi $first, a gentle reminder: you owe me ${money(owed)}${items.isEmpty ? '' : ' for $items'}. Thanks!';
+    await launchUrl(
+      Uri.parse('https://wa.me/?text=${Uri.encodeComponent(text)}'),
+      mode: LaunchMode.externalApplication,
+    );
   }
 
   Future<void> _invite(BuildContext context) async {
     try {
       final code = await data.inviteFriend(person);
-      final text = 'Hi ${person.split(' ').first}, I track our payments in Expense Tracker. Join so what we send each other '
+      final text =
+          'Hi ${person.split(' ').first}, I track our payments in Expense Tracker. Join so what we send each other '
           'and share shows up in both our apps: $_appLink#invite-$code\n'
           'Or in the app: Friends → Enter invite code: $code';
-      await launchUrl(Uri.parse('https://wa.me/?text=${Uri.encodeComponent(text)}'), mode: LaunchMode.externalApplication);
+      await launchUrl(
+        Uri.parse('https://wa.me/?text=${Uri.encodeComponent(text)}'),
+        mode: LaunchMode.externalApplication,
+      );
     } catch (e) {
-      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not make an invite: $e')));
+      if (context.mounted)
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not make an invite: $e')));
     }
   }
 
@@ -315,8 +397,7 @@ class FriendDetailScreen extends StatelessWidget {
       for (final t in data.transactions)
         if (t.fromEmail || t.source == 'statement')
           if (looksLikePerson(t.merchant) && AppData.keyOf(t.merchant!) != AppData.keyOf(person)) t.merchant!.trim(),
-    }.toList()
-      ..sort();
+    }.toList()..sort();
     final ctl = TextEditingController();
     final picked = await showDialog<String>(
       context: context,
@@ -327,15 +408,23 @@ class FriendDetailScreen extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text('Does $person sometimes pay from another account, like a parent\'s? Pick that name: its payments then count as $person.',
-                  style: Theme.of(c).textTheme.bodySmall),
+              Text(
+                'Does $person sometimes pay from another account, like a parent\'s? Pick that name: its payments then count as $person.',
+                style: Theme.of(c).textTheme.bodySmall,
+              ),
               const SizedBox(height: 8),
-              TextField(controller: ctl, decoration: const InputDecoration(labelText: 'Name as the bank shows it')),
+              TextField(
+                controller: ctl,
+                decoration: const InputDecoration(labelText: 'Name as the bank shows it'),
+              ),
               const SizedBox(height: 8),
               Flexible(
                 child: ListView(
                   shrinkWrap: true,
-                  children: [for (final n in known.take(40)) ListTile(dense: true, title: Text(n), onTap: () => Navigator.pop(c, n))],
+                  children: [
+                    for (final n in known.take(40))
+                      ListTile(dense: true, title: Text(n), onTap: () => Navigator.pop(c, n)),
+                  ],
                 ),
               ),
             ],
@@ -365,17 +454,21 @@ class FriendDetailScreen extends StatelessWidget {
     final link = data.linkFor(person);
     final pending = data.pendingInviteFor(person);
     final me = data.me;
-    final l = loanBalances(data.transactions, data.loanCategoryIds, shares: data.shares, aliases: data.aliases)
-        .where((x) => AppData.keyOf(x.person) == key)
-        .firstOrNull;
+    final l = loanBalances(
+      data.transactions,
+      data.loanCategoryIds,
+      shares: data.shares,
+      aliases: data.aliases,
+    ).where((x) => AppData.keyOf(x.person) == key).firstOrNull;
     final balance = link != null && me != null ? sharedBalance(data.sharedEntries, link.id, me) : (l?.balance ?? 0);
     final open = data.shares.where((s) => !s.paid && AppData.keyOf(s.person) == key).toList();
     final paidForMe = data.transactions.where((t) => t.paidBy != null && AppData.keyOf(t.paidBy!) == key).toList();
     final otherNames = data.aliases.entries.where((e) => AppData.keyOf(e.value) == key).map((e) => e.key).toList();
     final scheme = Theme.of(context).colorScheme;
     final settled = balance.abs() < 0.005;
-    final entries = link == null ? const <SharedEntry>[] : (data.sharedEntries.where((e) => e.linkId == link.id).toList()
-      ..sort((a, b) => b.at.compareTo(a.at)));
+    final entries = link == null
+        ? const <SharedEntry>[]
+        : (data.sharedEntries.where((e) => e.linkId == link.id).toList()..sort((a, b) => b.at.compareTo(a.at)));
 
     return Scaffold(
       appBar: AppBar(
@@ -413,12 +506,16 @@ class FriendDetailScreen extends StatelessWidget {
             padding: const EdgeInsets.all(24),
             child: Column(
               children: [
-                Text(settled ? 'All settled' : (balance > 0 ? 'You owe $person' : '$person owes you'),
-                    style: Theme.of(context).textTheme.titleMedium),
+                Text(
+                  settled ? 'All settled' : (balance > 0 ? 'You owe $person' : '$person owes you'),
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
                 const SizedBox(height: 4),
-                Text(money(balance.abs()),
-                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                        color: settled ? null : (balance > 0 ? scheme.error : Colors.green.shade700))),
+                Text(
+                  money(balance.abs()),
+                  style: Theme.of(context).textTheme.headlineMedium
+                      ?.copyWith(color: settled ? null : (balance > 0 ? scheme.error : Colors.green.shade700)),
+                ),
                 if (otherNames.isNotEmpty) ...[
                   const SizedBox(height: 4),
                   Text('Also: ${otherNames.join(', ')}', style: Theme.of(context).textTheme.bodySmall),
@@ -465,9 +562,11 @@ class FriendDetailScreen extends StatelessWidget {
                     child: ListTile(
                       leading: const Icon(Icons.share),
                       title: Text(pending == null ? 'Connect with $person' : 'Invite sent · code ${pending.code}'),
-                      subtitle: Text(pending == null
-                          ? 'If they use the app too, what you send each other and share shows up in both apps.'
-                          : 'Waiting for $person to accept. Tap to send it again.'),
+                      subtitle: Text(
+                        pending == null
+                            ? 'If they use the app too, what you send each other and share shows up in both apps.'
+                            : 'Waiting for $person to accept. Tap to send it again.',
+                      ),
                       onTap: () => _invite(context),
                     ),
                   ),
@@ -480,15 +579,24 @@ class FriendDetailScreen extends StatelessWidget {
                   e.kind == 'expense' ? Icons.call_split : (e.creditor == me ? Icons.call_made : Icons.call_received),
                   color: e.deleted ? scheme.outline : (e.creditor == me ? Colors.green.shade700 : scheme.error),
                 ),
-                title: Text(_entryText(e, me),
-                    style: TextStyle(decoration: e.deleted ? TextDecoration.lineThrough : null)),
-                subtitle: Text([
-                  dayLabel(e.at),
-                  if (e.deleted) 'removed by ${e.deletedBy == me ? 'you' : person}' else 'added by ${e.createdBy == me ? 'you' : person}',
-                  if (!e.deleted && (e.creditor == me ? e.creditorTxn : e.debtorTxn) != null) 'in your bank',
-                ].join(' · ')),
-                trailing: Text(money(e.amount),
-                    style: TextStyle(fontWeight: FontWeight.w600, color: e.deleted ? scheme.outline : null)),
+                title: Text(
+                  _entryText(e, me),
+                  style: TextStyle(decoration: e.deleted ? TextDecoration.lineThrough : null),
+                ),
+                subtitle: Text(
+                  [
+                    dayLabel(e.at),
+                    if (e.deleted)
+                      'removed by ${e.deletedBy == me ? 'you' : person}'
+                    else
+                      'added by ${e.createdBy == me ? 'you' : person}',
+                    if (!e.deleted && (e.creditor == me ? e.creditorTxn : e.debtorTxn) != null) 'in your bank',
+                  ].join(' · '),
+                ),
+                trailing: Text(
+                  money(e.amount),
+                  style: TextStyle(fontWeight: FontWeight.w600, color: e.deleted ? scheme.outline : null),
+                ),
                 onLongPress: e.deleted
                     ? null
                     : () async {
@@ -511,15 +619,23 @@ class FriendDetailScreen extends StatelessWidget {
               ListTile(
                 leading: Icon(Icons.call_split, color: Colors.green.shade700),
                 title: Text('Their part of ${data.txn(s.txnId)?.title ?? 'a shared expense'}'),
-                subtitle: Text(data.txn(s.txnId) == null ? 'Owes you' : '${dayLabel(data.txn(s.txnId)!.txnAt)} · owes you'),
+                subtitle: Text(
+                  data.txn(s.txnId) == null ? 'Owes you' : '${dayLabel(data.txn(s.txnId)!.txnAt)} · owes you',
+                ),
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(money(s.amount), style: const TextStyle(fontWeight: FontWeight.w600)),
-                    IconButton(tooltip: 'Paid back in cash', icon: const Icon(Icons.check_circle_outline), onPressed: () => data.markSharePaid(s.id)),
+                    IconButton(
+                      tooltip: 'Paid back in cash',
+                      icon: const Icon(Icons.check_circle_outline),
+                      onPressed: () => data.markSharePaid(s.id),
+                    ),
                   ],
                 ),
-                onTap: data.txn(s.txnId) == null ? null : () => openTxnEditor(context, data, existing: data.txn(s.txnId)),
+                onTap: data.txn(s.txnId) == null
+                    ? null
+                    : () => openTxnEditor(context, data, existing: data.txn(s.txnId)),
               ),
             for (final t in paidForMe)
               ListTile(
@@ -532,15 +648,19 @@ class FriendDetailScreen extends StatelessWidget {
             for (final t in l?.txns ?? const <Txn>[])
               if (t.paidBy == null)
                 ListTile(
-                  leading: Icon(t.isDebit ? Icons.call_made : Icons.call_received,
-                      color: t.isDebit ? Colors.green.shade700 : scheme.error),
+                  leading: Icon(
+                    t.isDebit ? Icons.call_made : Icons.call_received,
+                    color: t.isDebit ? Colors.green.shade700 : scheme.error,
+                  ),
                   title: Text(t.isDebit ? 'You sent' : 'You got'),
-                  subtitle: Text([
-                    dayLabel(t.txnAt),
-                    if (AppData.keyOf(t.title) != key) 'as ${t.title}',
-                    if (data.account(t.accountId) != null) data.account(t.accountId)!.name,
-                    if ((t.note ?? '').isNotEmpty) t.note!,
-                  ].join(' · ')),
+                  subtitle: Text(
+                    [
+                      dayLabel(t.txnAt),
+                      if (AppData.keyOf(t.title) != key) 'as ${t.title}',
+                      if (data.account(t.accountId) != null) data.account(t.accountId)!.name,
+                      if ((t.note ?? '').isNotEmpty) t.note!,
+                    ].join(' · '),
+                  ),
                   trailing: Text(money(t.amount), style: const TextStyle(fontWeight: FontWeight.w600)),
                   onTap: () => openTxnEditor(context, data, existing: t),
                 ),

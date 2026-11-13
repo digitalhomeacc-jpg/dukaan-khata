@@ -251,10 +251,10 @@ class PlaceDetailScreen extends StatelessWidget {
               SegmentedButton<String>(
                 showSelectedIcon: false,
                 segments: const [
-                  ButtonSegment(value: 'shop', label: Text('Shop'), icon: Icon(Icons.storefront_outlined, size: 18)),
-                  ButtonSegment(value: 'friend', label: Text('Friend'), icon: Icon(Icons.person_outline, size: 18)),
-                  ButtonSegment(value: 'family', label: Text('Family'), icon: Icon(Icons.home_outlined, size: 18)),
-                  ButtonSegment(value: 'me', label: Text('Me'), icon: Icon(Icons.swap_horiz, size: 18)),
+                  ButtonSegment(value: 'shop', label: Text('Shop')),
+                  ButtonSegment(value: 'friend', label: Text('Friend')),
+                  ButtonSegment(value: 'family', label: Text('Family')),
+                  ButtonSegment(value: 'me', label: Text('Me')),
                 ],
                 emptySelectionAllowed: true,
                 selected: {?role},

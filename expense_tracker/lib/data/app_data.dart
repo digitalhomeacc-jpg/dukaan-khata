@@ -67,6 +67,7 @@ class AppData extends ChangeNotifier {
       }, onError: _onError),
       db.from('people').stream(primaryKey: ['user_id', 'name_key']).listen((rows) {
         people = {for (final r in rows) r['name_key'] as String: r['role'] as String};
+        personNames = {for (final r in rows) r['name_key'] as String: r['name'] as String};
         notifyListeners();
       }, onError: _onError),
       db.from('profiles').stream(primaryKey: ['id']).listen((rows) {
@@ -120,6 +121,9 @@ class AppData extends ChangeNotifier {
 
   /// Person (lower-case name) → role: friend, family, me or shop.
   Map<String, String> people = const {};
+
+  /// How each person's name is written, by name key.
+  Map<String, String> personNames = const {};
 
   /// Payee name (lower case) → friend name: "Also known as".
   Map<String, String> aliases = const {};
@@ -329,6 +333,7 @@ class AppData extends ChangeNotifier {
   /// Friend, family, me (own account) or shop. Family money in is income; "me" is a move.
   Future<void> setPersonRole(String name, String role) async {
     people = {...people, keyOf(name): role};
+    personNames = {...personNames, keyOf(name): name.trim()};
     notifyListeners();
     await _db.rpc('set_person_role', params: {'p_name': name, 'p_role': role});
   }
