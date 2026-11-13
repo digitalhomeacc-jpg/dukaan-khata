@@ -11,6 +11,7 @@ import '../state/app_controller.dart';
 import 'booking_screen.dart';
 import 'cash_count_screen.dart';
 import 'day_close_screen.dart';
+import 'review_screen.dart';
 import 'report_view.dart';
 import 'voucher_screen.dart';
 
@@ -48,6 +49,13 @@ class _RojmalScreenState extends State<RojmalScreen> {
           appBar: AppBar(
             title: Text(t('rojmal')),
             actions: [
+              if (app.actor.isOwner)
+                IconButton(
+                  key: const Key('review_open'),
+                  tooltip: t('review'),
+                  icon: const Icon(Icons.fact_check_outlined),
+                  onPressed: () => ReviewScreen.open(context),
+                ),
               IconButton(
                 key: const Key('cash_count'),
                 tooltip: t('cash_count'),

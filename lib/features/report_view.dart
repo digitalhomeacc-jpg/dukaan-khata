@@ -7,6 +7,7 @@ import '../shared/export.dart';
 import '../shared/widgets.dart';
 import '../state/app_controller.dart';
 import 'parties_screen.dart';
+import 'review_screen.dart';
 import 'booking_screen.dart';
 import 'interest_screen.dart';
 import 'staff_screen.dart';
@@ -253,6 +254,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
 
     final items = <(IconData, String, VoidCallback, bool)>[
       (Icons.event_available, t('promises'), () => PromisesScreen.open(context), false),
+      (Icons.fact_check, t('review'), () => ReviewScreen.open(context), true),
       (Icons.today, t('r_daybook'), () => open(() => r.dayBook(from, to)), false),
       (Icons.local_shipping_outlined, t('r_charges'), () => open(() => r.chargesRegister(from, to)), false),
       (Icons.payments, t('r_cashbook'), () => moneyBook([LedgerGroup.cash], t('r_cashbook')), false),
