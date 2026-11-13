@@ -58,8 +58,9 @@ function syncBankEmails() {
   // Overlap by 6 hours: emails can arrive late. The server skips duplicates.
   var sinceSec = lastSec ? lastSec - 6 * 3600 : nowSec - CONFIG.BACKFILL_DAYS * 86400;
 
-  var senders = BANK_SENDERS.concat(CONFIG.EXTRA_SENDERS || []);
-  var query = 'from:(' + senders.join(' OR ') + ') {' + KEYWORDS.join(' ') + '} after:' + sinceSec;
+  var cfg = serverConfig_();
+  var senders = cfg.senders.concat(CONFIG.EXTRA_SENDERS || []);
+  var query = 'from:(' + senders.join(' OR ') + ') {' + cfg.keywords.join(' ') + '} after:' + sinceSec;
 
   var messages = [];
   var start = 0;
@@ -82,10 +83,10 @@ function syncBankEmails() {
     start += 100;
   }
 
-  var totals = { received: 0, parsed: 0, added: 0, unreadable: 0 };
+  var totals = { received: 0, parsed: 0, added: 0, updated: 0, unreadable: 0, lender: 0 };
   for (var i = 0; i < messages.length || i === 0; i += BATCH_SIZE) {
     var r = post_(messages.slice(i, i + BATCH_SIZE)); // an empty batch still marks "last sync"
-    ['received', 'parsed', 'added', 'unreadable'].forEach(function (k) { totals[k] += r[k] || 0; });
+    Object.keys(totals).forEach(function (k) { totals[k] += r[k] || 0; });
   }
   props.setProperty('lastSyncEpoch', String(nowSec));
   return totals;
@@ -99,7 +100,7 @@ function resyncLast30Days() {
 
 /** Shows what the script can see, to find out why nothing arrives. Run it and read the log. */
 function checkSetup() {
-  var senders = BANK_SENDERS.concat(CONFIG.EXTRA_SENDERS || []);
+  var senders = serverConfig_().senders.concat(CONFIG.EXTRA_SENDERS || []);
   var since = Math.floor(Date.now() / 1000) - CONFIG.BACKFILL_DAYS * 86400;
   var from = 'from:(' + senders.join(' OR ') + ')';
   var all = GmailApp.search(from + ' after:' + since, 0, 100);
@@ -137,6 +138,22 @@ function checkSetup() {
 function stopSync() {
   ScriptApp.getProjectTriggers().forEach(function (t) { ScriptApp.deleteTrigger(t); });
   Logger.log('Automatic sync stopped.');
+}
+
+/** Which senders and words to search for. The server keeps the list up to date. */
+function serverConfig_() {
+  try {
+    var res = UrlFetchApp.fetch(CONFIG.INGEST_URL, {
+      method: 'get',
+      headers: { 'x-ingest-token': CONFIG.INGEST_TOKEN, 'apikey': CONFIG.SUPABASE_KEY },
+      muteHttpExceptions: true,
+    });
+    var body = JSON.parse(res.getContentText());
+    if (body.ok && body.senders && body.senders.length) return { senders: body.senders, keywords: body.keywords || KEYWORDS };
+  } catch (e) {
+    Logger.log('Using the built-in sender list: ' + e);
+  }
+  return { senders: BANK_SENDERS, keywords: KEYWORDS };
 }
 
 function post_(batch) {

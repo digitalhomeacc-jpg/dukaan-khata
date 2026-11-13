@@ -41,6 +41,7 @@ const BANKS: Array<[string, RegExp]> = [
   ["SBI", /\bsbi\b|sbicard|sbi\.co\.in|state bank/i],
   ["Axis", /axis ?bank|axisbank|axis\.bank/i],
   ["Kotak", /kotak/i],
+  ["Slice", /slice\.bank\.in|sliceit/i],
 ];
 
 const MONTHS: Record<string, number> = {
@@ -81,8 +82,38 @@ export function detectBank(from: string, text: string): string | null {
   return null;
 }
 
+/** Senders whose email search terms come from the server (the Gmail script asks for them). */
+export const BANK_SENDERS = [
+  "hdfcbank.net", "hdfcbank.com", "hdfcbank.bank.in",
+  "icicibank.com", "icici.bank.in",
+  "sbi.co.in", "sbi.bank.in", "sbicard.com",
+  "axisbank.com", "axis.bank.in", "axisbank.bank.in",
+  "slice.bank.in", "sliceit.com",
+];
+
+/** Digital lenders: their emails are kept for loan tracking. */
+export const LENDER_SENDERS = ["slice.bank.in", "sliceit.com", "kreditbee.in", "fibe.in", "earlysalary.com"];
+
+export const SEARCH_KEYWORDS = [
+  "debited", "credited", "spent", "debit", "credit", "withdrawn", "UPI", "transaction",
+  "EMI", "loan", "disbursed", "repayment", '"payment received"', "due",
+];
+
+export function isLenderSender(from: string): boolean {
+  const f = from.toLowerCase();
+  return LENDER_SENDERS.some((s) => f.includes(s));
+}
+
+/** Marketing mail from a bank's newsletter address is never a transaction. */
+function isMarketingSender(from: string): boolean {
+  return /mailers?\.|newsletter|marketing|offers?@|promo/i.test(from);
+}
+
 function isNoise(text: string): boolean {
   const t = text.toLowerCase();
+  if (/(has )?(dropped|fallen|gone) below|threshold set by you|minimum balance/.test(t) && !/\b(debited|credited)\b/.test(t)) return true;
+  if (/\bvoucher\b|offer valid|earn rewards|reward points|cashback offer|t&c apply|terms & conditions apply/.test(t) &&
+    !/\bhas been (debited|credited)\b|\bis (debited|credited)\b/.test(t)) return true;
   if (/\botp\b|one time password|verification code/.test(t) && !/\bdebited\b|\bcredited\b/.test(t)) return true;
   if (/\b(declined|failed|unsuccessful|could not be processed)\b/.test(t)) return true;
   if (/minimum amount due|total amount due|statement (?:is|has been) generated|payment (?:is )?due/.test(t)) return true;
@@ -287,6 +318,7 @@ function resolveTime(text: string, emailDate: string): string {
 }
 
 export function parseBankEmail(email: EmailInput): ParseResult {
+  if (isMarketingSender(email.from)) return { ok: false, reason: "not_transaction" };
   const text = normalize(`${email.subject}. ${email.body}`);
   if (isNoise(text)) return { ok: false, reason: "not_transaction" };
   const amount = findAmount(text);

@@ -99,7 +99,8 @@ class AppData extends ChangeNotifier {
       await _db.from('transactions').insert({...row, 'source': 'manual'});
       return;
     }
-    await _db.from('transactions').update(row).eq('id', t.id);
+    // `edited` keeps a later re-read of the bank email from overwriting the user's changes.
+    await _db.from('transactions').update({...row, 'edited': true}).eq('id', t.id);
     if (rememberCategory && t.categoryId != null) {
       await _db.rpc('set_category', params: {'p_txn': t.id, 'p_category': t.categoryId, 'p_remember': true});
     }

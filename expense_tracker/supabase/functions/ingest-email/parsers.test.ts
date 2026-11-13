@@ -244,3 +244,13 @@ test("Implausible date falls back to email date", () => {
   const t = ok(mail("alerts@hdfcbank.net", "UPI", "Rs.10.00 has been debited from account **4321 to VPA a@b SHOP on 01-01-20."));
   assert.equal(t.txnAt, RECEIVED);
 });
+
+test("HDFC low balance warning is ignored", () => {
+  rejected(mail("HDFC Bank InstaAlerts <alerts@hdfcbank.bank.in>", "View: Account update for your HDFC Bank A/c",
+    "Dear Customer, Greetings from HDFC Bank! The balance in your account ending XX6516 has dropped below Rs. INR 5,000.00, which is the threshold set by you. Balance as of yesterday: Rs. INR 21.91 Please note that deposits or credits may take some time to reflect in your account."));
+});
+
+test("HDFC promotional mailer is ignored", () => {
+  rejected(mail("HDFC Bank <information@mailers.hdfcbank.bank.in>", "Rs.2,000 voucher with your HDFC Bank Debit Card linked with A/c xx6516",
+    "This Dhanteras, Get Rs.2,000 Voucher on single in-store transaction of Rs.1 Lakh & above on Jewellery using your HDFC Bank Debit Card. Offer valid from 31 st Oct 26"));
+});
