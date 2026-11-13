@@ -110,7 +110,23 @@ function checkSetup() {
     var m = t.getMessages()[0];
     Logger.log('  ' + m.getDate().toISOString().slice(0, 10) + ' | ' + m.getFrom() + ' | ' + m.getSubject());
   });
-  if (!all.length) Logger.log('No bank emails found. Check that your bank sends email alerts, and add its sender to EXTRA_SENDERS.');
+  if (!all.length) Logger.log('No emails from the known bank addresses.');
+  // Other senders whose emails talk about money: likely bank addresses missing from the list.
+  var other = GmailApp.search('{debited credited "spent on" "has been debited" "is credited"} -from:(' +
+    senders.join(' OR ') + ') after:' + since, 0, 100);
+  var counts = {};
+  other.forEach(function (t) {
+    var f = t.getMessages()[0].getFrom();
+    var addr = (f.match(/<([^>]+)>/) || [null, f])[1].toLowerCase();
+    counts[addr] = (counts[addr] || 0) + 1;
+  });
+  var list = Object.keys(counts).sort(function (a, b) { return counts[b] - counts[a]; }).slice(0, 15);
+  if (list.length) {
+    Logger.log('Other senders with debit/credit emails (add your bank\'s to EXTRA_SENDERS):');
+    list.forEach(function (a) { Logger.log('  ' + a + ' (' + counts[a] + ')'); });
+  } else if (!all.length) {
+    Logger.log('No debit/credit emails at all: your bank probably sends alerts by SMS only. Turn on email alerts in your net banking.');
+  }
   var triggers = ScriptApp.getProjectTriggers().filter(function (t) { return t.getHandlerFunction() === 'syncBankEmails'; });
   Logger.log('Automatic sync: ' + (triggers.length ? 'on (every 5 minutes)' : 'OFF – run setup'));
   var last = PropertiesService.getUserProperties().getProperty('lastSyncEpoch');
