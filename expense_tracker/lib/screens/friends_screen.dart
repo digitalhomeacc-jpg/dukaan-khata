@@ -77,9 +77,13 @@ class FriendsScreen extends StatelessWidget {
     final toReview = peopleToReview(data.transactions, decided: {...data.decidedPeople, ...data.aliases.keys}).length;
     final scheme = Theme.of(context).colorScheme;
     final groups = rows.any((r) => r.spendsOnly)
-        ? payeeGroups(data.transactions, shares: data.shareTotalsNow, aliases: data.aliases)
+        ? payeeGroups(data.transactions, shares: data.shareTotalsNow, aliases: data.aliases, withMoneyInOnly: true)
         : const <PayeeGroup>[];
-    PayeeGroup? groupOf(String person) => groups.where((g) => g.keys.contains(AppData.keyOf(person))).firstOrNull;
+    PayeeGroup? groupOf(String person) {
+      final key = AppData.keyOf(person);
+      return groups.where((g) => g.keys.contains(key)).firstOrNull ??
+          groups.where((g) => g.keys.any((k) => sameName(k, key))).firstOrNull;
+    }
 
     Widget total(String label, double v, Color color) => Expanded(
       child: Column(
@@ -173,9 +177,12 @@ class FriendsScreen extends StatelessWidget {
                 [
                   if (r.spendsOnly && r.settled)
                     switch (groupOf(r.person)) {
-                      final g? =>
-                        'Your spends · paid ${money(g.total)}${g.received > 0 ? ' · got ${money(g.received)}' : ''}',
-                      null => 'Nothing owed',
+                      final g? => [
+                        'Not owed',
+                        if (g.total > 0) 'paid ${money(g.total)}',
+                        if (g.received > 0) 'got ${money(g.received)}',
+                      ].join(' · '),
+                      null => 'No payments yet',
                     }
                   else
                     r.settled ? 'Settled up' : (r.balance > 0 ? 'You owe' : 'Owes you'),

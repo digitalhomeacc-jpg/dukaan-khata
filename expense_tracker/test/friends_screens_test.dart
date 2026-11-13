@@ -1,5 +1,6 @@
 // ignore_for_file: invalid_use_of_visible_for_testing_member
 import 'package:expense_tracker/data/app_data.dart';
+import 'package:expense_tracker/logic/summary.dart';
 import 'package:expense_tracker/models.dart';
 import 'package:expense_tracker/screens/budgets_screen.dart';
 import 'package:expense_tracker/screens/friends_screen.dart';
@@ -63,6 +64,17 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('The other ₹300 was:'), findsOneWidget);
     expect(find.text("Rahul's spends through me"), findsOneWidget);
+  });
+
+  test('a friend who only sent money is still found, under a name a statement cut short', () {
+    final now = DateTime.now();
+    final groups = payeeGroups([
+      Txn(id: 'a', amount: 500, isDebit: false, txnAt: now, merchant: 'Vaibhav Chetan Parma'),
+    ], withMoneyInOnly: true);
+    expect(groups, hasLength(1));
+    expect(groups.single.received, 500);
+    expect(sameName(groups.single.keys.single, 'vaibhav chetan parmar'), isTrue);
+    expect(payeeGroups([Txn(id: 'a', amount: 500, isDebit: false, txnAt: now, merchant: 'Vaibhav C')]), isEmpty);
   });
 
   testWidgets('people review lists people, not shops', (tester) async {

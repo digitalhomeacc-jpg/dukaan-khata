@@ -689,6 +689,12 @@ class PayeeGroup {
 String _payeeKey(String s) =>
     s.toLowerCase().replaceAll(RegExp(r'[^a-z0-9 ]'), ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
 
+/// Does this payee name mean that person? Statements cut names short ("Vaibhav Chetan Parma").
+bool sameName(String payeeKey, String personKey) =>
+    payeeKey == personKey ||
+    payeeKey.startsWith('$personKey ') ||
+    (payeeKey.length >= 12 && personKey.startsWith(payeeKey));
+
 /// Money grouped by where it went (and what came back from there): same payee under
 /// different spellings, a name a statement cut short, or another name for a friend all
 /// count as one place. Only places you paid are listed.
@@ -698,6 +704,7 @@ List<PayeeGroup> payeeGroups(
   Set<String> loanCategoryIds = const {},
   ShareTotals shares = ShareTotals.none,
   Map<String, String> aliases = const {},
+  bool withMoneyInOnly = false,
 }) {
   final rows = <(Txn, String, double)>[];
   for (final t in txns) {
@@ -759,7 +766,7 @@ List<PayeeGroup> payeeGroups(
     g.received = _round(g.received);
     g.txns.sort((a, b) => b.txnAt.compareTo(a.txnAt));
   }
-  return groups.values.where((g) => g.count > 0).toList()
+  return groups.values.where((g) => withMoneyInOnly || g.count > 0).toList()
     ..sort((a, b) => b.count != a.count ? b.count.compareTo(a.count) : b.total.compareTo(a.total));
 }
 

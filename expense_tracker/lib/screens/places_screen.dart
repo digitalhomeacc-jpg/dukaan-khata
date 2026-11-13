@@ -198,7 +198,12 @@ class PlaceDetailScreen extends StatelessWidget {
 
   PayeeGroup? _group() {
     // Include friends' ledger payments too, so the statement is complete.
-    final all = payeeGroups(data.transactions, shares: data.shareTotalsNow, aliases: data.aliases);
+    final all = payeeGroups(
+      data.transactions,
+      shares: data.shareTotalsNow,
+      aliases: data.aliases,
+      withMoneyInOnly: true,
+    );
     return all.where((x) => vpas.isNotEmpty ? x.vpas.any(vpas.contains) : x.keys.any(keys.contains)).firstOrNull ??
         all.where((x) => x.keys.any(keys.contains)).firstOrNull;
   }
