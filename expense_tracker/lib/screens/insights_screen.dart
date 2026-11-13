@@ -6,6 +6,7 @@ import '../ui/category_style.dart';
 import '../ui/format.dart';
 import 'budgets_screen.dart';
 import 'month_bar.dart';
+import 'places_screen.dart';
 
 class InsightsScreen extends StatefulWidget {
   const InsightsScreen({super.key, required this.data});
@@ -26,11 +27,10 @@ class _InsightsScreenState extends State<InsightsScreen> {
     final trend = monthlySpend(data.transactions, _month, 6, loanCategoryIds: data.loanCategoryIds, shares: data.shareTotalsNow);
     final text = Theme.of(context).textTheme;
 
-    return Scaffold(
-      appBar: AppBar(title: MonthBar(month: _month, onChanged: (m) => setState(() => _month = m)), centerTitle: true),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
+    final overview = ListView(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 96),
         children: [
+          Center(child: MonthBar(month: _month, onChanged: (m) => setState(() => _month = m))),
           if (data.budgets.isNotEmpty) ...[
             Row(
               children: [
@@ -91,6 +91,16 @@ class _InsightsScreenState extends State<InsightsScreen> {
               ),
           ],
         ],
+      );
+
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Insights'),
+          bottom: const TabBar(tabs: [Tab(text: 'Overview'), Tab(text: 'Places')]),
+        ),
+        body: TabBarView(children: [overview, PlacesView(data: data)]),
       ),
     );
   }

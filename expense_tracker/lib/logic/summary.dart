@@ -466,3 +466,103 @@ List<PayeeSummary> peopleToReview(Iterable<Txn> txns, {Set<String> decided = con
 double sharedBalance(Iterable<SharedEntry> entries, String linkId, String me) => _round(entries
     .where((e) => e.linkId == linkId && !e.deleted)
     .fold(0.0, (s, e) => s + (e.debtor == me ? e.amount : (e.creditor == me ? -e.amount : 0))));
+
+// --------------------------------------------------------------------- places
+
+class PayeeGroup {
+  PayeeGroup(this.key);
+
+  final String key;
+  final Set<String> keys = {};
+  final List<Txn> txns = [];
+  final Map<String, int> _names = {};
+  final Map<String?, int> _cats = {};
+  double total = 0;
+
+  int get count => txns.length;
+
+  /// The different ways the bank wrote this place's name.
+  List<String> get spellings => _names.keys.toList();
+  double get average => count == 0 ? 0 : _round(total / count);
+  DateTime get first => txns.map((t) => t.txnAt).reduce((a, b) => a.isBefore(b) ? a : b);
+  DateTime get last => txns.map((t) => t.txnAt).reduce((a, b) => a.isAfter(b) ? a : b);
+
+  /// The name used most often; on a tie the normally written one, then the longest
+  /// (statements write names in capitals and cut them short).
+  String get name {
+    int caps(String s) => s == s.toUpperCase() ? 1 : 0;
+    return (_names.entries.toList()
+          ..sort((a, b) {
+            if (a.value != b.value) return b.value.compareTo(a.value);
+            if (caps(a.key) != caps(b.key)) return caps(a.key).compareTo(caps(b.key));
+            return b.key.length.compareTo(a.key.length);
+          }))
+        .first
+        .key;
+  }
+
+  /// The category most of its payments have.
+  String? get categoryId => (_cats.entries.toList()..sort((a, b) => b.value.compareTo(a.value))).first.key;
+
+  /// Spending per month, oldest first.
+  List<MapEntry<DateTime, double>> get byMonth {
+    final m = <DateTime, double>{};
+    for (final t in txns) {
+      final k = monthStart(t.txnAt);
+      m[k] = (m[k] ?? 0) + t.amount;
+    }
+    return m.entries.map((e) => MapEntry(e.key, _round(e.value))).toList()..sort((a, b) => a.key.compareTo(b.key));
+  }
+
+  /// Visits per month over the time between the first and last visit (at least one month).
+  double get perMonth {
+    final months = (last.year - first.year) * 12 + last.month - first.month + 1;
+    return count / months;
+  }
+}
+
+String _payeeKey(String s) => s.toLowerCase().replaceAll(RegExp(r'[^a-z0-9 ]'), ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
+
+/// Spending grouped by where it went: same payee under different spellings, a name a
+/// statement cut short, or another name for a friend all count as one place.
+List<PayeeGroup> payeeGroups(Iterable<Txn> txns,
+    {DateTime? from, Set<String> loanCategoryIds = const {}, ShareTotals shares = ShareTotals.none, Map<String, String> aliases = const {}}) {
+  final rows = <(Txn, String, double)>[];
+  for (final t in txns) {
+    if (!t.isDebit || !counts(t, loanCategoryIds) || (from != null && t.txnAt.isBefore(from))) continue;
+    final name = t.merchant?.trim();
+    if (name == null || name.isEmpty) continue;
+    final own = shares.own(t);
+    if (own <= 0) continue;
+    final aka = aliases[name.toLowerCase().replaceAll(RegExp(r'\s+'), ' ')];
+    rows.add((t, _payeeKey(aka ?? name), own));
+  }
+  // A short key that starts a longer one is the same payee ("ravindra annasaheb p" → "ravindra annasaheb patil").
+  final keys = rows.map((r) => r.$2).toSet().toList()..sort((a, b) => b.length.compareTo(a.length));
+  final canon = <String, String>{};
+  for (final k in keys) {
+    canon[k] = k;
+    if (k.length < 10) continue;
+    for (final longer in keys) {
+      if (longer.length > k.length && longer.startsWith(k)) {
+        canon[k] = canon[longer] ?? longer;
+        break;
+      }
+    }
+  }
+  final groups = <String, PayeeGroup>{};
+  for (final (t, k, own) in rows) {
+    final g = groups.putIfAbsent(canon[k]!, () => PayeeGroup(canon[k]!));
+    g.keys.add(t.merchant!.toLowerCase().replaceAll(RegExp(r'\s+'), ' ').trim());
+    g.txns.add(t);
+    g.total += own;
+    final shown = t.merchant!.replaceAll(RegExp(r'\s+'), ' ').replaceAll(RegExp(r'[\s.,;:-]+$'), '').trim();
+    g._names[shown] = (g._names[shown] ?? 0) + 1;
+    g._cats[t.categoryId] = (g._cats[t.categoryId] ?? 0) + 1;
+  }
+  for (final g in groups.values) {
+    g.total = _round(g.total);
+    g.txns.sort((a, b) => b.txnAt.compareTo(a.txnAt));
+  }
+  return groups.values.toList()..sort((a, b) => b.count != a.count ? b.count.compareTo(a.count) : b.total.compareTo(a.total));
+}

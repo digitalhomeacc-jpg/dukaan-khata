@@ -1,0 +1,35 @@
+// ignore_for_file: invalid_use_of_visible_for_testing_member
+import 'package:expense_tracker/data/app_data.dart';
+import 'package:expense_tracker/models.dart';
+import 'package:expense_tracker/screens/insights_screen.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:material_ui/material_ui.dart';
+
+void main() {
+  testWidgets('Insights → Places groups repeated payees; a place shows its details', (tester) async {
+    tester.view.physicalSize = const Size(360, 780) * 3;
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    final now = DateTime.now();
+    final data = AppData.preview(
+      categories: const [Category(id: 'f', name: 'Food & Dining', icon: 'restaurant', color: 0xFFFF5722)],
+      transactions: [
+        for (var i = 0; i < 5; i++)
+          Txn(id: 'h$i', amount: 200, isDebit: true, txnAt: now.subtract(Duration(days: i * 6)), merchant: i.isEven ? 'Hotel Vijay' : 'HOTEL VIJAY', categoryId: 'f'),
+        Txn(id: 'c', amount: 40, isDebit: true, txnAt: now, merchant: 'Bhai Pan Stall'),
+      ],
+    );
+    await tester.pumpWidget(MaterialApp(home: InsightsScreen(data: data)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Places'));
+    await tester.pumpAndSettle();
+    expect(find.text('Hotel Vijay'), findsOneWidget);
+    expect(find.textContaining('5× · avg ₹200'), findsOneWidget);
+    expect(find.text('Most frequent'), findsOneWidget);
+    await tester.tap(find.text('Hotel Vijay'));
+    await tester.pumpAndSettle();
+    expect(find.text('₹1,000'), findsOneWidget);
+    expect(find.text('Category for all its payments'), findsOneWidget);
+    expect(find.textContaining('Written 2 ways'), findsOneWidget);
+  });
+}

@@ -408,6 +408,21 @@ class AppData extends ChangeNotifier {
   Future<void> addAlias(String payeeName, String friendName) =>
       _db.rpc('add_friend_alias', params: {'p_alias': payeeName, 'p_friend': friendName});
 
+  // ----------------------------------------------------------------- places
+
+  /// Files every payment to this place (all its spellings) under a category, now and later.
+  Future<void> categorizePlace(Iterable<String> merchantKeys, String? categoryId) async {
+    final keys = merchantKeys.toList();
+    await _db.from('transactions').update({'category_id': categoryId, 'needs_review': false})
+        .inFilter('merchant_key', keys).eq('edited', false);
+    if (categoryId == null) {
+      await _db.from('merchant_rules').delete().inFilter('merchant_key', keys);
+    } else {
+      await _db.from('merchant_rules').upsert([for (final k in keys) {'merchant_key': k, 'category_id': categoryId}],
+          onConflict: 'user_id,merchant_key');
+    }
+  }
+
   // ---------------------------------------------------------------- budgets
 
   Future<void> saveBudget(String? categoryId, double amount) async {

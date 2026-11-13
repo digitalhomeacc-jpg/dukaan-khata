@@ -197,6 +197,7 @@ Deno.serve(async (req) => {
     await supabase.from("accounts").update({ opening_balance: st.openingBalance, opening_date: st.from }).eq("id", account!.id);
   }
   await supabase.rpc("link_loan_transactions", { p_user: user.id });
+  await supabase.rpc("link_wallet_topups", { p_user: user.id });
   await supabase.rpc("link_self_transfers", { p_user: user.id });
 
   return json(200, { ...summary, added, account: account!.name });

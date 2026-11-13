@@ -222,6 +222,7 @@ Deno.serve(async (req) => {
     loanEvents += e?.length ?? 0;
   }
   await supabase.rpc("link_loan_transactions", { p_user: userId });
+  await supabase.rpc("link_wallet_topups", { p_user: userId });
   await supabase.rpc("link_self_transfers", { p_user: userId });
 
   if (unparsed.length) {
