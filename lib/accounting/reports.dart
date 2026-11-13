@@ -381,6 +381,7 @@ class Reports {
     final rows = <List<String>>[];
     final per = <String, (String, double, int, double)>{}; // item → name, qty, value, value after year's discounts
     var ta = 0, tq = 0.0, tn = 0.0;
+    var usedMonth = 0.0, usedYear = 0.0; // discount taken off in each column – must be the same money
     for (final g in goods) {
       final m = g['m'] as String, f = fyOf(m);
       final q = (g['q'] as num).toDouble(), a = (g['a'] as num).toInt();
@@ -388,6 +389,8 @@ class Reports {
       final dMonth = mv <= 0 ? 0.0 : (disc[m] ?? 0) * a / mv; // this month's discounts, by value
       final fyShare = (fyValue[f] ?? 0) <= 0 ? 0.0 : (fyDisc[f] ?? 0) / fyValue[f]!; // year's discount per rupee
       final net = a * (1 - fyShare);
+      usedMonth += dMonth;
+      usedYear += a - net;
       final name = '${g['item']}';
       rows.add([mon(m), name, fmtQty(q), rate(a, q), rate(a - dMonth, q), rate(net, q)]);
       final p = per[g['item_id'] as String] ?? (name, 0.0, 0, 0.0);
@@ -405,6 +408,9 @@ class Reports {
       title: '${tr('r_real_cost')} – ${sup.name}',
       subtitle: [
         _range(from, to),
+        // the proof that nothing is counted twice: both columns use the same discounts
+        tr('real_cost_same').replaceAll('{m}', Money.fmt(usedMonth.round())).replaceAll('{y}', Money.fmt(usedYear.round()))
+            .replaceAll('{d}', Money.fmt(disc.values.fold(0, (s, x) => s + x))),
         for (final f in fys)
           '${tr('fy')} ${fyLabel(f)}: ${tr('purchase')} ₹${Money.fmt(fyValue[f] ?? 0)} · ${tr('discount')} ₹${Money.fmt(fyDisc[f] ?? 0)}'
               '${(fyValue[f] ?? 0) > 0 ? ' (${((fyDisc[f] ?? 0) * 1000 / fyValue[f]!).round() / 10}%)' : ''}',
