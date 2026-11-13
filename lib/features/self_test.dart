@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../accounting/health.dart';
 import '../accounting/models.dart';
 import '../accounting/voucher_service.dart';
 import '../core/money.dart';
@@ -167,8 +168,8 @@ class EditSelfTest {
     // staff: salary + cut, advance owed / salary owed to him
     final st1 = await lr.create(name: 'Staff Advance', group: LedgerGroup.staff, phone: '9000000002', openingBalance: 500000);
     await lr.setStaffPay(st1, salary: 1200000, cut: 100000);
-    final st2 = await lr.create(name: 'Staff We Owe', group: LedgerGroup.staff, openingBalance: 0);
-    await app.db.execute('UPDATE ledgers SET opening_balance = ?, address = ?, page_no = ?, credit_limit = ? WHERE id = ?', [-300000, 'Village', '77', 2500, st2]);
+    await lr.create(
+        name: 'Staff We Owe', group: LedgerGroup.staff, openingBalance: -300000, address: 'Village', pageNo: '77', creditLimit: 2500);
     // items: every field, a custom unit, a subcategory, 3-decimal opening stock
     await sr.save(
         name: 'पूर्ण माल', nameEn: 'Full Item', category: 'plumbing', unit: 'ट्रिप', shortCode: 'fi9', saleRate: 123450, purchaseRate: 100005,
@@ -267,6 +268,9 @@ class EditSelfTest {
     }
     final deep = await app.vouchers.deepCheck();
     problems.addAll(deep.map((d) => 'deep check ${d.$1.type.code} #${d.$1.vno}: ${d.$2}'));
+    // the whole-books check must stay silent after every form was re-saved
+    final health = await HealthCheck(app.db, app.businessId!, app.vouchers, app.ledgers, app.stock).run();
+    problems.addAll(health.where((i) => i.kind != 'postings').map((i) => 'health ${i.kind} ${i.title}: ${i.detail}'));
     debugPrint('SELFTEST ${problems.isEmpty ? 'OK' : 'FAIL'}: $n entries re-saved, ${problems.length} problems');
     for (final p in problems) {
       debugPrint('SELFTEST PROBLEM: $p');

@@ -179,6 +179,40 @@ class StockRepo {
   }
 
   // ---- बदल इतिहास for items
+  /// Puts an item's details back to its last recorded change (field → was).
+  Future<void> putBack(String id, Map<String, String> was) async {
+    final before = await _snap(id);
+    final sets = <String>[], args = <Object?>[];
+    void put(String col, Object? v) {
+      sets.add('$col = ?');
+      args.add(v);
+    }
+
+    for (final e in was.entries) {
+      final v = e.value;
+      switch (e.key) {
+        case 'name' when v.isNotEmpty:
+          put('name', v);
+        case 'name_en' || 'subcategory' || 'short_code':
+          put(e.key, v.isEmpty ? null : v);
+        case 'category' || 'unit' when v.isNotEmpty:
+          put(e.key, v);
+        case 'sale_rate' || 'purchase_rate' || 'opening_rate':
+          put(e.key, Money.parse(v) ?? 0);
+        case 'opening_qty' || 'low_stock':
+          put(e.key, double.tryParse(v) ?? 0);
+        case 'hidden':
+          put('archived', v.isEmpty ? 0 : 1);
+      }
+    }
+    if (sets.isEmpty) return;
+    await db.execute('UPDATE items SET ${sets.join(', ')} WHERE id = ?', [...args, id]);
+    await _log(id, 'edit', before, await _snap(id));
+  }
+
+  /// The details the history records for an item (for the health check).
+  Future<Map<String, Object?>> snapOf(String id) => _snap(id);
+
   Future<Map<String, Object?>> _snap(String id) async {
     final r = await db.getOptional('SELECT * FROM items WHERE id = ?', [id]);
     if (r == null) return {};

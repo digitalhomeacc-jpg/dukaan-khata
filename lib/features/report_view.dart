@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'health_screen.dart';
 import '../accounting/models.dart';
 import '../accounting/reports.dart';
 import '../core/money.dart';
@@ -255,6 +256,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
     final items = <(IconData, String, VoidCallback, bool)>[
       (Icons.event_available, t('promises'), () => PromisesScreen.open(context), false),
       (Icons.fact_check, t('review'), () => ReviewScreen.open(context), true),
+      (Icons.verified_outlined, t('health'), () => HealthScreen.open(context), true),
       (Icons.today, t('r_daybook'), () => open(() => r.dayBook(from, to)), false),
       (Icons.local_shipping_outlined, t('r_charges'), () => open(() => r.chargesRegister(from, to)), false),
       (Icons.payments, t('r_cashbook'), () => moneyBook([LedgerGroup.cash], t('r_cashbook')), false),

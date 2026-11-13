@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../shared/export.dart';
+import '../accounting/health.dart';
 import '../accounting/ledger_repo.dart';
 import '../accounting/bookings.dart';
 import '../accounting/interest.dart';
@@ -171,12 +172,41 @@ class AppController extends ChangeNotifier {
           } catch (_) {/* offline: try again next time */}
           await _vouchers?.detachHistoryLines(); // old entries are reference only
         }
+        if (businessId == bid) runHealth().ignore();
       }).ignore();
       _booksSub ??= db.onChange(const ['businesses']).listen((_) => loadBooks());
     } else {
-      db.writeTransaction((tx) => ensureSystemLedgers(tx, bid)).then((_) async => await _vouchers?.detachHistoryLines()).ignore();
+      db.writeTransaction((tx) => ensureSystemLedgers(tx, bid)).then((_) async {
+        await _vouchers?.detachHistoryLines();
+        runHealth().ignore();
+      }).ignore();
     }
     loadBooks().ignore();
+  }
+
+  // ---- हिशोब तपासणी: the whole-books check, run on the owner's phone
+  List<HealthIssue>? health;
+  DateTime? healthAt;
+  bool healthBusy = false;
+
+  /// Runs the check in the background (owner, data downloaded). [force]
+  /// runs it now; otherwise at most every 2 hours.
+  Future<void> runHealth({bool force = false}) async {
+    if (healthBusy || businessId == null || !actor.isOwner || _vouchers == null) return;
+    if (!force && healthAt != null && DateTime.now().difference(healthAt!) < const Duration(hours: 2)) return;
+    if (cloud && !(db.currentStatus.hasSynced ?? false)) return;
+    healthBusy = true;
+    await Future<void>.delayed(Duration.zero); // never during a screen build
+    notifyListeners();
+    try {
+      health = await HealthCheck(db, businessId!, vouchers, ledgers, stock).run();
+      healthAt = DateTime.now();
+    } catch (_) {
+      // never let the check itself get in the way of work
+    } finally {
+      healthBusy = false;
+      notifyListeners();
+    }
   }
 
   StreamSubscription<void>? _booksSub;

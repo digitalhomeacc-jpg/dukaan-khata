@@ -1,5 +1,6 @@
 import 'dart:math';
 
+import 'package:dukaan_khata/accounting/health.dart';
 import 'package:dukaan_khata/accounting/ledger_repo.dart';
 import 'package:dukaan_khata/accounting/models.dart';
 import 'package:dukaan_khata/accounting/voucher_service.dart';
@@ -310,6 +311,9 @@ void main() {
         }
       }
       expect((await vs.deepCheck()).map((b) => '${b.$1.type.code}: ${b.$2}').toList(), isEmpty);
+      // the full health check must stay silent on books made the normal way
+      final health = await HealthCheck(db, biz, vs, lr, sr).run();
+      expect(health.map((i) => '${i.kind} ${i.title}: ${i.detail}').toList(), isEmpty);
     }, timeout: const Timeout(Duration(minutes: 5)));
   }
 
@@ -326,5 +330,51 @@ void main() {
     expect(bad.length, 1);
     expect(bad.single.$2, contains('≠'));
     expect(Money.fmt(0), '0');
+  });
+
+  test('health check finds each kind of silent damage', () async {
+    final hc = HealthCheck(db, biz, vs, lr, sr);
+    final c = await lr.create(name: 'C', group: LedgerGroup.customer, openingBalance: 50000);
+    final w = (await sr.list()).first;
+    Future<String> sale(int paid) => vs.save(
+        VoucherInput(type: VoucherType.sale, date: todayIso(), partyId: c, payLedgerId: vs.sys('cash'), paid: paid, items: [ItemLine(w.id, 10, 28000)]),
+        owner);
+    final a = await sale(100000), b = await sale(0), d = await sale(5000);
+    await lr.update(vs.sys('cash'), name: 'रोख', openingBalance: 2077800);
+    await sr.save(id: w.id, name: w.name, category: w.category, unit: w.unit, saleRate: w.saleRate, purchaseRate: w.purchaseRate,
+        openingQty: 40, openingRate: 25000, lowStock: 0);
+    await vs.delete(d, owner);
+    expect((await hc.run()).map((i) => '${i.kind} ${i.title}: ${i.detail}').toList(), isEmpty);
+
+    // 1. an account blanked without a history line (the Nov 2026 bug)
+    await db.execute('UPDATE ledgers SET opening_balance = 0 WHERE id = ?', [vs.sys('cash')]);
+    // 2. an item's opening stock changed silently
+    await db.execute('UPDATE items SET opening_qty = 4 WHERE id = ?', [w.id]);
+    // 3. a bill's amount changed silently (its lines no longer match either)
+    await db.execute('UPDATE vouchers SET amount = 1 WHERE id = ?', [a]);
+    // 4. a deleted bill's money lines came back
+    await db.execute('UPDATE voucher_lines SET deleted = 0 WHERE voucher_id = ?', [d]);
+    // 5. a bill vanished without a history line
+    await db.execute('UPDATE vouchers SET deleted = 1 WHERE id = ?', [b]);
+    final found = await hc.run();
+    String kinds() => found.map((i) => '${i.kind}:${i.title}').join(' | ');
+    expect(found.where((i) => i.kind == 'account' && i.fix!.changes.containsKey('opening_balance')).length, 1, reason: kinds());
+    expect(found.where((i) => i.kind == 'item' && i.itemFix!.changes.containsKey('opening_qty')).length, 1, reason: kinds());
+    expect(found.where((i) => i.kind == 'entry' && i.voucherId == a && i.detail.contains('amount')).length, 1, reason: kinds());
+    expect(found.where((i) => i.kind == 'orphan' && i.voucherId == d).length, 1, reason: kinds());
+    expect(found.where((i) => i.kind == 'entry' && i.voucherId == b && i.detail.contains('deleted')).length, 1, reason: kinds());
+
+    // the fixes put everything back and the check goes quiet again
+    for (final i in found) {
+      if (i.fix != null) await lr.repair([i.fix!]);
+      if (i.itemFix != null) await sr.putBack(i.itemFix!.id, {for (final e in i.itemFix!.changes.entries) e.key: e.value.$2});
+      if (i.lineIds.isNotEmpty) await hc.dropOrphanLines(i);
+    }
+    expect((await db.get('SELECT opening_balance o FROM ledgers WHERE id = ?', [vs.sys('cash')]))['o'], 2077800);
+    expect((await db.get('SELECT opening_qty q FROM items WHERE id = ?', [w.id]))['q'], 40);
+    await db.execute('UPDATE vouchers SET amount = 280000 WHERE id = ?', [a]); // owner corrects the bill
+    await db.execute('UPDATE vouchers SET deleted = 0 WHERE id = ?', [b]); // and brings back the vanished bill
+    await db.execute('UPDATE voucher_lines SET deleted = 0 WHERE voucher_id = ?', [b]);
+    expect((await hc.run()).map((i) => '${i.kind} ${i.title}: ${i.detail}').toList(), isEmpty);
   });
 }

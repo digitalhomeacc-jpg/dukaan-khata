@@ -283,6 +283,9 @@ class LedgerRepo {
   }
 
   // ---- बदल इतिहास for accounts
+  /// The details the history records for an account (for the health check).
+  Future<Map<String, Object?>> snapOf(String id) => _snap(id);
+
   Future<Map<String, Object?>> _snap(String id) async {
     final r = await db.getOptional('SELECT * FROM ledgers WHERE id = ?', [id]);
     return r == null ? {} : _snapRow(r);
@@ -447,6 +450,15 @@ class LedgerRepo {
       if (was('opening_balance') case final v?) put('opening_balance', Money.parse(v) ?? 0);
       if (was('credit_limit') case final v?) put('credit_limit', Money.parse(v) ?? 0);
       if (was('hidden') case final v?) put('archived', v.isEmpty ? 0 : 1);
+      for (final k in const ['phone', 'address', 'gstin']) {
+        if (was(k) case final v?) put(k, v.isEmpty ? null : v);
+      }
+      if (was('group') case final v? when v.isNotEmpty) put('grp', v);
+      if (was('salary') case final v?) put('salary', Money.parse(v) ?? 0);
+      if (was('salary_cut') case final v?) put('salary_cut', Money.parse(v) ?? 0);
+      if (was('interest_rate') case final v?) {
+        put('interest_rate', ((double.tryParse(v.replaceAll('%', '').trim()) ?? 0) * 100).round());
+      }
       if (sets.isEmpty) continue;
       await db.execute('UPDATE ledgers SET ${sets.join(', ')} WHERE id = ?', [...args, f.id]);
       await _log(f.id, 'edit', before, await _snap(f.id));

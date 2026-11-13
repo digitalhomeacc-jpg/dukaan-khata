@@ -7,6 +7,7 @@ import '../core/money.dart';
 import '../core/theme.dart';
 import '../shared/widgets.dart';
 import '../state/app_controller.dart';
+import 'health_screen.dart';
 import 'parties_screen.dart';
 import 'promise_screen.dart';
 import 'recurring_screen.dart';
@@ -37,7 +38,7 @@ class HomeScreen extends StatelessWidget {
           IconButton(tooltip: t('lock'), icon: const Icon(Icons.lock_outline), onPressed: app.lock),
         ],
       ),
-      body: LiveBuilder<(Map<String, int>, List<Item>, List<Voucher>, int, int, List<Booking>, List<AccountFix>)>(
+      body: LiveBuilder<(Map<String, int>, List<Item>, List<Voucher>, int, int, List<Booking>)>(
         load: () async => (
           await app.ledgers.dashboard(today),
           (await app.stock.list()).where((i) => i.lowStock > 0 && i.stock <= i.lowStock).toList(),
@@ -45,10 +46,11 @@ class HomeScreen extends StatelessWidget {
           await app.ledgers.promisesDue(today),
           app.actor.isOwner ? (await app.recurring.due(today)).length : 0, // दरमहा आकार to charge
           (await app.bookings.list(customer: false)).where((b) => b.open && !b.old).toList(), // orders on the way
-          app.actor.isOwner ? await app.ledgers.resetDamage() : const <AccountFix>[], // wiped built-in accounts
         ),
         builder: (context, data) {
-          final (d, low, recent, due, monthly, incoming, damage) = data;
+          final (d, low, recent, due, monthly, incoming) = data;
+          app.runHealth().ignore(); // at most every 2 hours, in the background
+          final damage = app.health ?? const [];
           return ListView(padding: const EdgeInsets.fromLTRB(16, 4, 16, 24), children: [
             _SearchField(onTap: () => SearchScreen.open(context), hint: t('search_all_hint')),
             if (damage.isNotEmpty) ...[
@@ -57,12 +59,12 @@ class HomeScreen extends StatelessWidget {
                 color: scheme.errorContainer,
                 borderRadius: BorderRadius.circular(14),
                 child: ListTile(
-                  key: const Key('home_fix_accounts'),
+                  key: const Key('home_health'),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                   leading: Icon(Icons.report_gmailerrorred, color: scheme.error),
-                  title: Text(t('fix_title'), style: const TextStyle(fontWeight: FontWeight.w700)),
+                  title: Text(t('health_card').replaceAll('{n}', '${damage.length}'), style: const TextStyle(fontWeight: FontWeight.w700)),
                   trailing: const Icon(Icons.chevron_right),
-                  onTap: () => fixAccountsDialog(context, damage),
+                  onTap: () => HealthScreen.open(context),
                 ),
               ),
             ],
