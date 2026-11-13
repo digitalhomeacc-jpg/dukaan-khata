@@ -688,7 +688,10 @@ class FriendDetailScreen extends StatelessWidget {
                   subtitle: Text(
                     [
                       dayLabel(t.txnAt),
-                      if (AppData.keyOf(t.title) != key) 'as ${t.title}',
+                      if (t.bankName != null)
+                        'as ${t.bankName}'
+                      else if (AppData.keyOf(t.title) != key)
+                        'as ${t.title}',
                       if (data.account(t.accountId) != null) data.account(t.accountId)!.name,
                       if (t.accountId == null && t.note != 'Settle up')
                         'balance correction'
@@ -727,7 +730,13 @@ class FriendDetailScreen extends StatelessWidget {
                       enabled: false,
                       title: Text('${t.isDebit ? 'You sent' : 'You got'} ${money(t.amount)}'),
                       subtitle: Text(
-                        [dayLabel(t.txnAt), if (AppData.keyOf(t.title) != key) 'as ${t.title}'].join(' · '),
+                        [
+                          dayLabel(t.txnAt),
+                          if (t.bankName != null)
+                            'as ${t.bankName}'
+                          else if (AppData.keyOf(t.title) != key)
+                            'as ${t.title}',
+                        ].join(' · '),
                       ),
                       onTap: () => openTxnEditor(context, data, existing: t),
                     ),

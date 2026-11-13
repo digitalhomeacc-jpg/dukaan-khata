@@ -505,10 +505,7 @@ class PlaceDetailScreen extends StatelessWidget {
                                 Text(
                                   [
                                     cat?.isLoan == true ? 'Friends ledger' : (cat?.name ?? 'No category'),
-                                    if (l.txn.merchant != null &&
-                                        AppData.keyOf(l.txn.merchant!) != AppData.keyOf(g.name) &&
-                                        !AppData.keyOf(g.name).startsWith(AppData.keyOf(l.txn.merchant!)))
-                                      'as ${l.txn.merchant}',
+                                    if (l.txn.bankName != null) 'as ${l.txn.bankName}',
                                     if ((l.txn.note ?? '').isNotEmpty) l.txn.note!,
                                   ].join(' · '),
                                   maxLines: 2,

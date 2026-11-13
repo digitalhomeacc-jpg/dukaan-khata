@@ -156,12 +156,30 @@ void main() {
   test('a fresh start: older entries stop counting, the opening balance stands in', () {
     final today = DateTime(2026, 11, 14);
     final txns = [
-      Txn(id: 'old', amount: 1817, isDebit: false, txnAt: DateTime(2026, 11, 4), merchant: 'Yash Gawali', categoryId: 'fr'),
-      Txn(id: 'new', amount: 200, isDebit: true, txnAt: DateTime(2026, 11, 14, 10), merchant: 'Yash Gawali', categoryId: 'fr'),
+      Txn(
+        id: 'old',
+        amount: 1817,
+        isDebit: false,
+        txnAt: DateTime(2026, 11, 4),
+        merchant: 'Yash Gawali',
+        categoryId: 'fr',
+      ),
+      Txn(
+        id: 'new',
+        amount: 200,
+        isDebit: true,
+        txnAt: DateTime(2026, 11, 14, 10),
+        merchant: 'Yash Gawali',
+        categoryId: 'fr',
+      ),
     ];
     final none = loanBalances(txns, {'fr'});
     expect(none.single.balance, 1617);
-    final fresh = loanBalances(txns, {'fr'}, starts: {'yash gawali': (name: 'Yash Gawali', from: today, opening: -1264)});
+    final fresh = loanBalances(
+      txns,
+      {'fr'},
+      starts: {'yash gawali': (name: 'Yash Gawali', from: today, opening: -1264)},
+    );
     expect(fresh.single.balance, -1464); // owes you 1264, and you sent 200 more
     expect(fresh.single.txns.map((t) => t.id), ['new']);
     // A friend with only an opening balance is listed too.

@@ -142,5 +142,29 @@ Future<void> showAlsoKnownAs(BuildContext context, AppData data, String person) 
       },
     ),
   );
-  if (picked != null && picked.isNotEmpty) await data.addAlias(picked, person);
+  if (picked != null && picked.isNotEmpty && context.mounted) await joinPeople(context, data, person, picked);
+}
+
+/// Two names, one person: asks which name to show, then shows every payment (and new ones) under it.
+Future<void> joinPeople(BuildContext context, AppData data, String person, String other) async {
+  final main = await showDialog<String>(
+    context: context,
+    builder: (c) => SimpleDialog(
+      title: const Text('Show them as'),
+      children: [
+        for (final n in [person, other])
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(c, n),
+            child: ListTile(
+              leading: const Icon(Icons.person_outline),
+              title: Text(n),
+              subtitle: Text(n == person ? 'Payments as $other move here' : 'Payments as $person move there'),
+            ),
+          ),
+      ],
+    ),
+  );
+  if (main == null) return;
+  await data.addAlias(main == person ? other : person, main);
+  if (main != person && context.mounted) Navigator.of(context).maybePop();
 }

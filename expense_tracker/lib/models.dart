@@ -102,6 +102,7 @@ class Txn {
     this.paidBy,
     this.payeeVpa,
     this.details,
+    this.bankName,
   });
 
   final String id;
@@ -138,6 +139,9 @@ class Txn {
 
   /// What the bank's statement said about it (narration), kept apart from your own note.
   final String? details;
+
+  /// The name the bank used, when the payment is shown under a friend's main name ("Also known as").
+  final String? bankName;
 
   /// Borrowed money and loan repayments are neither income nor spending.
   bool get isLoanTransfer => loanRole == 'borrow' || loanRole == 'repay';

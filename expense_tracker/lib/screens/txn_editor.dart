@@ -407,6 +407,7 @@ class _BankRecordCardState extends State<BankRecordCard> {
           const Divider(height: 18),
           row('Date', '${dayLabel(t.txnAt)}${t.source == 'statement' ? '' : ', ${timeLabel(t.txnAt)}'}'),
           if (account != null) row('Account', account.name),
+          if (t.bankName != null && t.bankName != t.merchant) row('Bank name', t.bankName!),
           if ((t.details ?? '').isNotEmpty) row('Bank wrote', t.details!, copy: true),
           if (t.payeeVpa != null) row('UPI ID', '••${t.payeeVpa}'),
           if (ref != null) row('Reference', ref, copy: true),

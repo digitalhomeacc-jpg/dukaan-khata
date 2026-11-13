@@ -593,7 +593,43 @@ class AppData extends ChangeNotifier {
       );
 
   Future<void> addAlias(String payeeName, String friendName) {
-    aliases = {...aliases, keyOf(payeeName): friendName};
+    final k = keyOf(payeeName);
+    aliases = {
+      for (final e in aliases.entries)
+        if (e.key != keyOf(friendName)) e.key: (keyOf(e.value) == k ? friendName : e.value),
+      k: friendName,
+    };
+    // Shown under the main name at once; the server renames them too.
+    transactions = [
+      for (final t in transactions)
+        t.merchant != null && keyOf(t.merchant!) == k
+            ? Txn(
+                id: t.id,
+                amount: t.amount,
+                isDebit: t.isDebit,
+                txnAt: t.txnAt,
+                merchant: friendName,
+                note: t.note,
+                bank: t.bank,
+                accountLast4: t.accountLast4,
+                method: t.method,
+                categoryId: t.categoryId,
+                accountId: t.accountId,
+                counterAccountId: t.counterAccountId,
+                source: t.source,
+                emailSubject: t.emailSubject,
+                excluded: t.excluded,
+                needsReview: t.needsReview,
+                loanId: t.loanId,
+                loanRole: t.loanRole,
+                emailBody: t.emailBody,
+                paidBy: t.paidBy,
+                payeeVpa: t.payeeVpa,
+                details: t.details,
+                bankName: t.bankName ?? t.merchant,
+              )
+            : t,
+    ];
     notifyListeners();
     return _db.rpc('add_friend_alias', params: {'p_alias': payeeName, 'p_friend': friendName});
   }
@@ -628,6 +664,7 @@ class AppData extends ChangeNotifier {
                 paidBy: t.paidBy,
                 payeeVpa: t.payeeVpa,
                 details: t.details,
+                bankName: t.bankName,
               )
             : t,
     ];
