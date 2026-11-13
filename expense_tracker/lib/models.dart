@@ -72,6 +72,9 @@ class Txn {
     this.emailSubject,
     this.excluded = false,
     this.needsReview = false,
+    this.loanId,
+    this.loanRole,
+    this.emailBody,
   });
 
   final String id;
@@ -94,6 +97,14 @@ class Txn {
   final String? emailSubject;
   final bool excluded;
   final bool needsReview;
+
+  /// Linked lender loan: 'borrow' (money from it), 'repay' (paying it back) or 'spend' (bought with it).
+  final String? loanId;
+  final String? loanRole;
+  final String? emailBody;
+
+  /// Borrowed money and loan repayments are neither income nor spending.
+  bool get isLoanTransfer => loanRole == 'borrow' || loanRole == 'repay';
 
   bool get fromEmail => source == 'email';
 
@@ -122,6 +133,9 @@ class Txn {
         emailSubject: m['email_subject'] as String?,
         excluded: m['excluded'] == true,
         needsReview: m['needs_review'] == true,
+        loanId: m['loan_id'] as String?,
+        loanRole: m['loan_role'] as String?,
+        emailBody: m['email_body'] as String?,
       );
 
   /// Columns a user may write (id, user_id and source are set by the database).
@@ -155,5 +169,95 @@ class UnreadEmail {
         subject: (m['subject'] as String?) ?? '',
         body: (m['body'] as String?) ?? '',
         receivedAt: m['received_at'] == null ? null : DateTime.parse(m['received_at'] as String).toLocal(),
+      );
+}
+
+enum LoanKind { emi, creditLine }
+
+/// A loan from a lender (Slice borrow, KreditBee, Fibe…).
+class Loan {
+  const Loan({
+    required this.id,
+    required this.lender,
+    required this.name,
+    this.kind = LoanKind.emi,
+    this.principal,
+    this.emiAmount,
+    this.tenureMonths,
+    this.emisPaidBefore = 0,
+    this.interestRate,
+    this.dueDay,
+    this.nextDueAmount,
+    this.nextDueDate,
+    this.outstanding,
+    this.outstandingAt,
+    this.aliases = const [],
+    this.accountId,
+    this.closed = false,
+  });
+
+  final String id;
+  final String lender;
+  final String name;
+  final LoanKind kind;
+  final double? principal;
+  final double? emiAmount;
+  final int? tenureMonths;
+  final int emisPaidBefore;
+  final double? interestRate;
+  final int? dueDay;
+  final double? nextDueAmount;
+  final DateTime? nextDueDate;
+  final double? outstanding;
+  final DateTime? outstandingAt;
+  final List<String> aliases;
+  final String? accountId;
+  final bool closed;
+
+  factory Loan.fromMap(Map<String, dynamic> m) {
+    double? n(Object? v) => v == null ? null : _num(v);
+    return Loan(
+      id: m['id'] as String,
+      lender: m['lender'] as String,
+      name: m['name'] as String,
+      kind: m['kind'] == 'credit_line' ? LoanKind.creditLine : LoanKind.emi,
+      principal: n(m['principal']),
+      emiAmount: n(m['emi_amount']),
+      tenureMonths: (m['tenure_months'] as num?)?.toInt(),
+      emisPaidBefore: (m['emis_paid_before'] as num?)?.toInt() ?? 0,
+      interestRate: n(m['interest_rate']),
+      dueDay: (m['due_day'] as num?)?.toInt(),
+      nextDueAmount: n(m['next_due_amount']),
+      nextDueDate: m['next_due_date'] == null ? null : DateTime.parse(m['next_due_date'] as String),
+      outstanding: n(m['outstanding']),
+      outstandingAt: m['outstanding_at'] == null ? null : DateTime.parse(m['outstanding_at'] as String).toLocal(),
+      aliases: ((m['aliases'] as List?) ?? const []).cast<String>(),
+      accountId: m['account_id'] as String?,
+      closed: m['closed'] == true,
+    );
+  }
+}
+
+enum LoanEventKind { borrow, spend, repay }
+
+class LoanEvent {
+  const LoanEvent({required this.id, required this.loanId, required this.kind, required this.amount, required this.at, this.note, this.fromEmail = false});
+
+  final String id;
+  final String loanId;
+  final LoanEventKind kind;
+  final double amount;
+  final DateTime at;
+  final String? note;
+  final bool fromEmail;
+
+  factory LoanEvent.fromMap(Map<String, dynamic> m) => LoanEvent(
+        id: m['id'] as String,
+        loanId: m['loan_id'] as String,
+        kind: LoanEventKind.values.byName(m['kind'] as String),
+        amount: _num(m['amount']),
+        at: DateTime.parse(m['event_at'] as String).toLocal(),
+        note: m['note'] as String?,
+        fromEmail: m['email_id'] != null,
       );
 }

@@ -12,7 +12,12 @@ import {
   BANK_SENDERS,
   type EmailInput,
   isLenderSender,
+  isReviewSender,
   LENDER_SENDERS,
+  type LenderEvent,
+  type LenderKey,
+  lenderOf,
+  parseLenderEmail,
   looksTransactional,
   merchantKey,
   type ParsedTxn,
@@ -79,6 +84,7 @@ Deno.serve(async (req) => {
     : { data: [] };
   const existing = new Map((existingRows ?? []).map((r) => [r.email_id as string, r]));
 
+  const lenderEvents: Array<{ email: EmailInput; ev: LenderEvent }> = [];
   const inserts = [];
   const updates: Array<{ id: string; row: Record<string, unknown> }> = [];
   const unparsed = [];
@@ -91,6 +97,14 @@ Deno.serve(async (req) => {
       body: m.body.slice(0, MAX_BODY),
     };
     const lender = isLenderSender(email.from);
+    if (lender) {
+      const ev = parseLenderEmail(email);
+      if (ev === "ignore") continue;
+      if (ev) {
+        lenderEvents.push({ email, ev });
+        continue;
+      }
+    }
     const result = parseBankEmail(email);
     if (result.ok) {
       const t = result.txn;
@@ -122,15 +136,16 @@ Deno.serve(async (req) => {
         updates.push({ id: old.id as string, row: { ...row, category_id: old.category_id ?? rule } });
       }
     }
-    if (lender || (!result.ok && (result.reason === "unreadable" || looksTransactional(`${email.subject} ${email.body}`)))) {
+    const review = isReviewSender(email.from);
+    if (lender || review || (!result.ok && (result.reason === "unreadable" || looksTransactional(`${email.subject} ${email.body}`)))) {
       unparsed.push({
         user_id: userId,
         email_id: email.id,
         from_addr: email.from.slice(0, 200),
         subject: email.subject.slice(0, 200),
-        body: email.body.slice(0, lender ? KEEP_BODY : 2000),
+        body: email.body.slice(0, lender || review ? KEEP_BODY : 2000),
         received_at: email.date,
-        kind: lender ? "lender" : "unreadable",
+        kind: lender ? "lender" : review ? "review" : "unreadable",
       });
     }
   }
@@ -148,6 +163,40 @@ Deno.serve(async (req) => {
     const { error } = await supabase.from("transactions").update(u.row).eq("id", u.id).eq("edited", false);
     if (!error) updated++;
   }
+  let loanEvents = 0;
+  for (const { email, ev } of lenderEvents) {
+    const loan = await ensureLoan(userId, lenderOf(email.from), accounts);
+    if (!loan) continue;
+    if (ev.kind === "due") {
+      if (ev.dueDate && (!loan.next_due_date || ev.dueDate >= loan.next_due_date)) {
+        await supabase.from("loans").update({ next_due_amount: ev.amount, next_due_date: ev.dueDate }).eq("id", loan.id);
+        loan.next_due_date = ev.dueDate;
+      }
+      loanEvents++;
+      continue;
+    }
+    let txnId: string | null = null;
+    if (ev.kind === "spend") {
+      // A purchase paid by the loan is real spending, from the loan's own account.
+      const { data: t } = await supabase.from("transactions").upsert({
+        user_id: userId, source: "email", email_id: email.id,
+        amount: ev.amount, direction: "debit", merchant: ev.merchant, method: "other",
+        txn_at: ev.at, account_id: loan.account_id, loan_id: loan.id, loan_role: "spend",
+        category_id: ruleFor.get(merchantKey(ev.merchant)) ?? null,
+        email_subject: email.subject.slice(0, 200), email_body: email.body.slice(0, KEEP_BODY),
+        email_from: email.from.slice(0, 200), email_received_at: email.date,
+      }, { onConflict: "user_id,email_id" }).select("id").maybeSingle();
+      txnId = (t?.id as string | undefined) ?? null;
+    }
+    const { data: e } = await supabase.from("loan_events").upsert({
+      user_id: userId, loan_id: loan.id, kind: ev.kind, amount: ev.amount, event_at: ev.at,
+      email_id: email.id, txn_id: txnId, note: ev.merchant ?? email.subject.slice(0, 120),
+    }, { onConflict: "user_id,email_id", ignoreDuplicates: true }).select("id");
+    loanEvents += e?.length ?? 0;
+  }
+  await supabase.rpc("link_loan_transactions", { p_user: userId });
+  await supabase.rpc("link_self_transfers", { p_user: userId });
+
   if (unparsed.length) {
     await supabase.from("unparsed_emails")
       .upsert(unparsed, { onConflict: "user_id,email_id", ignoreDuplicates: true });
@@ -161,7 +210,8 @@ Deno.serve(async (req) => {
     added,
     updated,
     unreadable: unparsed.filter((u) => u.kind === "unreadable").length,
-    lender: unparsed.filter((u) => u.kind === "lender").length,
+    lender: unparsed.filter((u) => u.kind === "lender").length + lenderEvents.length,
+    loanEvents,
   });
 });
 
@@ -191,4 +241,36 @@ async function accountFor(userId: string, accounts: Account[], t: ParsedTxn): Pr
   if (!data) return null;
   accounts.push(data as Account);
   return (data as Account).id;
+}
+
+type Loan = { id: string; account_id: string | null; next_due_date: string | null };
+
+const KNOWN_LENDERS: Record<Exclude<LenderKey, "other">, { name: string; kind: string; aliases: string[] }> = {
+  slice: { name: "Slice borrow", kind: "credit_line", aliases: ["slice", "slice borrow", "slice small finance bank"] },
+  kreditbee: { name: "KreditBee", kind: "emi", aliases: ["kreditbee", "krazybee", "krazybee services"] },
+  fibe: { name: "Fibe", kind: "emi", aliases: ["fibe", "earlysalary", "social worth technologies"] },
+};
+
+/** The user's loan for this lender, made the first time one of its emails arrives. */
+async function ensureLoan(userId: string, key: LenderKey, accounts: Account[]): Promise<Loan | null> {
+  if (key === "other") return null;
+  const def = KNOWN_LENDERS[key];
+  const { data: found } = await supabase.from("loans").select("id, account_id, next_due_date")
+    .eq("user_id", userId).eq("lender", key).eq("closed", false).order("created_at").limit(1).maybeSingle();
+  if (found) return found as Loan;
+
+  let accountId: string | null = null;
+  if (def.kind === "credit_line") {
+    const { data: acc } = await supabase.from("accounts")
+      .upsert({ user_id: userId, name: def.name, kind: "card" }, { onConflict: "user_id,name" })
+      .select("id, name, kind, bank, last4").single();
+    if (acc) {
+      accountId = acc.id as string;
+      accounts.push(acc as Account);
+    }
+  }
+  const { data } = await supabase.from("loans").upsert({
+    user_id: userId, lender: key, name: def.name, kind: def.kind, aliases: def.aliases, account_id: accountId,
+  }, { onConflict: "user_id,name" }).select("id, account_id, next_due_date").single();
+  return (data as Loan | null) ?? null;
 }

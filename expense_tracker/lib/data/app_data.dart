@@ -25,6 +25,14 @@ class AppData extends ChangeNotifier {
         accounts = rows.map(Account.fromMap).toList();
         notifyListeners();
       }, onError: _onError),
+      db.from('loans').stream(primaryKey: ['id']).order('created_at', ascending: true).listen((rows) {
+        loans = rows.map(Loan.fromMap).toList();
+        notifyListeners();
+      }, onError: _onError),
+      db.from('loan_events').stream(primaryKey: ['id']).order('event_at').listen((rows) {
+        loanEvents = rows.map(LoanEvent.fromMap).toList();
+        notifyListeners();
+      }, onError: _onError),
       db.from('profiles').stream(primaryKey: ['id']).listen((rows) {
         if (rows.isNotEmpty) profile = rows.first;
         notifyListeners();
@@ -39,6 +47,8 @@ class AppData extends ChangeNotifier {
     required this.transactions,
     required this.categories,
     this.accounts = const [],
+    this.loans = const [],
+    this.loanEvents = const [],
     this.unread = const [],
     this.profile = const {},
   })  : _client = null,
@@ -55,6 +65,8 @@ class AppData extends ChangeNotifier {
   List<Txn> transactions = const [];
   List<Category> categories = const [];
   List<Account> accounts = const [];
+  List<Loan> loans = const [];
+  List<LoanEvent> loanEvents = const [];
   List<UnreadEmail> unread = const [];
   Map<String, dynamic> profile = const {};
 
@@ -152,11 +164,51 @@ class AppData extends ChangeNotifier {
 
   Future<void> deleteAccount(String id) => _db.from('accounts').delete().eq('id', id);
 
+  // ------------------------------------------------------------- lender loans
+
+  Loan? loan(String? id) {
+    if (id == null) return null;
+    for (final l in loans) {
+      if (l.id == id) return l;
+    }
+    return null;
+  }
+
+  Future<void> saveLoan(Map<String, dynamic> row, {String? id}) async {
+    if (id == null) {
+      await _db.from('loans').insert(row);
+    } else {
+      await _db.from('loans').update(row).eq('id', id);
+    }
+    // Bank payments to this lender become repayments (and stop counting as spending).
+    await _db.rpc('link_loan_transactions', params: {'p_user': user!.id});
+  }
+
+  Future<void> deleteLoan(String id) => _db.from('loans').delete().eq('id', id);
+
+  /// Records a repayment (or extra borrowing) by hand.
+  Future<void> addLoanEvent(String loanId, LoanEventKind kind, double amount, DateTime at, {String? note}) =>
+      _db.from('loan_events').insert({
+        'loan_id': loanId,
+        'kind': kind.name,
+        'amount': amount,
+        'event_at': at.toUtc().toIso8601String(),
+        'note': note,
+      });
+
+  Future<void> deleteLoanEvent(String id) => _db.from('loan_events').delete().eq('id', id);
+
+  /// "I owe ₹X now": later borrowing and repayments are counted from here.
+  Future<void> setOwed(String loanId, double owed) => _db.from('loans').update({
+        'outstanding': owed,
+        'outstanding_at': DateTime.now().toUtc().toIso8601String(),
+      }).eq('id', loanId);
+
   // ------------------------------------------------------------- Gmail sync
 
   Future<void> refreshUnread() async {
     try {
-      final rows = await _db.from('unparsed_emails').select().order('received_at', ascending: false).limit(200);
+      final rows = await _db.from('unparsed_emails').select().eq('kind', 'unreadable').order('received_at', ascending: false).limit(200);
       unread = rows.map(UnreadEmail.fromMap).toList();
       notifyListeners();
     } catch (e) {

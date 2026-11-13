@@ -42,6 +42,7 @@ const BANKS: Array<[string, RegExp]> = [
   ["Axis", /axis ?bank|axisbank|axis\.bank/i],
   ["Kotak", /kotak/i],
   ["Slice", /slice\.bank\.in|sliceit/i],
+  ["Amazon Pay", /amazonpay/i],
 ];
 
 const MONTHS: Record<string, number> = {
@@ -64,6 +65,8 @@ const CREDIT_WORDS = [
 /** Strip HTML, decode the common entities and collapse whitespace. */
 export function normalize(text: string): string {
   return text
+    .replace(/[\u200b-\u200d\u2060\ufeff\u00ad]/g, "") // invisible characters inside numbers: "₹1,\u200c500"
+    .replace(/\u00a0/g, " ")
     .replace(/<(script|style)[\s\S]*?<\/\1>/gi, " ")
     .replace(/<br\s*\/?>|<\/(p|div|tr|td|li)>/gi, " ")
     .replace(/<[^>]+>/g, " ")
@@ -89,7 +92,16 @@ export const BANK_SENDERS = [
   "sbi.co.in", "sbi.bank.in", "sbicard.com",
   "axisbank.com", "axis.bank.in", "axisbank.bank.in",
   "slice.bank.in", "sliceit.com",
+  "amazonpay.in",
 ];
+
+/** New senders whose emails are kept whole until their format is learned. */
+export const REVIEW_SENDERS = ["amazonpay.in"];
+
+export function isReviewSender(from: string): boolean {
+  const f = from.toLowerCase();
+  return REVIEW_SENDERS.some((s) => f.includes(s));
+}
 
 /** Digital lenders: their emails are kept for loan tracking. */
 export const LENDER_SENDERS = ["slice.bank.in", "sliceit.com", "kreditbee.in", "fibe.in", "earlysalary.com"];
@@ -97,6 +109,7 @@ export const LENDER_SENDERS = ["slice.bank.in", "sliceit.com", "kreditbee.in", "
 export const SEARCH_KEYWORDS = [
   "debited", "credited", "spent", "debit", "credit", "withdrawn", "UPI", "transaction",
   "EMI", "loan", "disbursed", "repayment", '"payment received"', "due",
+  "paid", "refund", "added", "balance",
 ];
 
 export function isLenderSender(from: string): boolean {
@@ -211,6 +224,12 @@ function findMerchant(fullText: string, dir: Direction): string | null {
     () => {
       const m = text.match(/(?:to|towards|by|from)\s+vpa\s+(\S+@[\w.\-]+)\s*\(([^)]{2,60})\)/i);
       return m ? cleanMerchant(m[2]) ?? cleanMerchant(m[1]) : null;
+    },
+    // Slice: "Sender Name slice Ref No." / "To HP Petrol Pump Loni RRN 6291…"
+    () => {
+      const m = text.match(/\bsender name\s*:?\s*(.{2,60}?)\s+(?:ref(?:erence)?\.?\s*no|rrn|upi ref)\b/i) ??
+        text.match(/\bto\s+([A-Za-z][^.]{1,60}?)\s+(?:rrn|ref(?:erence)?\.?\s*no)\b/i);
+      return m ? cleanMerchant(m[1]) : null;
     },
     // HDFC 2026 credit: "Sender: NAME (VPA: …)" / "Payee: …" / "Beneficiary: …"
     () => {
@@ -375,4 +394,79 @@ export function looksTransactional(text: string): boolean {
 /** Lower-cased, space-collapsed key used to remember a category per merchant. */
 export function merchantKey(merchant: string | null): string {
   return (merchant ?? "").toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+// ------------------------------------------------------------------ lenders
+
+export type LenderKey = "slice" | "kreditbee" | "fibe" | "other";
+
+export interface LenderEvent {
+  kind: "borrow" | "spend" | "repay" | "due";
+  amount: number;
+  /** Shop paid with the loan (spend). */
+  merchant: string | null;
+  /** YYYY-MM-DD, for "due" events. */
+  dueDate: string | null;
+  at: string;
+}
+
+export function lenderOf(from: string): LenderKey {
+  const f = from.toLowerCase();
+  if (/slice/.test(f)) return "slice";
+  if (/kreditbee|krazybee/.test(f)) return "kreditbee";
+  if (/fibe|earlysalary/.test(f)) return "fibe";
+  return "other";
+}
+
+const AMT = String.raw`(?:rs\.?|inr|₹)\s*\*?\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)`;
+
+function num(s: string): number {
+  return Math.round(Number(s.replace(/,/g, "")) * 100) / 100;
+}
+
+/**
+ * Loan emails from lenders. Returns an event, "ignore" for reminders of failed
+ * payments, OTPs and offers, or null when it is an ordinary bank-account alert
+ * (e.g. Slice's savings account), which parseBankEmail reads instead.
+ */
+export function parseLenderEmail(email: EmailInput): LenderEvent | "ignore" | null {
+  const text = normalize(`${email.subject}. ${email.body}`).replace(/\*/g, "");
+  const t = text.toLowerCase();
+  const at = isNaN(new Date(email.date).getTime()) ? new Date().toISOString() : new Date(email.date).toISOString();
+  const ev = (kind: LenderEvent["kind"], amount: string, merchant: string | null = null, dueDate: string | null = null): LenderEvent =>
+    ({ kind, amount: num(amount), merchant, dueDate, at });
+
+  if (/\b(failed|unsuccessful|declined|bounced)\b/.test(t)) return "ignore";
+  if (/\botp\b|one time password/.test(t)) return "ignore";
+
+  let m = text.match(new RegExp(String.raw`paid\s+` + AMT + String.raw`\s+to\s+(.{2,60}?)\s+using\s+(?:\w+\s+)?borrow`, "i"));
+  if (m) return ev("spend", m[1], cleanMerchant(m[2]));
+
+  m = text.match(new RegExp(String.raw`transferred\s+` + AMT + String.raw`\s+to\s+your\s+bank\s+account\s+via`, "i")) ??
+    text.match(new RegExp(String.raw`(?:loan|amount)\s+of\s+` + AMT + String.raw`\s+(?:has\s+been|is|was)\s+(?:successfully\s+)?(?:disbursed|credited|transferred)`, "i")) ??
+    text.match(new RegExp(AMT + String.raw`\s+(?:has\s+been\s+|is\s+)?(?:successfully\s+)?disbursed`, "i"));
+  if (m) return ev("borrow", m[1]);
+
+  m = text.match(new RegExp(String.raw`repayment\s+of\s+` + AMT + String.raw`\s+(?:was|has\s+been|is)\s+(?:successful|received|done)`, "i")) ??
+    text.match(new RegExp(String.raw`(?:payment|emi)\s+of\s+` + AMT + String.raw`\s+(?:has\s+been\s+|was\s+|is\s+)?(?:successfully\s+)?(?:received|successful|paid)`, "i")) ??
+    text.match(new RegExp(String.raw`received\s+(?:your\s+)?(?:payment|emi|repayment)\s+of\s+` + AMT, "i"));
+  if (m) return ev("repay", m[1]);
+
+  m = text.match(new RegExp(String.raw`(?:payment|emi|amount|repayment)\s+of\s+` + AMT + String.raw`\s+(?:is\s+)?due\s+(today|tomorrow|on\s+[^.]{3,30})`, "i")) ??
+    text.match(new RegExp(AMT + String.raw`\s+(?:is\s+)?due\s+(today|tomorrow|on\s+[^.]{3,30})`, "i"));
+  if (m) {
+    const when = m[2].toLowerCase();
+    let due: string | null;
+    if (when === "today" || when === "tomorrow") {
+      const d = new Date(new Date(at).getTime() + 330 * 60_000 + (when === "tomorrow" ? 86_400_000 : 0));
+      due = d.toISOString().slice(0, 10);
+    } else {
+      due = findDate(m[2])?.date ?? null;
+    }
+    return ev("due", m[1], null, due);
+  }
+
+  // Lender marketing (prizes, offers, safety tips) is not a transaction.
+  if (!/\b(debited|credited|received\s+(?:rs|inr|₹))/.test(t)) return "ignore";
+  return null;
 }

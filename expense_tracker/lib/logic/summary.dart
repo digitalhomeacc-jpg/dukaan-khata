@@ -22,7 +22,8 @@ class MonthSummary {
 
 /// Whether a transaction counts as spending / income. Card bill payments,
 /// moves between own accounts (`excluded`) and personal loans do not.
-bool counts(Txn t, Set<String> loanCategoryIds) => !t.excluded && !loanCategoryIds.contains(t.categoryId);
+bool counts(Txn t, Set<String> loanCategoryIds) =>
+    !t.excluded && !t.isLoanTransfer && !loanCategoryIds.contains(t.categoryId);
 
 /// Totals for one month, without transfers and loans so money is not counted twice.
 MonthSummary summarize(Iterable<Txn> txns, DateTime month, {Set<String> loanCategoryIds = const {}}) {
@@ -146,3 +147,122 @@ List<LoanBalance> loanBalances(Iterable<Txn> txns, Set<String> loanCategoryIds) 
 }
 
 double _round(double v) => (v * 100).roundToDouble() / 100;
+
+// --------------------------------------------------------------- lender loans
+
+class LoanStatus {
+  LoanStatus({
+    required this.owed,
+    required this.borrowed,
+    required this.repaid,
+    required this.emisPaid,
+    required this.emisLeft,
+    required this.nextDueAmount,
+    required this.nextDueDate,
+    required this.nextDuePaid,
+    required this.owedIsEmiBased,
+  });
+
+  /// What is still to be paid back.
+  final double owed;
+  final double borrowed;
+  final double repaid;
+  final int? emisPaid;
+  final int? emisLeft;
+  final double? nextDueAmount;
+  final DateTime? nextDueDate;
+
+  /// The latest due amount has already been paid.
+  final bool nextDuePaid;
+
+  /// `owed` is EMIs left × EMI (includes interest), not borrowed − repaid.
+  final bool owedIsEmiBased;
+}
+
+DateTime _day(DateTime d) => DateTime(d.year, d.month, d.day);
+
+/// Next date with this day of the month on or after [from] (31 → last day of short months).
+DateTime nextDueOn(int dueDay, DateTime from) {
+  DateTime onMonth(int y, int m) {
+    final last = DateTime(y, m + 1, 0).day;
+    return DateTime(y, m, dueDay > last ? last : dueDay);
+  }
+
+  final d = _day(from);
+  final thisMonth = onMonth(d.year, d.month);
+  return thisMonth.isBefore(d) ? onMonth(d.year, d.month + 1) : thisMonth;
+}
+
+LoanStatus loanStatus(Loan loan, Iterable<LoanEvent> allEvents, {DateTime? now}) {
+  final today = _day(now ?? DateTime.now());
+  final events = allEvents.where((e) => e.loanId == loan.id).toList()..sort((a, b) => a.at.compareTo(b.at));
+  var borrowed = 0.0, repaid = 0.0, sinceIn = 0.0, sinceOut = 0.0;
+  var repayCount = 0;
+  for (final e in events) {
+    final after = loan.outstandingAt == null || e.at.isAfter(loan.outstandingAt!);
+    if (e.kind == LoanEventKind.repay) {
+      repaid += e.amount;
+      repayCount++;
+      if (after) sinceOut += e.amount;
+    } else {
+      borrowed += e.amount;
+      if (after) sinceIn += e.amount;
+    }
+  }
+
+  int? emisPaid, emisLeft;
+  if (loan.kind == LoanKind.emi && loan.tenureMonths != null) {
+    emisPaid = (loan.emisPaidBefore + repayCount).clamp(0, loan.tenureMonths!);
+    emisLeft = loan.tenureMonths! - emisPaid;
+  }
+
+  double owed;
+  var emiBased = false;
+  if (loan.outstanding != null) {
+    owed = loan.outstanding! + sinceIn - sinceOut;
+  } else if (emisLeft != null && loan.emiAmount != null) {
+    owed = emisLeft * loan.emiAmount!;
+    emiBased = true;
+  } else {
+    owed = (loan.principal ?? 0) + borrowed - repaid;
+  }
+  if (owed < 0) owed = 0;
+
+  // Next due: the lender's latest reminder, else the EMI day.
+  double? dueAmount = loan.nextDueAmount;
+  DateTime? dueDate = loan.nextDueDate;
+  var duePaid = false;
+  if (dueDate != null) {
+    final windowStart = dueDate.subtract(const Duration(days: 7));
+    duePaid = events.any((e) =>
+        e.kind == LoanEventKind.repay && !e.at.isBefore(windowStart) && e.amount >= (dueAmount ?? 0) * 0.95);
+  }
+  if ((dueDate == null || duePaid) && loan.dueDay != null && loan.emiAmount != null && (emisLeft ?? 1) > 0) {
+    // Already paid this month's EMI? Then the next one is next month.
+    final lastRepay = events.lastWhere((e) => e.kind == LoanEventKind.repay,
+        orElse: () => LoanEvent(id: '', loanId: '', kind: LoanEventKind.borrow, amount: 0, at: DateTime(2000)));
+    var from = today;
+    if (lastRepay.kind == LoanEventKind.repay && lastRepay.at.year == today.year && lastRepay.at.month == today.month) {
+      from = DateTime(today.year, today.month + 1, 1);
+    }
+    dueDate = nextDueOn(loan.dueDay!, from);
+    dueAmount = loan.emiAmount;
+    duePaid = false;
+  }
+  if (owed == 0 && loan.kind == LoanKind.emi && emisLeft == 0) {
+    dueDate = null;
+    dueAmount = null;
+  }
+
+  return LoanStatus(
+    owed: _round(owed),
+    borrowed: _round(borrowed + (loan.principal ?? 0)),
+    repaid: _round(repaid),
+    emisPaid: emisPaid,
+    emisLeft: emisLeft,
+    nextDueAmount: dueAmount,
+    nextDueDate: dueDate,
+    nextDuePaid: duePaid,
+    owedIsEmiBased: emiBased,
+  );
+}

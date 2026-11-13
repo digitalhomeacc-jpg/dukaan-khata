@@ -288,3 +288,60 @@ test("payee is never taken from the footer", () => {
   const t = ok(mail("alerts@hdfcbank.bank.in", "UPI", "Rs.50.00 is debited from your account ending 3191 on 12-11-26." + HDFC_FOOTER));
   assert.equal(t.merchant, null);
 });
+
+// ---------------------------------------------------------------- Slice (made-up names / numbers)
+import { parseLenderEmail, type LenderEvent } from "./parsers.ts";
+
+const SLICE = "slice <noreply@slice.bank.in>";
+function lender(subject: string, body: string): LenderEvent | "ignore" | null {
+  return parseLenderEmail(mail(SLICE, subject, body));
+}
+
+test("amount with an invisible joiner is read whole", () => {
+  const t = ok(mail(SLICE, "Received ₹1,\u200c500", "Hi Asha, You have received ₹1,\u200c500 in your slice bank a/c xx2690. Aval. Bal. Rs. 1,631.30! Transaction Date 18-Oct-26 Sender Name slice Ref No. 600000000003 Reach out to our customer support team at 08000000000 or drop us an email"));
+  assert.equal(t.amount, 1500);
+  assert.equal(t.direction, "credit");
+  assert.equal(t.merchant, "slice");
+  assert.equal(t.accountLast4, "2690");
+  assert.equal(t.bank, "Slice");
+});
+
+test("Slice account UPI payment: 'To NAME RRN'", () => {
+  const t = ok(mail(SLICE, "₹300 debited from your slice account", "Hi Asha, ₹300 debited from your slice bank account xx2690 via UPI. Transaction date 18-Oct-26 To HP Petrol Pump Loni RRN 600000000004 Best, Team slice"));
+  assert.equal(t.amount, 300);
+  assert.equal(t.direction, "debit");
+  assert.equal(t.merchant, "HP Petrol Pump Loni");
+});
+
+test("slice borrow cash to bank is a borrow", () => {
+  const e = lender("Borrow order confirmed!", "Hi Asha, You have transferred *₹590* to your bank account via *slice borrow.* Order ID: BW0000001");
+  assert.deepEqual(e && e !== "ignore" && [e.kind, e.amount], ["borrow", 590]);
+});
+
+test("slice borrow purchase is a spend with the shop", () => {
+  const e = lender("Transaction completed using slice borrow 🎉", "Hi Asha, You have paid *₹136* to Aayush medical and general store using *slice borrow.* Order ID: CL0000001");
+  assert.ok(e && e !== "ignore");
+  assert.equal(e.kind, "spend");
+  assert.equal(e.amount, 136);
+  assert.equal(e.merchant, "Aayush medical and general store");
+});
+
+test("repayment and due reminder", () => {
+  const r = lender("Repayment successful!", "Hi Asha, Your repayment of ₹506.54 was successful. Transaction ID : RID-1");
+  assert.deepEqual(r && r !== "ignore" && [r.kind, r.amount], ["repay", 506.54]);
+  const d = lender("Payment reminder", "Hello Asha, As a friendly reminder, your payment of ₹506.54 is due today. Repaying on time helps maintain a healthy credit score.");
+  assert.ok(d && d !== "ignore");
+  assert.equal(d.kind, "due");
+  assert.equal(d.amount, 506.54);
+  assert.equal(d.dueDate, "2026-11-12");
+});
+
+test("failed repayment, OTP and offers are ignored", () => {
+  assert.equal(lender("Repayment failed", "Hi Asha, Your repayment of ₹28,\u200c921.90 has failed."), "ignore");
+  assert.equal(lender("Your slice email OTP is 8111", "Your OTP is 8111"), "ignore");
+  assert.equal(parseLenderEmail(mail("Fibe <notification@info.fibe.in>", "Pay with FibePay and win every week!", "Win exciting prizes")), "ignore");
+});
+
+test("Slice bank account alerts go to the normal reader", () => {
+  assert.equal(lender("₹300 debited from your slice account", "₹300 debited from your slice bank account xx2690 via UPI."), null);
+});

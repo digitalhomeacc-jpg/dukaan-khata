@@ -4,6 +4,7 @@ import '../data/app_data.dart';
 import '../logic/summary.dart';
 import '../models.dart';
 import '../ui/format.dart';
+import 'lender_loans.dart';
 import 'txn_editor.dart';
 
 /// Money borrowed from and lent to friends, with each friend's balance.
@@ -15,12 +16,14 @@ class LoansScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final loans = loanBalances(data.transactions, data.loanCategoryIds);
-    final iOwe = loans.where((l) => l.balance > 0).fold(0.0, (s, l) => s + l.balance);
+    final lenderLoans = data.loans.where((l) => !l.closed).toList();
+    final lenderOwed = lenderLoans.fold(0.0, (s, l) => s + loanStatus(l, data.loanEvents).owed);
+    final iOwe = loans.where((l) => l.balance > 0).fold(0.0, (s, l) => s + l.balance) + lenderOwed;
     final owedToMe = loans.where((l) => l.balance < 0).fold(0.0, (s, l) => s - l.balance);
     final scheme = Theme.of(context).colorScheme;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Personal loans')),
+      appBar: AppBar(title: const Text('Loans')),
       body: ListView(
         padding: const EdgeInsets.only(bottom: 96),
         children: [
@@ -39,6 +42,22 @@ class LoansScreen extends StatelessWidget {
               ),
             ),
           ),
+          _SectionHeader(
+            title: 'Loans & credit',
+            action: TextButton.icon(
+              onPressed: () => openLoanForm(context, data),
+              icon: const Icon(Icons.add, size: 18),
+              label: const Text('Add a loan'),
+            ),
+          ),
+          if (lenderLoans.isEmpty)
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Text('Slice borrow appears here by itself from its emails. Add KreditBee, Fibe or any other loan with “Add a loan”.'),
+            ),
+          for (final l in lenderLoans) LenderLoanCard(data: data, loan: l),
+          const SizedBox(height: 8),
+          const _SectionHeader(title: 'Friends'),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Row(
@@ -64,9 +83,9 @@ class LoansScreen extends StatelessWidget {
           const SizedBox(height: 8),
           if (loans.isEmpty)
             const Padding(
-              padding: EdgeInsets.all(32),
+              padding: EdgeInsets.all(24),
               child: Text(
-                'No loans yet.\n\nRecord money you borrowed from or lent to a friend. '
+                'Record money you borrowed from or lent to a friend. '
                 'You can also put a bank payment under the "Personal loans" category, with the friend\'s name.',
                 textAlign: TextAlign.center,
               ),
@@ -217,4 +236,25 @@ class _PersonLoans extends StatelessWidget {
       ),
     );
   }
+}
+
+class _SectionHeader extends StatelessWidget {
+  const _SectionHeader({required this.title, this.action});
+
+  final String title;
+  final Widget? action;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 8, 4),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(title,
+                  style: TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.w600)),
+            ),
+            ?action,
+          ],
+        ),
+      );
 }

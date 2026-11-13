@@ -257,8 +257,15 @@ class TxnTile extends StatelessWidget {
       _accountText(),
       timeLabel(txn.txnAt),
     ].whereType<String>().join(' · ');
-    final isLoan = cat?.isLoan ?? false;
-    if (isLoan) details = '${txn.isDebit ? 'Lent / repaid' : 'Borrowed / got back'} · $details';
+    final lenderLoan = data.loan(txn.loanId);
+    final isLoan = (cat?.isLoan ?? false) || txn.isLoanTransfer;
+    if (txn.isLoanTransfer) {
+      details = '${txn.loanRole == 'borrow' ? 'Borrowed' : 'Loan payment'}${lenderLoan != null ? ' · ${lenderLoan.name}' : ''} · $details';
+    } else if (txn.loanRole == 'spend' && lenderLoan != null) {
+      details = 'Paid with ${lenderLoan.name} · $details';
+    } else if (isLoan) {
+      details = '${txn.isDebit ? 'Lent / repaid' : 'Borrowed / got back'} · $details';
+    }
     final amountColor = txn.excluded || isLoan ? scheme.outline : (txn.isDebit ? scheme.onSurface : Colors.green.shade700);
     return ListTile(
       leading: CategoryAvatar(cat),
