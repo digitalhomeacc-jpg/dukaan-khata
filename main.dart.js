@@ -80889,7 +80889,7 @@ i.push(A.cv(!1,n,n,n,!0,n,n,n,!0,n,B.c1A,B.akO,n,n,n,n,n,new A.aZd(o,m,a),!1,n,n
 i.push(A.cv(!1,n,n,n,!0,n,n,n,!0,n,n,B.F8,n,n,n,n,n,new A.aZe(a),!1,n,n,n,n,n,n,n,A.p(l.$1("audit"),n,n,n,n,n,n,n,n),n,n,n))
 B.f.L(h,i)}h.push(A.cv(!1,n,n,n,!0,n,n,n,!0,n,n,B.akJ,n,n,n,n,n,new A.aZf(a,l,m),!1,n,n,n,n,n,n,n,A.p(l.$1("sign_out"),n,n,n,n,n,n,n,n),n,n,n))
 h.push(B.kI)
-h.push(A.dW(A.p("Dukaan Khata \xb7 "+A.f(l.$1("version"))+" 13/11/26 09:53",n,n,n,n,A.E(a).ok.Q,n,n,n),n,n))
+h.push(A.dW(A.p("Dukaan Khata \xb7 "+A.f(l.$1("version"))+" 13/11/26 10:20",n,n,n,n,A.E(a).ok.Q,n,n,n),n,n))
 h.push(B.kI)
 return A.e4(j,n,A.dD(h,n,n,B.ak,!1),n,n)},
 AY(a){return this.aFs(a)},
