@@ -14,6 +14,8 @@
 var CONFIG = {
   INGEST_URL: '__INGEST_URL__',
   INGEST_TOKEN: '__INGEST_TOKEN__',
+  // Public app key of the Expense Tracker server (safe to share; required by Supabase).
+  SUPABASE_KEY: '__SUPABASE_KEY__',
   // How far back to look the very first time.
   BACKFILL_DAYS: 30,
   // Add more sender addresses or domains here if your bank uses another one.
@@ -105,7 +107,7 @@ function post_(batch) {
   var res = UrlFetchApp.fetch(CONFIG.INGEST_URL, {
     method: 'post',
     contentType: 'application/json',
-    headers: { 'x-ingest-token': CONFIG.INGEST_TOKEN },
+    headers: { 'x-ingest-token': CONFIG.INGEST_TOKEN, 'apikey': CONFIG.SUPABASE_KEY },
     payload: JSON.stringify({ messages: batch }),
     muteHttpExceptions: true,
   });
@@ -122,7 +124,7 @@ function isBankSender_(from, senders) {
 }
 
 function checkConfig_() {
-  if (CONFIG.INGEST_URL.indexOf('__') === 0 || CONFIG.INGEST_TOKEN.indexOf('__') === 0) {
+  if ([CONFIG.INGEST_URL, CONFIG.INGEST_TOKEN, CONFIG.SUPABASE_KEY].some(function (v) { return v.indexOf('__') === 0; })) {
     throw new Error('Copy the script from the app (Settings → Gmail sync → Copy script); it fills in your URL and token.');
   }
 }

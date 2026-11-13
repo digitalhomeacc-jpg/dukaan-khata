@@ -181,7 +181,8 @@ class AppData extends ChangeNotifier {
     final template = await rootBundle.loadString('apps_script/Code.gs');
     return template
         .replaceFirst('__INGEST_URL__', AppConfig.ingestUrl)
-        .replaceFirst('__INGEST_TOKEN__', ingestToken ?? '');
+        .replaceFirst('__INGEST_TOKEN__', ingestToken ?? '')
+        .replaceFirst('__SUPABASE_KEY__', AppConfig.supabaseKey);
   }
 
   // ----------------------------------------------------------------- account
