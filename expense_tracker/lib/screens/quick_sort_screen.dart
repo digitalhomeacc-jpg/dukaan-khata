@@ -4,9 +4,9 @@ import 'package:material_ui/material_ui.dart';
 import '../data/app_data.dart';
 import '../logic/summary.dart';
 import '../models.dart';
+import '../ui/category_picker.dart';
 import '../ui/category_style.dart';
 import '../ui/format.dart';
-import 'categories_screen.dart';
 
 Future<void> openQuickSort(BuildContext context, AppData data) => Navigator.of(context).push(
   MaterialPageRoute<void>(
@@ -33,16 +33,30 @@ class _QuickSortScreenState extends State<QuickSortScreen> {
   var _oneByOne = false;
   var _done = 0;
 
+  /// "Also for new payments here", per payee; unset means the default for its kind.
+  final _rememberFor = <String, bool>{};
+
   AppData get data => widget.data;
 
   Future<void> _apply(List<Txn> txns, String? categoryId, {required bool remember}) async {
     setState(() => _done += txns.length);
     if (remember) {
-      final keys = {
+      final vpas = {
         for (final t in txns)
-          if (t.merchant != null) AppData.keyOf(t.merchant!),
+          if (t.payeeVpa != null) t.payeeVpa!,
       };
-      await data.categorizePlace(keys, categoryId);
+      final person = txns.isNotEmpty && txns.first.merchant != null && looksLikePerson(txns.first.merchant!);
+      await data.categorizeGroup(
+        txns,
+        categoryId,
+        vpas: vpas,
+        names: vpas.isEmpty || !person
+            ? {
+                for (final t in txns)
+                  if (t.merchant != null) AppData.keyOf(t.merchant!),
+              }
+            : const {},
+      );
     } else {
       await data.categorizeTxns(txns.map((t) => t.id), categoryId);
     }
@@ -91,6 +105,11 @@ class _QuickSortScreenState extends State<QuickSortScreen> {
     final txnsLeft = g.txns.where((t) => !_skippedTxns.contains(t.id)).toList();
     final current = _oneByOne ? (txnsLeft.firstOrNull ?? g.txns.first) : null;
     final friends = data.loanCategory;
+    final vpas = {
+      for (final t in g.txns)
+        if (t.payeeVpa != null) t.payeeVpa!,
+    };
+    final remember = _rememberFor[g.name] ?? (!isPerson || role == 'shop');
 
     Widget categoryGrid(void Function(String? id) pick) => Wrap(
       spacing: 8,
@@ -109,11 +128,11 @@ class _QuickSortScreenState extends State<QuickSortScreen> {
             onPressed: () => pick(friends.id),
           ),
         ActionChip(
-          avatar: const Icon(Icons.add, size: 18),
-          label: const Text('New category'),
+          avatar: const Icon(Icons.search, size: 18),
+          label: const Text('Search / add detail'),
           onPressed: () async {
-            final id = await openCategoryForm(context, data);
-            if (id != null) pick(id);
+            final p = await pickCategory(context, data, allowNone: false);
+            if (p?.id != null) pick(p!.id);
           },
         ),
       ],
@@ -236,13 +255,23 @@ class _QuickSortScreenState extends State<QuickSortScreen> {
               style: text.titleSmall,
             ),
             const SizedBox(height: 8),
-            categoryGrid((id) => _apply(g.txns, id, remember: !isPerson || role == 'shop')),
-            const SizedBox(height: 8),
-            Text(
-              !isPerson || role == 'shop'
-                  ? 'New payments here get the same category by themselves.'
-                  : 'Only these payments: new ones from a person are asked again.',
-              style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+            categoryGrid((id) => _apply(g.txns, id, remember: remember)),
+            const SizedBox(height: 4),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              value: remember,
+              onChanged: (v) => setState(() => _rememberFor[g.name] = v),
+              title: Text(
+                vpas.isNotEmpty
+                    ? 'Also for new payments to ${vpas.map((v) => '••$v').join(', ')}'
+                    : 'Also for new payments here',
+              ),
+              subtitle: Text(
+                isPerson && role != 'shop'
+                    ? 'Turn on for a shop on a personal UPI ID (e.g. your cigarette shop)'
+                    : 'New payments get the same category by themselves',
+                style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+              ),
             ),
           ],
           const SizedBox(height: 16),

@@ -9,6 +9,7 @@ import 'package:expense_tracker/screens/settings_screen.dart';
 import 'package:expense_tracker/screens/transactions_screen.dart';
 import 'package:expense_tracker/screens/txn_editor.dart';
 import 'package:expense_tracker/screens/unread_emails_screen.dart';
+import 'package:expense_tracker/ui/category_picker.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -157,10 +158,21 @@ void main() {
     final data = sample();
     await pump(tester, TxnEditor(data: data, existing: data.transactions.first));
     expect(find.text('Bank email'), findsOneWidget);
-    await tester.scrollUntilVisible(find.text('Shopping'), 200, scrollable: find.byType(Scrollable).first);
+    await tester.scrollUntilVisible(find.byType(CategoryField), 200, scrollable: find.byType(Scrollable).first);
+    await tester.tap(find.byType(CategoryField));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Shopping'));
+    // The picker: groups listed, search offers to add a new detail.
+    await tester.enterText(find.widgetWithText(TextField, 'Search or add (e.g. Cigarettes)'), 'Cigar');
     await tester.pumpAndSettle();
+    expect(find.text('Add “Cigar”'), findsOneWidget);
+    await tester.enterText(find.widgetWithText(TextField, 'Cigar'), 'shop');
+    await tester.pumpAndSettle();
+    // Two quick taps choose once and close the sheet.
+    await tester.tap(find.text('Shopping').last);
+    await tester.tap(find.text('Shopping').last, warnIfMissed: false);
+    await tester.pumpAndSettle();
+    expect(find.text('Search or add (e.g. Cigarettes)'), findsNothing);
+    expect(find.text('Shopping'), findsOneWidget);
     await tester.scrollUntilVisible(
       find.textContaining('Always use this category'),
       100,

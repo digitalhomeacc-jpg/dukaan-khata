@@ -4,9 +4,9 @@ import 'package:material_ui/material_ui.dart';
 import '../data/app_data.dart';
 import '../logic/summary.dart';
 import '../models.dart';
+import '../ui/category_picker.dart';
 import '../ui/category_style.dart';
 import '../ui/format.dart';
-import 'categories_screen.dart';
 import 'split_section.dart';
 
 Future<void> openTxnEditor(BuildContext context, AppData data, {Txn? existing, Txn? prefill}) {
@@ -97,11 +97,16 @@ class _TxnEditorState extends State<TxnEditor> {
     );
     final categoryChanged = _categoryId != widget.existing?.categoryId;
     try {
-      await widget.data.saveTxn(
-        txn,
-        isNew: _isNew,
-        rememberCategory: !_isNew && categoryChanged && _remember && _merchant.text.trim().isNotEmpty,
-      );
+      final remember = !_isNew && categoryChanged && _remember && _merchant.text.trim().isNotEmpty;
+      final vpa = widget.existing?.payeeVpa;
+      await widget.data.saveTxn(txn, isNew: _isNew, rememberCategory: remember && vpa == null);
+      if (remember && vpa != null) {
+        await widget.data.categorizeGroup(
+          widget.data.transactions.where((t) => t.payeeVpa == vpa && t.id != txn.id),
+          _categoryId,
+          vpas: {vpa},
+        );
+      }
       if (mounted) Navigator.pop(context);
     } catch (e) {
       if (!mounted) return;
@@ -222,29 +227,13 @@ class _TxnEditorState extends State<TxnEditor> {
             const SizedBox(height: 20),
             Text('Category', style: Theme.of(context).textTheme.titleSmall),
             const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (final (:cat, :inGroup) in groupedCategories(widget.data.categories))
-                  ChoiceChip(
-                    avatar: Icon(iconFor(cat), size: inGroup ? 16 : 18, color: colorFor(cat)),
-                    label: Text(
-                      cat.isLoan ? 'Friends ledger (lent / borrowed / settle)' : cat.name,
-                      style: inGroup ? const TextStyle(fontSize: 13) : null,
-                    ),
-                    selected: _categoryId == cat.id,
-                    onSelected: (sel) => setState(() => _categoryId = sel ? cat.id : null),
-                  ),
-                ActionChip(
-                  avatar: const Icon(Icons.add, size: 18),
-                  label: const Text('New category'),
-                  onPressed: () async {
-                    final id = await openCategoryForm(context, widget.data);
-                    if (id != null && mounted) setState(() => _categoryId = id);
-                  },
-                ),
-              ],
+            CategoryField(
+              data: widget.data,
+              categoryId: _categoryId,
+              onTap: () async {
+                final pick = await pickCategory(context, widget.data, selected: _categoryId, allowFriends: true);
+                if (pick != null && mounted) setState(() => _categoryId = pick.id);
+              },
             ),
             if (_isLoan)
               Padding(
@@ -259,8 +248,16 @@ class _TxnEditorState extends State<TxnEditor> {
                 contentPadding: EdgeInsets.zero,
                 value: _remember,
                 onChanged: (v) => setState(() => _remember = v ?? true),
-                title: Text('Always use this category for “${_merchant.text.trim()}”'),
-                subtitle: const Text('Also fills in its other payments that have no category'),
+                title: Text(
+                  existing?.payeeVpa != null
+                      ? 'Use it for every payment to UPI ••${existing!.payeeVpa}'
+                      : 'Always use this category for “${_merchant.text.trim()}”',
+                ),
+                subtitle: Text(
+                  existing?.payeeVpa != null
+                      ? 'Past and new payments to this UPI ID (not other UPI IDs with the same name)'
+                      : 'Also fills in its other payments that have no category',
+                ),
               ),
             const SizedBox(height: 12),
             TextFormField(

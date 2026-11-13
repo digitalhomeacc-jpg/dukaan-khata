@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../data/app_data.dart';
 import '../logic/summary.dart';
+import '../ui/category_picker.dart';
 import '../ui/category_style.dart';
 import '../ui/format.dart';
 import 'txn_editor.dart';
@@ -338,7 +339,8 @@ class PlaceDetailScreen extends StatelessWidget {
                       ),
                     ],
                     selected: {inLedger},
-                    onSelectionChanged: (s) => data.categorizePlace(g.keys, s.first ? friendsCat.id : null),
+                    onSelectionChanged: (s) =>
+                        data.categorizeGroup(g.txns, s.first ? friendsCat.id : null, names: g.keys, vpas: g.vpas),
                   ),
                   const SizedBox(height: 6),
                   Text(
@@ -355,18 +357,26 @@ class PlaceDetailScreen extends StatelessWidget {
                     style: text.titleSmall,
                   ),
                   const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      for (final (:cat, inGroup: _) in groupedCategories(data.categories.where((c) => !c.isLoan)))
-                        ChoiceChip(
-                          avatar: Icon(iconFor(cat), size: 18, color: colorFor(cat)),
-                          label: Text(cat.name),
-                          selected: g.categoryId == cat.id,
-                          onSelected: (_) => data.categorizePlace(g.keys, cat.id),
-                        ),
-                    ],
+                  CategoryField(
+                    data: data,
+                    categoryId: g.categoryId,
+                    hint: [
+                      'All ${g.txns.length} payments',
+                      if (g.vpas.isNotEmpty)
+                        'and new ones to ${g.vpas.map((v) => '••$v').join(', ')}'
+                      else
+                        'and new ones by this name',
+                    ].join(' '),
+                    onTap: () async {
+                      final pick = await pickCategory(context, data, selected: g.categoryId, title: g.name);
+                      if (pick == null) return;
+                      await data.categorizeGroup(
+                        g.txns,
+                        pick.id,
+                        vpas: g.vpas,
+                        names: g.vpas.isEmpty || !looksLikePerson(g.name) ? g.keys : const {},
+                      );
+                    },
                   ),
                 ],
                 if (months.length > 1) ...[

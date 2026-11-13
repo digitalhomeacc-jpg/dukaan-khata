@@ -520,12 +520,11 @@ class AppData extends ChangeNotifier {
 
   // ----------------------------------------------------------------- places
 
-  /// Sets the category of these transactions only (quick sort, one by one or a whole payee).
-  Future<void> categorizeTxns(Iterable<String> ids, String? categoryId) async {
-    final list = ids.toList();
+  /// Shows a new category on these transactions at once; the server confirms in the background.
+  void _showCategory(Set<String> ids, String? categoryId) {
     transactions = [
       for (final t in transactions)
-        list.contains(t.id)
+        ids.contains(t.id)
             ? Txn(
                 id: t.id,
                 amount: t.amount,
@@ -552,13 +551,35 @@ class AppData extends ChangeNotifier {
               )
             : t,
     ];
-    notifyListeners(); // the next item shows at once; the server confirms in the background
+    notifyListeners();
+  }
+
+  /// Sets the category of these transactions only (quick sort, one by one or a whole payee).
+  Future<void> categorizeTxns(Iterable<String> ids, String? categoryId) async {
+    final list = ids.toList();
+    _showCategory(list.toSet(), categoryId);
     for (var i = 0; i < list.length; i += 200) {
       await _db
           .from('transactions')
           .update({'category_id': categoryId, 'needs_review': false, 'edited': true})
           .inFilter('id', list.sublist(i, i + 200 > list.length ? list.length : i + 200));
     }
+  }
+
+  /// Files these payments under a category and remembers it for new ones: by their UPI IDs, and by name
+  /// for [names] (businesses). Payments you changed by hand keep their category.
+  Future<void> categorizeGroup(
+    Iterable<Txn> txns,
+    String? categoryId, {
+    Set<String> vpas = const {},
+    Set<String> names = const {},
+  }) async {
+    final ids = [for (final t in txns) t.id];
+    _showCategory(ids.toSet(), categoryId);
+    await _db.rpc(
+      'categorize_place',
+      params: {'p_ids': ids, 'p_vpas': vpas.toList(), 'p_names': names.toList(), 'p_category': categoryId},
+    );
   }
 
   /// "These are my own accounts": every payment with this place is a move, not spending or income.
