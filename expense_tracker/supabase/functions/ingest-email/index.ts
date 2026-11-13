@@ -269,7 +269,7 @@ type Loan = { id: string; account_id: string | null; next_due_date: string | nul
 
 const KNOWN_LENDERS: Record<Exclude<LenderKey, "other">, { name: string; kind: string; aliases: string[] }> = {
   slice: { name: "Slice borrow", kind: "credit_line", aliases: ["slice", "slice borrow", "slice small finance bank"] },
-  kreditbee: { name: "KreditBee", kind: "emi", aliases: ["kreditbee", "krazybee", "krazybee services"] },
+  kreditbee: { name: "KreditBee", kind: "emi", aliases: ["kreditbee", "krazybee", "krazybee services", "kbmas"] },
   fibe: { name: "Fibe", kind: "emi", aliases: ["fibe", "earlysalary", "social worth technologies"] },
 };
 
