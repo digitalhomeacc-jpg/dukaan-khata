@@ -7,6 +7,7 @@ import '../core/audit.dart';
 import '../core/ids.dart';
 import '../core/money.dart';
 import 'models.dart';
+import 'voucher_service.dart' show historyKindPrefix;
 
 /// One row of a ledger statement (the digital khata page).
 class StatementRow {
@@ -138,7 +139,14 @@ class LedgerRepo {
       'SELECT l.id, l.opening_balance, $_balanceExpr AS balance, '
       '(SELECT MAX(vdate) FROM voucher_lines WHERE ledger_id = l.id AND deleted = 0 AND credit > 0) AS last_cr, '
       '(SELECT MAX(vdate) FROM voucher_lines WHERE ledger_id = l.id AND deleted = 0 AND debit > 0) AS last_dr, '
-      '(SELECT MIN(vdate) FROM voucher_lines WHERE ledger_id = l.id AND deleted = 0) AS first '
+      '(SELECT MIN(vdate) FROM voucher_lines WHERE ledger_id = l.id AND deleted = 0) AS first, '
+      // old entries (before the books start) change no figure – only their
+      // dates are read, so "days since they last paid" reaches back into them
+      "(SELECT MAX(vdate) FROM vouchers WHERE party_id = l.id AND vtype = 'history' AND deleted = 0 "
+      " AND (pay_ledger_id = '${historyKindPrefix}received' OR (pay_ledger_id = '${historyKindPrefix}sale' AND paid > 0))) AS old_cr, "
+      "(SELECT MAX(vdate) FROM vouchers WHERE party_id = l.id AND vtype = 'history' AND deleted = 0 "
+      " AND (pay_ledger_id = '${historyKindPrefix}paid' OR (pay_ledger_id = '${historyKindPrefix}purchase' AND paid > 0))) AS old_dr, "
+      "(SELECT MIN(vdate) FROM vouchers WHERE party_id = l.id AND vtype = 'history' AND deleted = 0) AS old_first "
       "FROM ledgers l WHERE l.business_id = ? AND l.grp IN ('customer', 'supplier')",
       [businessId],
     );
@@ -148,8 +156,9 @@ class LedgerRepo {
       final bal = (r['balance'] as num).toInt();
       if (bal == 0) continue;
       // they owe us → their last payment (a credit); we owe them → our last payment (a debit)
-      final last = (bal > 0 ? r['last_cr'] : r['last_dr']) as String?;
-      final since = last ?? (((r['opening_balance'] as int?) ?? 0) != 0 ? Books.start : r['first'] as String?);
+      final last = (bal > 0 ? (r['last_cr'] ?? r['old_cr']) : (r['last_dr'] ?? r['old_dr'])) as String?;
+      final since = last ??
+          (((r['opening_balance'] as int?) ?? 0) != 0 ? (r['old_first'] as String? ?? Books.start) : r['first'] as String?);
       if (since == null) continue;
       final d = today.difference(parseIso(since)).inDays;
       if (d > 0) out[r['id'] as String] = d;

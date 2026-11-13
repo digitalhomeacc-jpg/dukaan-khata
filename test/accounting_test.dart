@@ -1262,4 +1262,32 @@ void main() {
     final n = await db.get("SELECT COUNT(*) n FROM audit_log WHERE voucher_id = 'hamals:2026-11-05'");
     expect(n['n'], 2, reason: 'both changes are in the history, with who did them');
   });
+
+  test('days unpaid reaches back into old entries (dates only, no figure changes)', () async {
+    final keep = Books.start;
+    Books.start = '2026-11-08';
+    try {
+      final c = await lr.create(name: 'Old Cust', group: LedgerGroup.customer, openingBalance: rs(5000));
+      final s = await lr.create(name: 'Old Supp', group: LedgerGroup.supplier, openingBalance: -rs(9000));
+      Future<void> old(String party, String date, String kind, {int amount = 0, int paid = 0}) => vs.save(
+          VoucherInput(type: VoucherType.history, date: date, partyId: party, payLedgerId: '$historyKindPrefix$kind', amount: amount, paid: paid),
+          owner);
+      await old(c, '2026-09-01', 'sale', amount: rs(8000));
+      await old(c, '2026-10-02', 'received', amount: rs(2000));
+      await old(c, '2026-10-20', 'sale', amount: rs(1000), paid: rs(500)); // part paid on the bill: a payment too
+      await old(c, '2026-10-25', 'sale', amount: rs(1000)); // a later sale is not a payment
+      await old(s, '2026-09-15', 'purchase', amount: rs(9000)); // never paid
+      int days(String from) => parseIso(todayIso()).difference(parseIso(from)).inDays;
+      var m = await lr.daysUnpaid();
+      expect(m[c], days('2026-10-20'));
+      expect(m[s], days('2026-09-15'), reason: 'no payment at all: since the oldest old entry');
+      expect(await lr.balanceAt(c), rs(5000), reason: 'old entries change no figure');
+      // a payment in the books wins over the old ones
+      await vs.save(VoucherInput(type: VoucherType.receipt, date: '2026-11-09', partyId: c, payLedgerId: vs.sys('cash'), amount: rs(100)), owner);
+      m = await lr.daysUnpaid();
+      expect(m[c], days('2026-11-09'));
+    } finally {
+      Books.start = keep;
+    }
+  });
 }
