@@ -71275,25 +71275,30 @@ $S:109}
 A.a7t.prototype={
 aM9(a){var s=new A.a6(a,new A.aJU(),A.a_(a).i("a6<1,h>")).aL(0,",")
 return"SELECT l.*, (l.opening_balance + COALESCE((SELECT SUM(vl.debit - vl.credit) FROM voucher_lines vl WHERE vl.ledger_id = l.id AND vl.deleted = 0), 0)) AS balance FROM ledgers l WHERE l.business_id = ? AND l.grp IN ("+s+") AND COALESCE(l.archived,0) = 0 ORDER BY l.system DESC, CASE l.grp WHEN 'cash' THEN 0 WHEN 'upi' THEN 1 WHEN 'bank' THEN 2 ELSE 3 END, l.short_code, l.name COLLATE NOCASE"},
-GY(){var s=0,r=A.q(t._P),q,p=this,o,n,m,l,k,j,i,h,g,f,e,d,c,b,a
-var $async$GY=A.l(function(a0,a1){if(a0===1)return A.n(a1,r)
+GY(){var s=0,r=A.q(t._P),q,p=this,o,n,m,l,k,j,i,h,g,f,e,d,c,b
+var $async$GY=A.l(function(a,a0){if(a===1)return A.n(a0,r)
 for(;;)switch(s){case 0:s=3
-return A.c(p.a.by(0,"SELECT l.id, l.opening_balance, (l.opening_balance + COALESCE((SELECT SUM(vl.debit - vl.credit) FROM voucher_lines vl WHERE vl.ledger_id = l.id AND vl.deleted = 0), 0)) AS balance, (SELECT MAX(vdate) FROM voucher_lines WHERE ledger_id = l.id AND deleted = 0 AND credit > 0) AS last_cr, (SELECT MAX(vdate) FROM voucher_lines WHERE ledger_id = l.id AND deleted = 0 AND debit > 0) AS last_dr, (SELECT MIN(vdate) FROM voucher_lines WHERE ledger_id = l.id AND deleted = 0) AS first FROM ledgers l WHERE l.business_id = ? AND l.grp IN ('customer', 'supplier')",[p.b]),$async$GY)
-case 3:c=a1
-b=A.co(A.bo(new A.aB(Date.now(),0,!1)))
-a=A.B(t.N,t.S)
-for(o=c.d,n=b.a,m=b.b,l=t.X,k=-1;++k,k<o.length;){j=A.b8(o[k],!1,l)
+return A.c(p.a.by(0,"SELECT l.id, l.opening_balance, (l.opening_balance + COALESCE((SELECT SUM(vl.debit - vl.credit) FROM voucher_lines vl WHERE vl.ledger_id = l.id AND vl.deleted = 0), 0)) AS balance, (SELECT MAX(vdate) FROM voucher_lines WHERE ledger_id = l.id AND deleted = 0 AND credit > 0) AS last_cr, (SELECT MAX(vdate) FROM voucher_lines WHERE ledger_id = l.id AND deleted = 0 AND debit > 0) AS last_dr, (SELECT MIN(vdate) FROM voucher_lines WHERE ledger_id = l.id AND deleted = 0) AS first, (SELECT MAX(vdate) FROM vouchers WHERE party_id = l.id AND vtype = 'history' AND deleted = 0  AND (pay_ledger_id = 'hist:received' OR (pay_ledger_id = 'hist:sale' AND paid > 0))) AS old_cr, (SELECT MAX(vdate) FROM vouchers WHERE party_id = l.id AND vtype = 'history' AND deleted = 0  AND (pay_ledger_id = 'hist:paid' OR (pay_ledger_id = 'hist:purchase' AND paid > 0))) AS old_dr, (SELECT MIN(vdate) FROM vouchers WHERE party_id = l.id AND vtype = 'history' AND deleted = 0) AS old_first FROM ledgers l WHERE l.business_id = ? AND l.grp IN ('customer', 'supplier')",[p.b]),$async$GY)
+case 3:d=a0
+c=A.co(A.bo(new A.aB(Date.now(),0,!1)))
+b=A.B(t.N,t.S)
+for(o=d.d,n=c.a,m=c.b,l=t.X,k=-1;++k,k<o.length;){j=A.b8(o[k],!1,l)
 j.$flags=3
-i=new A.bg(c,j)
+i=new A.bg(d,j)
 h=B.o.D(A.bj(i.h(0,"balance")))
 if(h===0)continue
-g=A.al(h>0?i.h(0,"last_cr"):i.h(0,"last_dr"))
-if(g==null){f=A.bc(i.h(0,"opening_balance"))
-e=(f==null?0:f)!==0?$.d1:A.al(i.h(0,"first"))}else e=g
-if(e==null)continue
-f=A.co(e)
-d=B.h.aR(m-f.b+1000*(n-f.a),864e8)
-if(d>0)a.k(0,A.a4(i.h(0,"id")),d)}q=a
+if(h>0){g=i.h(0,"last_cr")
+if(g==null)g=i.h(0,"old_cr")}else{g=i.h(0,"last_dr")
+if(g==null)g=i.h(0,"old_dr")}A.al(g)
+if(g==null){g=A.bc(i.h(0,"opening_balance"))
+if((g==null?0:g)!==0){g=A.al(i.h(0,"old_first"))
+if(g==null)g=$.d1
+f=g}else{g=A.al(i.h(0,"first"))
+f=g}}else f=g
+if(f==null)continue
+g=A.co(f)
+e=B.h.aR(m-g.b+1000*(n-g.a),864e8)
+if(e>0)b.k(0,A.a4(i.h(0,"id")),e)}q=b
 s=1
 break
 case 1:return A.o(q,r)}})
@@ -82348,7 +82353,7 @@ if(n.w.c){s=A.k(m.$1("fix_backup"),o,o,o,o,o,o,o,o,o)
 j.push(A.cx(!1,o,o,o,!0,o,o,o,!0,o,B.c22,B.akn,o,o,o,o,o,new A.aYn(a),!1,o,o,o,o,o,A.k(m.$1("fix_backup_sub"),o,o,o,o,o,o,o,o,o),o,s,o,o,o))}j.push(A.cx(!1,o,o,o,!0,o,o,o,!0,o,o,B.EZ,o,o,o,o,o,new A.aYo(a),!1,o,o,o,o,o,o,o,A.k(m.$1("audit"),o,o,o,o,o,o,o,o,o),o,o,o))
 B.f.L(i,j)}i.push(B.kC)
 i.push(A.cx(!1,o,o,o,!0,o,o,o,!0,o,B.c2H,B.akE,o,o,o,o,o,new A.aYp(a),!1,o,o,o,o,o,o,o,B.c_K,o,o,o))
-i.push(A.dZ(A.k("Dukaan Khata \xb7 "+A.e(m.$1("version"))+" 13/11/26 14:18",o,o,o,o,o,A.E(a).ok.Q,o,o,o),o,o))
+i.push(A.dZ(A.k("Dukaan Khata \xb7 "+A.e(m.$1("version"))+" 13/11/26 16:49",o,o,o,o,o,A.E(a).ok.Q,o,o,o),o,o))
 i.push(B.kC)
 return A.e2(k,o,A.dw(i,o,o,B.ai,!1),o,o)},
 Nh(a){return this.aUe(a)},
