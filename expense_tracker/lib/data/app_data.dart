@@ -441,6 +441,25 @@ class AppData extends ChangeNotifier {
 
   // ----------------------------------------------------------------- places
 
+  /// Sets the category of these transactions only (quick sort, one by one or a whole payee).
+  Future<void> categorizeTxns(Iterable<String> ids, String? categoryId) async {
+    final list = ids.toList();
+    transactions = [
+      for (final t in transactions)
+        list.contains(t.id)
+            ? Txn(id: t.id, amount: t.amount, isDebit: t.isDebit, txnAt: t.txnAt, merchant: t.merchant, note: t.note, bank: t.bank,
+                accountLast4: t.accountLast4, method: t.method, categoryId: categoryId, accountId: t.accountId,
+                counterAccountId: t.counterAccountId, source: t.source, emailSubject: t.emailSubject, excluded: t.excluded,
+                needsReview: false, loanId: t.loanId, loanRole: t.loanRole, emailBody: t.emailBody, paidBy: t.paidBy, payeeVpa: t.payeeVpa)
+            : t,
+    ];
+    notifyListeners(); // the next item shows at once; the server confirms in the background
+    for (var i = 0; i < list.length; i += 200) {
+      await _db.from('transactions').update({'category_id': categoryId, 'needs_review': false, 'edited': true})
+          .inFilter('id', list.sublist(i, i + 200 > list.length ? list.length : i + 200));
+    }
+  }
+
   /// "These are my own accounts": every payment with this place is a move, not spending or income.
   Future<void> markOwnAccount(Iterable<String> merchantKeys) => _db.from('transactions')
       .update({'excluded': true, 'needs_review': false}).inFilter('merchant_key', merchantKeys.toList()).eq('edited', false);

@@ -579,7 +579,8 @@ List<PayeeGroup> payeeGroups(Iterable<Txn> txns,
   }
   String groupKey(Txn t, String k) {
     final c = canon[k]!, seen = vpasOf[c];
-    if (seen == null || seen.length < 2) return c;
+    // A person pays from several UPI IDs and stays one; only businesses are split by UPI ID.
+    if (seen == null || seen.length < 2 || looksLikePerson(t.merchant)) return c;
     final v = t.payeeVpa ?? (seen.entries.toList()..sort((a, b) => b.value.compareTo(a.value))).first.key;
     return '$c|$v';
   }
@@ -627,5 +628,43 @@ List<({String? id, double total, List<MapEntry<String?, double>> children})> rol
     for (final e in groups.entries)
       (id: e.key, total: _round(e.value.total), children: e.value.kids.entries.toList()..sort((a, b) => b.value.compareTo(a.value))),
   ]..sort((a, b) => b.total.compareTo(a.total));
+  return out;
+}
+
+// --------------------------------------------------------------- place ledger
+
+/// One line of a place's ledger: money out or in, and the running net after it (in − out).
+typedef LedgerLine = ({Txn txn, double out, double into, double net});
+
+/// A place's or person's payments as a statement, newest first, with the running net.
+List<LedgerLine> placeLedger(Iterable<Txn> txns, {ShareTotals shares = ShareTotals.none}) {
+  final sorted = txns.toList()..sort((a, b) => a.txnAt.compareTo(b.txnAt));
+  var net = 0.0;
+  final out = <LedgerLine>[];
+  for (final t in sorted) {
+    final v = shares.own(t);
+    net += t.isDebit ? -v : v;
+    out.add((txn: t, out: t.isDebit ? v : 0, into: t.isDebit ? 0 : v, net: _round(net)));
+  }
+  return out.reversed.toList();
+}
+
+// ----------------------------------------------------------------- quick sort
+
+/// Payments with no category, grouped by payee, biggest groups first: sort one payee at a time.
+List<({String name, List<Txn> txns, double total})> unsortedByPayee(Iterable<Txn> txns, Set<String> notSpendingIds) {
+  final groups = <String, List<Txn>>{};
+  final names = <String, String>{};
+  for (final t in txns) {
+    if (t.categoryId != null || t.excluded || t.isLoanTransfer || notSpendingIds.contains(t.categoryId)) continue;
+    final name = t.merchant?.trim();
+    final key = name == null || name.isEmpty ? '' : _payeeKey(name);
+    names.putIfAbsent(key, () => name == null || name.isEmpty ? 'No name' : name);
+    (groups[key] ??= []).add(t);
+  }
+  final out = [
+    for (final e in groups.entries)
+      (name: names[e.key]!, txns: e.value..sort((a, b) => b.txnAt.compareTo(a.txnAt)), total: _round(e.value.fold(0.0, (s, t) => s + t.amount))),
+  ]..sort((a, b) => b.txns.length != a.txns.length ? b.txns.length.compareTo(a.txns.length) : b.total.compareTo(a.total));
   return out;
 }

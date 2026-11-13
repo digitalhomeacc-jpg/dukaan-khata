@@ -51,8 +51,11 @@ void main() {
     await pump(tester, TransactionsScreen(data: sample()));
     expect(find.text('Spent'), findsWidgets);
     expect(find.text('SWIGGY LIMITED'), findsOneWidget);
-    expect(find.text('1 payment needs a category'), findsOneWidget);
-    await tester.tap(find.text('1 payment needs a category'));
+    expect(find.textContaining('need a category'), findsOneWidget);
+    expect(find.textContaining('Quick sort'), findsOneWidget);
+    await tester.ensureVisible(find.widgetWithText(ChoiceChip, 'No category'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(ChoiceChip, 'No category'));
     await tester.pumpAndSettle();
     expect(find.text('SWIGGY LIMITED'), findsNothing);
     expect(find.text('CHAI POINT'), findsOneWidget);

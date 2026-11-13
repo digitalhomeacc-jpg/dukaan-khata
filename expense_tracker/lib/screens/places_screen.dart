@@ -128,14 +128,14 @@ class _PlacesViewState extends State<PlacesView> {
   }
 }
 
-/// One place: how often, how much, by month, every visit; set its category for all of them.
+/// One place or person as a ledger: who it is, how their money counts, money out / in / running net.
 class PlaceDetailScreen extends StatelessWidget {
   const PlaceDetailScreen({super.key, required this.data, required this.keys, this.vpas = const {}});
 
   final AppData data;
   final Set<String> keys;
 
-  /// The place's UPI IDs: two places with the same name are told apart by these.
+  /// The place's UPI IDs: two businesses with the same name are told apart by these.
   final Set<String> vpas;
 
   Future<void> _rename(BuildContext context, PayeeGroup g) async {
@@ -165,135 +165,253 @@ class PlaceDetailScreen extends StatelessWidget {
     if (context.mounted) Navigator.pop(context);
   }
 
+  PayeeGroup? _group() {
+    // Include friends' ledger payments too, so the statement is complete.
+    final all = payeeGroups(data.transactions, shares: data.shareTotalsNow, aliases: data.aliases);
+    return all.where((x) => vpas.isNotEmpty ? x.vpas.any(vpas.contains) : x.keys.any(keys.contains)).firstOrNull ??
+        all.where((x) => x.keys.any(keys.contains)).firstOrNull;
+  }
+
   @override
   Widget build(BuildContext context) {
-    final g = payeeGroups(data.transactions, loanCategoryIds: data.loanCategoryIds, shares: data.shareTotalsNow, aliases: data.aliases)
-        .where((x) => vpas.isNotEmpty ? x.vpas.any(vpas.contains) : x.keys.any(keys.contains))
-        .firstOrNull;
-    if (g == null) return const Scaffold(body: Center(child: Text('No spending here any more.')));
+    final g = _group();
+    if (g == null) return const Scaffold(body: Center(child: Text('No payments here any more.')));
     final text = Theme.of(context).textTheme;
     final scheme = Theme.of(context).colorScheme;
+    final role = data.people[AppData.keyOf(g.name)] ?? (looksLikePerson(g.name) ? null : 'shop');
+    final friendsCat = data.loanCategory;
+    final inLedger = friendsCat != null && g.txns.isNotEmpty && g.txns.every((t) => t.categoryId == friendsCat.id);
+    final ledger = placeLedger(g.txns, shares: data.shareTotalsNow);
     final months = g.byMonth.reversed.take(12).toList();
     final maxMonth = months.fold(0.0, (m, e) => e.value > m ? e.value : m);
-    Widget stat(String label, String value) => Expanded(
+
+    Widget stat(String label, String value, {Color? color}) => Expanded(
           child: Column(children: [
-            Text(value, style: text.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
-            Text(label, style: text.bodySmall),
+            FittedBox(child: Text(value, style: text.titleMedium?.copyWith(fontWeight: FontWeight.w700, color: color))),
+            const SizedBox(height: 2),
+            Text(label, style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
           ]),
         );
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(g.name),
+        title: Text(g.name, maxLines: 1, overflow: TextOverflow.ellipsis),
         actions: [IconButton(tooltip: 'Rename', icon: const Icon(Icons.edit_outlined), onPressed: () => _rename(context, g))],
       ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
-        children: [
-          Card.filled(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              child: Row(children: [
-                stat('paid', money(g.total)),
-                if (g.received > 0) stat('came back', money(g.received)),
-                if (g.received > 0)
-                  stat(g.net >= 0 ? 'net in' : 'net out', money(g.net.abs()))
-                else ...[
-                  stat('payments', '${g.count}'),
-                  stat('average', money(g.average)),
-                ],
-              ]),
-            ),
-          ),
-          if (g.received > 0)
-            Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Text('${g.count} payments out (avg ${money(g.average)}), ${g.receivedCount} back',
-                  style: TextStyle(color: scheme.onSurfaceVariant)),
-            ),
-          const SizedBox(height: 8),
-          Text(
-            'About ${g.perMonth >= 1 ? g.perMonth.toStringAsFixed(g.perMonth >= 10 ? 0 : 1) : '<1'} times a month · '
-            'first ${DateFormat('d MMM yyyy').format(g.first)} · last ${dayLabel(g.lastPaid)}',
-            style: TextStyle(color: scheme.onSurfaceVariant),
-          ),
-          if (g.vpas.isNotEmpty) ...[
-            const SizedBox(height: 4),
-            Text('UPI ••${g.vpas.join(', ••')}', style: text.bodySmall),
-          ],
-          if (g.spellings.length > 1) ...[
-            const SizedBox(height: 4),
-            Text('Written ${g.spellings.length} ways in your bank: ${g.spellings.take(4).join(' · ')}', style: text.bodySmall),
-          ],
-          const SizedBox(height: 16),
-          Text('Category for all its payments', style: text.titleSmall),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              for (final (:cat, inGroup: _) in groupedCategories(data.categories.where((c) => !c.isLoan)))
-                ChoiceChip(
-                  avatar: Icon(iconFor(cat), size: 18, color: colorFor(cat)),
-                  label: Text(cat.name),
-                  selected: g.categoryId == cat.id,
-                  onSelected: (_) => data.categorizePlace(g.keys, cat.id),
+      body: CustomScrollView(
+        slivers: [
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+            sliver: SliverList.list(children: [
+              // Summary card
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(colors: [scheme.primaryContainer, scheme.secondaryContainer]),
+                  borderRadius: BorderRadius.circular(20),
                 ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          OutlinedButton.icon(
-            icon: const Icon(Icons.swap_horiz),
-            label: const Text('Not spending: it\'s my own account'),
-            onPressed: () async {
-              final yes = await showDialog<bool>(
-                context: context,
-                builder: (c) => AlertDialog(
-                  title: Text('Is ${g.name} your own account?'),
-                  content: const Text('Then money to and from it is a move between your accounts: not counted as spending or income.'),
-                  actions: [
-                    TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancel')),
-                    FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Yes, my account')),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(children: [
+                      CategoryAvatar(data.category(g.categoryId), size: 44),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Text(g.name, style: text.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+                          Text(
+                            [
+                              if (g.vpas.isNotEmpty) 'UPI ••${g.vpas.join(', ••')}',
+                              'since ${DateFormat('MMM yyyy').format(g.first)}',
+                            ].join(' · '),
+                            style: text.bodySmall,
+                          ),
+                        ]),
+                      ),
+                    ]),
+                    const SizedBox(height: 16),
+                    Row(children: [
+                      stat('money out', money(g.total), color: scheme.error),
+                      stat('money in', money(g.received), color: Colors.green.shade700),
+                      stat(g.net >= 0 ? 'net in' : 'net out', money(g.net.abs())),
+                    ]),
+                    const SizedBox(height: 12),
+                    Text(
+                      '${g.count} payments · avg ${money(g.average)} · about '
+                      '${g.perMonth >= 1 ? g.perMonth.toStringAsFixed(g.perMonth >= 10 ? 0 : 1) : '<1'}× a month · last ${dayLabel(g.lastPaid)}',
+                      style: text.bodySmall,
+                    ),
                   ],
                 ),
-              );
-              if (yes == true) {
-                await data.markOwnAccount(g.keys);
-                if (context.mounted) Navigator.pop(context);
-              }
-            },
+              ),
+              const SizedBox(height: 16),
+              // Who is this?
+              Text('Who is this?', style: text.titleSmall),
+              const SizedBox(height: 8),
+              SegmentedButton<String>(
+                showSelectedIcon: false,
+                segments: const [
+                  ButtonSegment(value: 'shop', label: Text('Shop'), icon: Icon(Icons.storefront_outlined, size: 18)),
+                  ButtonSegment(value: 'friend', label: Text('Friend'), icon: Icon(Icons.person_outline, size: 18)),
+                  ButtonSegment(value: 'family', label: Text('Family'), icon: Icon(Icons.home_outlined, size: 18)),
+                  ButtonSegment(value: 'me', label: Text('Me'), icon: Icon(Icons.swap_horiz, size: 18)),
+                ],
+                emptySelectionAllowed: true,
+                selected: {?role},
+                onSelectionChanged: (s) async {
+                  if (s.isEmpty) return;
+                  final r = s.first;
+                  await data.setPersonRole(g.name, r);
+                  if (r == 'me') await data.markOwnAccount(g.keys);
+                },
+              ),
+              const SizedBox(height: 6),
+              Text(
+                switch (role) {
+                  'shop' => 'A shop, restaurant or service (delivery, driver…): payments are your spending.',
+                  'friend' => 'A friend. Choose below whether their payments are your spends or go to your balance with them.',
+                  'family' => 'Family: money from them is income (Money from home), money to them is Family spending.',
+                  'me' => 'Your own account: money to and from it is a move, not spending or income.',
+                  _ => 'Tell the app who this is: it then counts their money the right way.',
+                },
+                style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+              ),
+              if (role == 'friend' && friendsCat != null) ...[
+                const SizedBox(height: 12),
+                SegmentedButton<bool>(
+                  showSelectedIcon: false,
+                  segments: const [
+                    ButtonSegment(value: false, label: Text('My spends'), icon: Icon(Icons.shopping_bag_outlined, size: 18)),
+                    ButtonSegment(value: true, label: Text('Friends ledger'), icon: Icon(Icons.handshake_outlined, size: 18)),
+                  ],
+                  selected: {inLedger},
+                  onSelectionChanged: (s) => data.categorizePlace(g.keys, s.first ? friendsCat.id : null),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  inLedger
+                      ? 'All payments with them count as owed (lent / borrowed). You can still change single ones.'
+                      : 'Payments to them are things they bought for you: give each a category (Quick sort helps).',
+                  style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+                ),
+              ],
+              if (role != 'me' && !inLedger) ...[
+                const SizedBox(height: 16),
+                Text(role == 'friend' ? 'Category for all their payments (optional)' : 'Category for all its payments',
+                    style: text.titleSmall),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final (:cat, inGroup: _) in groupedCategories(data.categories.where((c) => !c.isLoan)))
+                      ChoiceChip(
+                        avatar: Icon(iconFor(cat), size: 18, color: colorFor(cat)),
+                        label: Text(cat.name),
+                        selected: g.categoryId == cat.id,
+                        onSelected: (_) => data.categorizePlace(g.keys, cat.id),
+                      ),
+                  ],
+                ),
+              ],
+              if (months.length > 1) ...[
+                const SizedBox(height: 20),
+                Text('Money out by month', style: text.titleSmall),
+                const SizedBox(height: 8),
+                SizedBox(
+                  height: 90,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      for (final m in months.reversed)
+                        Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 2),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.end,
+                              children: [
+                                Expanded(
+                                  child: Align(
+                                    alignment: Alignment.bottomCenter,
+                                    child: FractionallySizedBox(
+                                      heightFactor: maxMonth == 0 ? 0.02 : (m.value / maxMonth).clamp(0.02, 1.0),
+                                      child: Container(
+                                        decoration: BoxDecoration(color: scheme.primary, borderRadius: BorderRadius.circular(4)),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(DateFormat('MMM').format(m.key), style: const TextStyle(fontSize: 10)),
+                              ],
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+              const SizedBox(height: 20),
+              Row(children: [
+                Expanded(child: Text('Ledger', style: text.titleSmall)),
+                SizedBox(width: 74, child: Text('Out', textAlign: TextAlign.end, style: text.labelSmall)),
+                SizedBox(width: 74, child: Text('In', textAlign: TextAlign.end, style: text.labelSmall)),
+                SizedBox(width: 86, child: Text('Net', textAlign: TextAlign.end, style: text.labelSmall)),
+              ]),
+              const Divider(),
+            ]),
           ),
-          const SizedBox(height: 20),
-          Text('By month', style: text.titleSmall),
-          const SizedBox(height: 8),
-          for (final m in months)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 3),
-              child: Row(
+          SliverList.builder(
+            itemCount: ledger.length,
+            itemBuilder: (context, i) {
+              final l = ledger[i];
+              final newMonth = i == 0 || ledger[i - 1].txn.txnAt.month != l.txn.txnAt.month || ledger[i - 1].txn.txnAt.year != l.txn.txnAt.year;
+              final cat = data.category(l.txn.categoryId);
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  SizedBox(width: 72, child: Text(DateFormat('MMM yy').format(m.key))),
-                  Expanded(
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(4),
-                      child: LinearProgressIndicator(value: maxMonth == 0 ? 0 : m.value / maxMonth, minHeight: 10),
+                  if (newMonth)
+                    Container(
+                      width: double.infinity,
+                      color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                      child: Text(DateFormat('MMMM yyyy').format(l.txn.txnAt), style: text.labelMedium),
+                    ),
+                  InkWell(
+                    onTap: () => openTxnEditor(context, data, existing: l.txn),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      child: Row(children: [
+                        Expanded(
+                          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                            Text(DateFormat('d MMM, h:mm a').format(l.txn.txnAt), style: text.bodyMedium),
+                            Text(cat?.isLoan == true ? 'Friends ledger' : (cat?.name ?? 'No category'),
+                                style: text.bodySmall?.copyWith(color: cat == null ? scheme.error : scheme.onSurfaceVariant)),
+                          ]),
+                        ),
+                        SizedBox(
+                          width: 74,
+                          child: Text(l.out > 0 ? money(l.out) : '', textAlign: TextAlign.end,
+                              style: TextStyle(color: scheme.error, fontWeight: FontWeight.w600)),
+                        ),
+                        SizedBox(
+                          width: 74,
+                          child: Text(l.into > 0 ? money(l.into) : '', textAlign: TextAlign.end,
+                              style: TextStyle(color: Colors.green.shade700, fontWeight: FontWeight.w600)),
+                        ),
+                        SizedBox(
+                          width: 86,
+                          child: Text('${l.net < 0 ? '−' : ''}${money(l.net.abs())}', textAlign: TextAlign.end,
+                              style: text.bodySmall?.copyWith(fontFeatures: const [FontFeature.tabularFigures()])),
+                        ),
+                      ]),
                     ),
                   ),
-                  SizedBox(width: 84, child: Text(money(m.value), textAlign: TextAlign.end)),
                 ],
-              ),
-            ),
-          const SizedBox(height: 20),
-          Text('Visits', style: text.titleSmall),
-          for (final t in g.txns.take(200))
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              dense: true,
-              title: Text('${dayLabel(t.txnAt)}, ${timeLabel(t.txnAt)}'),
-              subtitle: data.account(t.accountId) == null ? null : Text(data.account(t.accountId)!.name),
-              trailing: Text(signedMoney(data.shareTotalsNow.own(t), isDebit: t.isDebit),
-                  style: TextStyle(fontWeight: FontWeight.w600, color: t.isDebit ? null : Colors.green.shade700)),
-              onTap: () => openTxnEditor(context, data, existing: t),
-            ),
+              );
+            },
+          ),
+          const SliverToBoxAdapter(child: SizedBox(height: 40)),
         ],
       ),
     );

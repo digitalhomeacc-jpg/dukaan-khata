@@ -8,6 +8,7 @@ import '../ui/format.dart';
 import 'budgets_screen.dart';
 import 'import_statement_screen.dart';
 import 'month_bar.dart';
+import 'quick_sort_screen.dart';
 import 'txn_editor.dart';
 
 enum _Filter { all, spent, received, uncategorised }
@@ -62,8 +63,8 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
     final check = account == null ? null : checkBalance(data.transactions, account, data.balanceReadings);
     final shown = data.transactions.where(_keep).toList();
     final days = groupByDay(shown);
-    final uncategorised =
-        data.transactions.where((t) => inMonth(t.txnAt, _month) && t.categoryId == null && !t.excluded && t.isDebit).length;
+    final unsorted = unsortedByPayee(data.transactions, data.notSpendingCategoryIds);
+    final uncategorised = unsorted.fold(0, (s, g) => s + g.txns.length);
 
     return Scaffold(
       appBar: AppBar(
@@ -129,10 +130,11 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                       padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                       child: Card.filled(
                         child: ListTile(
-                          leading: const Icon(Icons.label_off_outlined),
+                          leading: const Icon(Icons.auto_awesome_motion_outlined),
                           title: Text('$uncategorised ${uncategorised == 1 ? 'payment needs' : 'payments need'} a category'),
+                          subtitle: Text('Quick sort · ${unsorted.length} payees, biggest first'),
                           trailing: const Icon(Icons.chevron_right),
-                          onTap: () => setState(() => _filter = _Filter.uncategorised),
+                          onTap: () => openQuickSort(context, data),
                         ),
                       ),
                     ),

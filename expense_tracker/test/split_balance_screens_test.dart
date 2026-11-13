@@ -58,6 +58,8 @@ void main() {
     await tester.tap(find.text('HDFC A/c ••6516'));
     await tester.pumpAndSettle();
     expect(find.textContaining('Differs from the bank by ₹100'), findsOneWidget);
+    await tester.drag(find.byType(CustomScrollView).last, const Offset(0, -500));
+    await tester.pumpAndSettle();
     expect(find.textContaining('Bal ₹'), findsWidgets);
   });
 }

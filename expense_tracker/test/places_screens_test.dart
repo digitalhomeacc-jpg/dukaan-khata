@@ -28,8 +28,10 @@ void main() {
     expect(find.text('Most frequent'), findsOneWidget);
     await tester.tap(find.text('Hotel Vijay'));
     await tester.pumpAndSettle();
-    expect(find.text('₹1,000'), findsOneWidget);
+    expect(find.text('₹1,000'), findsWidgets);
+    expect(find.text('Who is this?'), findsOneWidget);
     expect(find.text('Category for all its payments'), findsOneWidget);
-    expect(find.textContaining('Written 2 ways'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('Ledger'), 300, scrollable: find.byType(Scrollable).last);
+    expect(find.text('Ledger'), findsOneWidget);
   });
 }
