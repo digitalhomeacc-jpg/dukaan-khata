@@ -395,10 +395,13 @@ class BudgetProgress {
 }
 
 /// How much of each budget the month's spending (your share only) has used.
-List<BudgetProgress> budgetProgress(Iterable<Budget> budgets, MonthSummary month) {
+/// A group's budget covers the categories in it ([parentOf]: category → its group).
+List<BudgetProgress> budgetProgress(Iterable<Budget> budgets, MonthSummary month, {Map<String, String?> parentOf = const {}}) {
   final byCat = {for (final e in month.byCategory) e.key: e.value};
+  double spentIn(String id) =>
+      (byCat[id] ?? 0) + byCat.entries.where((e) => e.key != null && parentOf[e.key] == id).fold(0.0, (s, e) => s + e.value);
   return [
-    for (final b in budgets) BudgetProgress(b, _round(b.categoryId == null ? month.spent : (byCat[b.categoryId] ?? 0))),
+    for (final b in budgets) BudgetProgress(b, _round(b.categoryId == null ? month.spent : spentIn(b.categoryId!))),
   ]..sort((a, b) {
       if ((a.budget.categoryId == null) != (b.budget.categoryId == null)) return a.budget.categoryId == null ? -1 : 1;
       return b.share.compareTo(a.share);
@@ -474,6 +477,9 @@ class PayeeGroup {
 
   final String key;
   final Set<String> keys = {};
+
+  /// Its UPI IDs (shortened); null when the payments did not show one.
+  final Set<String> vpas = {};
   final List<Txn> txns = [];
   final Map<String, int> _names = {};
   final Map<String?, int> _cats = {};
@@ -550,6 +556,7 @@ List<PayeeGroup> payeeGroups(Iterable<Txn> txns,
     if (own <= 0) continue;
     final aka = aliases[name.toLowerCase().replaceAll(RegExp(r'\s+'), ' ')];
     rows.add((t, _payeeKey(aka ?? name), own));
+    // Same name but a different UPI ID is a different place (a nashta centre and a restaurant).
   }
   // A short key that starts a longer one is the same payee ("ravindra annasaheb p" → "ravindra annasaheb patil").
   final keys = rows.map((r) => r.$2).toSet().toList()..sort((a, b) => b.length.compareTo(a.length));
@@ -564,9 +571,24 @@ List<PayeeGroup> payeeGroups(Iterable<Txn> txns,
       }
     }
   }
+  // Names that came with more than one UPI ID are split by it; payments without one join
+  // the busiest UPI ID of that name.
+  final vpasOf = <String, Map<String, int>>{};
+  for (final (t, k, _) in rows) {
+    if (t.payeeVpa != null) (vpasOf[canon[k]!] ??= {})[t.payeeVpa!] = ((vpasOf[canon[k]!] ?? {})[t.payeeVpa!] ?? 0) + 1;
+  }
+  String groupKey(Txn t, String k) {
+    final c = canon[k]!, seen = vpasOf[c];
+    if (seen == null || seen.length < 2) return c;
+    final v = t.payeeVpa ?? (seen.entries.toList()..sort((a, b) => b.value.compareTo(a.value))).first.key;
+    return '$c|$v';
+  }
+
   final groups = <String, PayeeGroup>{};
   for (final (t, k, own) in rows) {
-    final g = groups.putIfAbsent(canon[k]!, () => PayeeGroup(canon[k]!));
+    final gk = groupKey(t, k);
+    final g = groups.putIfAbsent(gk, () => PayeeGroup(gk));
+    if (t.payeeVpa != null) g.vpas.add(t.payeeVpa!);
     g.keys.add(t.merchant!.toLowerCase().replaceAll(RegExp(r'\s+'), ' ').trim());
     g.txns.add(t);
     if (t.isDebit) {
@@ -585,4 +607,25 @@ List<PayeeGroup> payeeGroups(Iterable<Txn> txns,
     g.txns.sort((a, b) => b.txnAt.compareTo(a.txnAt));
   }
   return groups.values.where((g) => g.count > 0).toList()..sort((a, b) => b.count != a.count ? b.count.compareTo(a.count) : b.total.compareTo(a.total));
+}
+
+// ------------------------------------------------------------ category groups
+
+/// Spending per category rolled up into its group: group id → (total, children with their totals).
+List<({String? id, double total, List<MapEntry<String?, double>> children})> rollUp(
+    List<MapEntry<String?, double>> byCategory, Map<String, String?> parentOf) {
+  final groups = <String?, ({double total, Map<String?, double> kids})>{};
+  for (final e in byCategory) {
+    final parent = e.key == null ? null : parentOf[e.key];
+    final gid = parent ?? e.key;
+    final g = groups[gid] ?? (total: 0.0, kids: <String?, double>{});
+    final kids = {...g.kids};
+    if (parent != null) kids[e.key] = (kids[e.key] ?? 0) + e.value;
+    groups[gid] = (total: g.total + e.value, kids: kids);
+  }
+  final out = [
+    for (final e in groups.entries)
+      (id: e.key, total: _round(e.value.total), children: e.value.kids.entries.toList()..sort((a, b) => b.value.compareTo(a.value))),
+  ]..sort((a, b) => b.total.compareTo(a.total));
+  return out;
 }

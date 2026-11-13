@@ -68,5 +68,31 @@ void main() {
     expect(s.spent, 50);
     expect(s.received, 0);
   });
+
+  test('same name, different UPI ID: two places', () {
+    Txn v(String id, String vpa) => Txn(id: id, amount: 100, isDebit: true, txnAt: DateTime(2026, 3, 1), merchant: 'Hotel Vijay', payeeVpa: vpa);
+    final g = payeeGroups([v('1', '7243@y'), v('2', '7243@y'), v('3', '9495@y'),
+      Txn(id: '4', amount: 50, isDebit: true, txnAt: DateTime(2026, 3, 2), merchant: 'HOTEL VIJAY')]);
+    expect(g.length, 2);
+    expect(g.first.vpas, {'7243@y'});
+    expect(g.first.count, 3); // the payment without a UPI ID joins the busiest one
+    expect(g.last.vpas, {'9495@y'});
+  });
+
+  test('category groups roll up; a group budget covers its categories', () {
+    final month = summarize([
+      t('a', 100, DateTime(2026, 3, 1), 'Gold Flake', cat: 'cig'),
+      t('b', 400, DateTime(2026, 3, 2), 'Wine shop', cat: 'alc'),
+      t('c', 50, DateTime(2026, 3, 3), 'Chai', cat: 'chai'),
+    ], DateTime(2026, 3));
+    final parents = {'cig': 'smoke', 'alc': 'smoke', 'chai': null, 'smoke': null};
+    final r = rollUp(month.byCategory, parents);
+    expect(r.first.id, 'smoke');
+    expect(r.first.total, 500);
+    expect(r.first.children.map((e) => e.key).toList(), ['alc', 'cig']);
+    final p = budgetProgress(const [Budget(id: 'b', categoryId: 'smoke', amount: 400)], month, parentOf: parents);
+    expect(p.single.spent, 500);
+    expect(p.single.over, true);
+  });
 }
 

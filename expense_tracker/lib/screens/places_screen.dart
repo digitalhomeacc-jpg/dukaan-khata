@@ -45,6 +45,10 @@ class _PlacesViewState extends State<PlacesView> {
       groups = groups.where((g) => g.name.toLowerCase().contains(q) || (data.category(g.categoryId)?.name.toLowerCase().contains(q) ?? false)).toList();
     }
     final scheme = Theme.of(context).colorScheme;
+    final nameCount = <String, int>{};
+    for (final g in groups) {
+      nameCount[g.name.toLowerCase()] = (nameCount[g.name.toLowerCase()] ?? 0) + 1;
+    }
     return ListView(
       padding: const EdgeInsets.only(bottom: 96),
       children: [
@@ -96,7 +100,10 @@ class _PlacesViewState extends State<PlacesView> {
             leading: CategoryAvatar(data.category(g.categoryId)),
             title: Text(g.name, maxLines: 1, overflow: TextOverflow.ellipsis),
             subtitle: Text(
-              '${g.count}× · avg ${money(g.average)} · last ${dayLabel(g.lastPaid)}',
+              [
+                '${g.count}× · avg ${money(g.average)} · last ${dayLabel(g.lastPaid)}',
+                if ((nameCount[g.name.toLowerCase()] ?? 0) > 1 && g.vpas.isNotEmpty) 'UPI ••${g.vpas.first}',
+              ].join(' · '),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
@@ -112,7 +119,8 @@ class _PlacesViewState extends State<PlacesView> {
               ],
             ),
             onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
-              builder: (_) => ListenableBuilder(listenable: data, builder: (_, _) => PlaceDetailScreen(data: data, keys: g.keys)),
+              builder: (_) => ListenableBuilder(
+                  listenable: data, builder: (_, _) => PlaceDetailScreen(data: data, keys: g.keys, vpas: g.vpas)),
             )),
           ),
       ],
@@ -122,15 +130,45 @@ class _PlacesViewState extends State<PlacesView> {
 
 /// One place: how often, how much, by month, every visit; set its category for all of them.
 class PlaceDetailScreen extends StatelessWidget {
-  const PlaceDetailScreen({super.key, required this.data, required this.keys});
+  const PlaceDetailScreen({super.key, required this.data, required this.keys, this.vpas = const {}});
 
   final AppData data;
   final Set<String> keys;
 
+  /// The place's UPI IDs: two places with the same name are told apart by these.
+  final Set<String> vpas;
+
+  Future<void> _rename(BuildContext context, PayeeGroup g) async {
+    final ctl = TextEditingController(text: g.name);
+    final name = await showDialog<String>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('Name this place'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(controller: ctl, autofocus: true, textCapitalization: TextCapitalization.sentences,
+                decoration: const InputDecoration(hintText: 'e.g. Hotel Vijay (nashta)')),
+            const SizedBox(height: 8),
+            Text(g.vpas.isEmpty ? 'Used for all its payments, now and later.' : 'Used for payments to UPI ••${g.vpas.join(', ••')}, now and later.',
+                style: Theme.of(c).textTheme.bodySmall),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(c, ctl.text.trim()), child: const Text('Save')),
+        ],
+      ),
+    );
+    if (name == null || name.isEmpty) return;
+    await data.renamePlace(vpas: g.vpas, names: g.vpas.isEmpty ? g.keys : const [], nickname: name);
+    if (context.mounted) Navigator.pop(context);
+  }
+
   @override
   Widget build(BuildContext context) {
     final g = payeeGroups(data.transactions, loanCategoryIds: data.loanCategoryIds, shares: data.shareTotalsNow, aliases: data.aliases)
-        .where((x) => x.keys.any(keys.contains))
+        .where((x) => vpas.isNotEmpty ? x.vpas.any(vpas.contains) : x.keys.any(keys.contains))
         .firstOrNull;
     if (g == null) return const Scaffold(body: Center(child: Text('No spending here any more.')));
     final text = Theme.of(context).textTheme;
@@ -145,7 +183,10 @@ class PlaceDetailScreen extends StatelessWidget {
         );
 
     return Scaffold(
-      appBar: AppBar(title: Text(g.name)),
+      appBar: AppBar(
+        title: Text(g.name),
+        actions: [IconButton(tooltip: 'Rename', icon: const Icon(Icons.edit_outlined), onPressed: () => _rename(context, g))],
+      ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
         children: [
@@ -176,6 +217,10 @@ class PlaceDetailScreen extends StatelessWidget {
             'first ${DateFormat('d MMM yyyy').format(g.first)} · last ${dayLabel(g.lastPaid)}',
             style: TextStyle(color: scheme.onSurfaceVariant),
           ),
+          if (g.vpas.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text('UPI ••${g.vpas.join(', ••')}', style: text.bodySmall),
+          ],
           if (g.spellings.length > 1) ...[
             const SizedBox(height: 4),
             Text('Written ${g.spellings.length} ways in your bank: ${g.spellings.take(4).join(' · ')}', style: text.bodySmall),
@@ -187,12 +232,12 @@ class PlaceDetailScreen extends StatelessWidget {
             spacing: 8,
             runSpacing: 8,
             children: [
-              for (final c in data.categories.where((c) => !c.isLoan))
+              for (final (:cat, inGroup: _) in groupedCategories(data.categories.where((c) => !c.isLoan)))
                 ChoiceChip(
-                  avatar: Icon(iconFor(c), size: 18, color: colorFor(c)),
-                  label: Text(c.name),
-                  selected: g.categoryId == c.id,
-                  onSelected: (_) => data.categorizePlace(g.keys, c.id),
+                  avatar: Icon(iconFor(cat), size: 18, color: colorFor(cat)),
+                  label: Text(cat.name),
+                  selected: g.categoryId == cat.id,
+                  onSelected: (_) => data.categorizePlace(g.keys, cat.id),
                 ),
             ],
           ),

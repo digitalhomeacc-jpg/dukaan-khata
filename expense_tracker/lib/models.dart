@@ -2,7 +2,7 @@ double _num(Object? v) => v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
 
 class Category {
   const Category(
-      {required this.id, required this.name, required this.icon, required this.color, this.isLoan = false, this.isInvestment = false});
+      {required this.id, required this.name, required this.icon, required this.color, this.isLoan = false, this.isInvestment = false, this.parentId});
 
   final String id;
   final String name;
@@ -15,6 +15,9 @@ class Category {
   /// Money put into / taken out of investments (Zerodha, mutual funds): not spending or income.
   final bool isInvestment;
 
+  /// The group it belongs to ("Cigarettes" in "Smoking & alcohol").
+  final String? parentId;
+
   factory Category.fromMap(Map<String, dynamic> m) => Category(
         id: m['id'] as String,
         name: m['name'] as String,
@@ -22,6 +25,7 @@ class Category {
         color: (m['color'] as num?)?.toInt() ?? 0xFF607D8B,
         isLoan: m['kind'] == 'loan',
         isInvestment: m['kind'] == 'investment',
+        parentId: m['parent_id'] as String?,
       );
 }
 
@@ -89,6 +93,7 @@ class Txn {
     this.loanRole,
     this.emailBody,
     this.paidBy,
+    this.payeeVpa,
   });
 
   final String id;
@@ -119,6 +124,9 @@ class Txn {
 
   /// A friend paid this for you; [amount] is your share and you owe it to them.
   final String? paidBy;
+
+  /// Payee's UPI ID, shortened ("7243@y"): tells apart places with the same name.
+  final String? payeeVpa;
 
   /// Borrowed money and loan repayments are neither income nor spending.
   bool get isLoanTransfer => loanRole == 'borrow' || loanRole == 'repay';
@@ -154,6 +162,7 @@ class Txn {
         loanRole: m['loan_role'] as String?,
         emailBody: m['email_body'] as String?,
         paidBy: m['paid_by'] as String?,
+        payeeVpa: m['payee_vpa'] as String?,
       );
 
   /// Columns a user may write (id, user_id and source are set by the database).

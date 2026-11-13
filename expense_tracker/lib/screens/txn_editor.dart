@@ -5,6 +5,7 @@ import '../data/app_data.dart';
 import '../models.dart';
 import '../ui/category_style.dart';
 import '../ui/format.dart';
+import 'categories_screen.dart';
 import 'split_section.dart';
 
 Future<void> openTxnEditor(BuildContext context, AppData data, {Txn? existing, Txn? prefill}) {
@@ -217,15 +218,32 @@ class _TxnEditorState extends State<TxnEditor> {
               spacing: 8,
               runSpacing: 8,
               children: [
-                for (final c in widget.data.categories)
+                for (final (:cat, :inGroup) in groupedCategories(widget.data.categories))
                   ChoiceChip(
-                    avatar: Icon(iconFor(c), size: 18, color: colorFor(c)),
-                    label: Text(c.name),
-                    selected: _categoryId == c.id,
-                    onSelected: (sel) => setState(() => _categoryId = sel ? c.id : null),
+                    avatar: Icon(iconFor(cat), size: inGroup ? 16 : 18, color: colorFor(cat)),
+                    label: Text(cat.isLoan ? 'Friends ledger (lent / borrowed / settle)' : cat.name,
+                        style: inGroup ? const TextStyle(fontSize: 13) : null),
+                    selected: _categoryId == cat.id,
+                    onSelected: (sel) => setState(() => _categoryId = sel ? cat.id : null),
                   ),
+                ActionChip(
+                  avatar: const Icon(Icons.add, size: 18),
+                  label: const Text('New category'),
+                  onPressed: () async {
+                    final id = await openCategoryForm(context, widget.data);
+                    if (id != null && mounted) setState(() => _categoryId = id);
+                  },
+                ),
               ],
             ),
+            if (_isLoan)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text(
+                  'Goes to your balance with this friend. If they bought something for you, pick what it was instead (e.g. Food).',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
             if (categoryChanged && _merchant.text.trim().isNotEmpty)
               CheckboxListTile(
                 contentPadding: EdgeInsets.zero,

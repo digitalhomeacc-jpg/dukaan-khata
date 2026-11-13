@@ -386,6 +386,9 @@ class FriendDetailScreen extends StatelessWidget {
               switch (v) {
                 case 'alias':
                   await _alias(context);
+                case 'family' || 'me':
+                  await data.setPersonRole(person, v);
+                  if (context.mounted) Navigator.pop(context);
                 case 'disconnect':
                   if (link != null) await data.disconnect(link.id);
                 case 'unfriend':
@@ -395,6 +398,8 @@ class FriendDetailScreen extends StatelessWidget {
             },
             itemBuilder: (_) => [
               const PopupMenuItem(value: 'alias', child: Text('Also known as… (another account)')),
+              const PopupMenuItem(value: 'family', child: Text('Family (money from them is income)')),
+              const PopupMenuItem(value: 'me', child: Text('This is me (my own account)')),
               if (link != null) const PopupMenuItem(value: 'disconnect', child: Text('Disconnect')),
               const PopupMenuItem(value: 'unfriend', child: Text('Not a friend (count as spending)')),
             ],

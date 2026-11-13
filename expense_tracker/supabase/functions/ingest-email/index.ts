@@ -23,6 +23,7 @@ import {
   merchantKey,
   type ParsedTxn,
   defaultCategoryName,
+  findPayeeVpa,
   parseBalanceEmail,
   parseBankEmail,
   SEARCH_KEYWORDS,
@@ -136,6 +137,7 @@ Deno.serve(async (req) => {
         email_body: email.body.slice(0, KEEP_BODY),
         email_from: email.from.slice(0, 200),
         email_received_at: email.date,
+        payee_vpa: findPayeeVpa(`${email.subject} ${email.body}`),
       };
       if (t.balanceAfter != null && accountId) {
         readings.push({ user_id: userId, account_id: accountId, balance: t.balanceAfter, as_of: t.txnAt, email_id: email.id });
@@ -222,6 +224,8 @@ Deno.serve(async (req) => {
     loanEvents += e?.length ?? 0;
   }
   await supabase.rpc("link_loan_transactions", { p_user: userId });
+  await supabase.rpc("apply_payee_names", { p_user: userId });
+  await supabase.rpc("apply_people", { p_user: userId });
   await supabase.rpc("link_wallet_topups", { p_user: userId });
   await supabase.rpc("link_self_transfers", { p_user: userId });
 

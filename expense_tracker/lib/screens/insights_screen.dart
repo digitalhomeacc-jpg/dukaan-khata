@@ -46,7 +46,7 @@ class _InsightsScreenState extends State<InsightsScreen> {
                 ),
               ],
             ),
-            for (final p in budgetProgress(data.budgets, s))
+            for (final p in budgetProgress(data.budgets, s, parentOf: data.parentOf))
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 6),
                 child: Column(
@@ -83,14 +83,25 @@ class _InsightsScreenState extends State<InsightsScreen> {
           const SizedBox(height: 8),
           if (s.byCategory.isEmpty)
             const Padding(padding: EdgeInsets.symmetric(vertical: 24), child: Center(child: Text('No spending this month.'))),
-          for (final e in s.byCategory)
+          for (final g in rollUp(s.byCategory, data.parentOf)) ...[
             _ShareRow(
-              leading: CategoryAvatar(data.category(e.key), size: 32),
-              label: data.category(e.key)?.name ?? 'No category',
-              value: e.value,
+              leading: CategoryAvatar(data.category(g.id), size: 32),
+              label: data.category(g.id)?.name ?? 'No category',
+              value: g.total,
               total: s.spent,
-              color: colorFor(data.category(e.key)),
+              color: colorFor(data.category(g.id)),
             ),
+            for (final c in g.children)
+              Padding(
+                padding: const EdgeInsets.only(left: 44, bottom: 2),
+                child: Row(
+                  children: [
+                    Expanded(child: Text(data.category(c.key)?.name ?? '?', style: text.bodySmall)),
+                    Text(money(c.value), style: text.bodySmall),
+                  ],
+                ),
+              ),
+          ],
           if (s.byMerchant.isNotEmpty) ...[
             const SizedBox(height: 28),
             Text('Top places', style: text.titleMedium),

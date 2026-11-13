@@ -579,3 +579,16 @@ export function defaultCategoryName(merchant: string | null): string | null {
   for (const [re, name] of KNOWN_PAYEES) if (re.test(merchant)) return name;
   return null;
 }
+
+/** "******6712@ybl" / "PAYTMQR25IC49CY0B@PAYTM" → "6712@y": last 4 before the @ and the handle's first
+ *  letter (statements cut handles short). Same in the database: vpa_tail(). */
+export function vpaTail(vpa: string | null | undefined): string | null {
+  if (!vpa || !vpa.includes("@")) return null;
+  const [local, handle] = vpa.split("@");
+  return `${local.slice(-4)}@${handle.slice(0, 1)}`.toLowerCase();
+}
+
+/** The payee's UPI ID in a bank email, if it shows one. */
+export function findPayeeVpa(text: string): string | null {
+  return vpaTail(normalize(text).match(/VPA:?\s*\**([A-Za-z0-9.\-_]*@[A-Za-z0-9.\-]+)/i)?.[1]);
+}

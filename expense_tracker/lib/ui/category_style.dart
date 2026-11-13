@@ -68,3 +68,18 @@ String accountKindLabel(AccountKind k) => switch (k) {
       AccountKind.card => 'Credit card',
       AccountKind.wallet => 'Wallet',
     };
+
+/// Categories in display order: each group followed by the categories in it.
+List<({Category cat, bool inGroup})> groupedCategories(Iterable<Category> all) {
+  final list = all.toList();
+  final ids = {for (final c in list) c.id};
+  final tops = list.where((c) => c.parentId == null || !ids.contains(c.parentId)).toList()
+    ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+  return [
+    for (final t in tops) ...[
+      (cat: t, inGroup: false),
+      for (final c in (list.where((c) => c.parentId == t.id).toList()..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()))))
+        (cat: c, inGroup: true),
+    ],
+  ];
+}

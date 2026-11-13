@@ -20,8 +20,9 @@ class PeopleReviewScreen extends StatelessWidget {
           const Padding(
             padding: EdgeInsets.fromLTRB(16, 8, 16, 8),
             child: Text(
-              'Money with friends goes to your balance with them, not to spending or income. '
-              'A shop or driver paid on a personal UPI ID is not a friend: their payments stay as spending.',
+              'Friend: payments stay spending/income (things they bought for you); only what you mark '
+              'as lent / borrowed / settle goes to your balance with them. Family: money from them is income. '
+              'Me: your own account, not counted. Shop: a business on a personal UPI ID.',
             ),
           ),
           if (people.isEmpty)
@@ -34,13 +35,16 @@ class PeopleReviewScreen extends StatelessWidget {
                 if (p.sent > 0) 'sent ${money(p.sent)}',
                 if (p.received > 0) 'got ${money(p.received)}',
               ].join(' · ')),
-              trailing: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextButton(onPressed: () => data.markNotFriend(p.name), child: const Text('Not friend')),
-                  const SizedBox(width: 4),
-                  FilledButton.tonal(onPressed: () => data.markFriend(p.name), child: const Text('Friend')),
+              trailing: PopupMenuButton<String>(
+                tooltip: 'Who is this?',
+                onSelected: (role) => data.setPersonRole(p.name, role),
+                itemBuilder: (_) => const [
+                  PopupMenuItem(value: 'friend', child: Text('Friend')),
+                  PopupMenuItem(value: 'family', child: Text('Family (money from them is income)')),
+                  PopupMenuItem(value: 'me', child: Text('Me (my own account)')),
+                  PopupMenuItem(value: 'shop', child: Text('Shop / service')),
                 ],
+                child: const Chip(label: Text('Who is this?')),
               ),
             ),
         ],

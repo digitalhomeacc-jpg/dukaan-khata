@@ -424,3 +424,12 @@ test("investment platforms default to Investments", () => {
   assert.equal(defaultCategoryName("Groww"), "Investments");
   assert.equal(defaultCategoryName("Nippon India Mutual Fund"), "Investments");
 });
+
+import { findPayeeVpa, vpaTail } from "./parsers.ts";
+
+test("payee UPI ID: last 4 + first letter of the handle", () => {
+  assert.equal(vpaTail("******6712@ybl"), "6712@y");
+  assert.equal(vpaTail("PAYTMQR25IC49CY0B@PAYTM"), "cy0b@p");
+  assert.equal(findPayeeVpa("debited from your account ending 3191 towards VPA ******6712@ybl (Hotel Sagar) on 12-11-26."), "6712@y");
+  assert.equal(findPayeeVpa("Sender: ROHAN (VPA: ************00-1@okicici)"), "00-1@o");
+});

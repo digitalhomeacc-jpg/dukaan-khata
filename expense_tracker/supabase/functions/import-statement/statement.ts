@@ -1,7 +1,7 @@
 // Bank statement reader (HDFC layout, plus a generic one): spreadsheet rows → transactions.
 // Pure TypeScript: used by the import-statement Edge Function and unit-tested with Node.
 
-import { cleanMerchant, type Method } from "../ingest-email/parsers.ts";
+import { cleanMerchant, type Method, vpaTail } from "../ingest-email/parsers.ts";
 
 export interface StatementTxn {
   /** YYYY-MM-DD */
@@ -16,6 +16,8 @@ export interface StatementTxn {
   direction: "debit" | "credit";
   closingBalance: number | null;
   merchant: string | null;
+  /** Payee's UPI ID, shortened like vpaTail(). */
+  vpa: string | null;
   method: Method;
   /** ATM cash: a move from the bank account into Cash. */
   atm: boolean;
@@ -146,6 +148,7 @@ export function readStatement(rows: string[][]): Statement {
       direction: dr && dr > 0 ? "debit" : "credit",
       closingBalance: cBal >= 0 ? amount(r[cBal]) : null,
       merchant: info.merchant,
+      vpa: vpaTail(narration.match(/^UPI[-\/][^-]+?-([^\s]*@[^-\s]+)/i)?.[1]),
       method: info.method,
       atm: info.atm && !!(dr && dr > 0),
     });

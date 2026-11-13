@@ -54,7 +54,7 @@ void main() {
     await pump(tester, PeopleReviewScreen(data: sample()));
     expect(find.text('Shresth Sharma'), findsOneWidget);
     expect(find.text('Bhai Pan Stall'), findsNothing);
-    expect(find.text('Friend'), findsOneWidget);
+    expect(find.text('Who is this?'), findsOneWidget);
   });
 
   testWidgets('shared expense: equal split and summary', (tester) async {

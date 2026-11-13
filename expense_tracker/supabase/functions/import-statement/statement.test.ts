@@ -74,3 +74,9 @@ test("UPI ID with a dash does not end up in the name", () => {
   assert.equal(readNarration("UPI-ROHAN DESAI SHI-7822965946-2@YBL-SBIN0011426-600000000011-PAYMENT").merchant, "Rohan Desai Shi");
 });
 
+test("payee UPI ID kept in short form", () => {
+  const st = readStatement(ROWS);
+  assert.equal(st.txns[0].vpa, "25ic@p");
+  assert.equal(st.txns[1].vpa, "0000@m");
+});
+

@@ -65,6 +65,10 @@ class AppData extends ChangeNotifier {
         aliases = {for (final r in rows) r['alias_key'] as String: r['friend_name'] as String};
         notifyListeners();
       }, onError: _onError),
+      db.from('people').stream(primaryKey: ['user_id', 'name_key']).listen((rows) {
+        people = {for (final r in rows) r['name_key'] as String: r['role'] as String};
+        notifyListeners();
+      }, onError: _onError),
       db.from('profiles').stream(primaryKey: ['id']).listen((rows) {
         if (rows.isNotEmpty) profile = rows.first;
         notifyListeners();
@@ -113,6 +117,9 @@ class AppData extends ChangeNotifier {
   List<FriendLink> links = const [];
   List<SharedEntry> sharedEntries = const [];
   List<MatchQuestion> questions = const [];
+
+  /// Person (lower-case name) → role: friend, family, me or shop.
+  Map<String, String> people = const {};
 
   /// Payee name (lower case) → friend name: "Also known as".
   Map<String, String> aliases = const {};
@@ -212,15 +219,23 @@ class AppData extends ChangeNotifier {
 
   // -------------------------------------------------------------- categories
 
-  Future<void> saveCategory(
-      {String? id, required String name, required String icon, required int color, bool isLoan = false}) async {
-    final row = {'name': name.trim(), 'icon': icon, 'color': color, 'kind': isLoan ? 'loan' : 'normal'};
+  /// Saves a category; returns its id.
+  Future<String> saveCategory(
+      {String? id, required String name, required String icon, required int color, bool isLoan = false, String? parentId}) async {
+    final row = {'name': name.trim(), 'icon': icon, 'color': color, 'kind': isLoan ? 'loan' : 'normal', 'parent_id': parentId};
     if (id == null) {
-      await _db.from('categories').insert(row);
-    } else {
-      await _db.from('categories').update(row).eq('id', id);
+      final r = await _db.from('categories').insert(row).select().single();
+      final c = Category.fromMap(r);
+      categories = [...categories, c];
+      notifyListeners();
+      return c.id;
     }
+    await _db.from('categories').update(row).eq('id', id);
+    return id;
   }
+
+  /// Category → its group, for rolling spending up.
+  Map<String, String?> get parentOf => {for (final c in categories) c.id: c.parentId};
 
   Future<void> deleteCategory(String id) => _db.from('categories').delete().eq('id', id);
 
@@ -303,12 +318,24 @@ class AppData extends ChangeNotifier {
 
   static String keyOf(String name) => name.toLowerCase().replaceAll(RegExp(r'\s+'), ' ').trim();
 
-  /// Payees already decided: friends (by category) and "not a friend".
+  /// Payees already decided: a role set, friends (by category) and "not a friend".
   Set<String> get decidedPeople => {
+        ...people.keys,
         for (final t in transactions)
           if (t.merchant != null && loanCategoryIds.contains(t.categoryId)) keyOf(t.merchant!),
         ...((profile['not_friends'] as List?) ?? const []).cast<String>(),
       };
+
+  /// Friend, family, me (own account) or shop. Family money in is income; "me" is a move.
+  Future<void> setPersonRole(String name, String role) async {
+    people = {...people, keyOf(name): role};
+    notifyListeners();
+    await _db.rpc('set_person_role', params: {'p_name': name, 'p_role': role});
+  }
+
+  /// Your own name for a place, by its UPI IDs (or names when it has none), now and later.
+  Future<void> renamePlace({required Iterable<String> vpas, required Iterable<String> names, required String nickname}) =>
+      _db.rpc('rename_place', params: {'p_vpas': vpas.toList(), 'p_names': names.toList(), 'p_nickname': nickname.trim()});
 
   /// Marks a payee as a friend (or not): their money then goes to your balance with them.
   Future<void> markFriend(String name, {bool friend = true}) async {

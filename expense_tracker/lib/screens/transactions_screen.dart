@@ -416,6 +416,16 @@ class BalanceCheckCard extends StatelessWidget {
               const SizedBox(height: 6),
               Text('Bank: ${money(check.bank)} · App: ${check.app < 0 ? '−' : ''}${money(check.app.abs())} · ${dayLabel(check.asOf)}, ${timeLabel(check.asOf)}',
                   style: Theme.of(context).textTheme.bodySmall),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  icon: const Icon(Icons.calendar_month, size: 18),
+                  label: const Text('Day by day'),
+                  onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                    builder: (_) => ListenableBuilder(listenable: data, builder: (_, _) => DayByDayScreen(data: data, account: account)),
+                  )),
+                ),
+              ),
               if (!ok) ...[
                 const SizedBox(height: 6),
                 Text(
@@ -432,6 +442,58 @@ class BalanceCheckCard extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Every balance the bank told us (statement days, balance emails) next to the app's.
+class DayByDayScreen extends StatelessWidget {
+  const DayByDayScreen({super.key, required this.data, required this.account});
+
+  final AppData data;
+  final Account account;
+
+  @override
+  Widget build(BuildContext context) {
+    final readings = data.balanceReadings.where((r) => r.accountId == account.id && account.counts(r.asOf)).toList()
+      ..sort((a, b) => b.asOf.compareTo(a.asOf));
+    final rows = [
+      for (final r in readings) (r: r, app: balanceAt(data.transactions, account, r.asOf)),
+    ];
+    final bad = rows.where((x) => (x.r.balance - x.app).abs() >= 1).toList();
+    final firstBad = bad.isEmpty ? null : bad.last; // oldest difference: where it started
+    final scheme = Theme.of(context).colorScheme;
+    return Scaffold(
+      appBar: AppBar(title: Text('${account.name}: bank vs app')),
+      body: ListView(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text(
+              rows.isEmpty
+                  ? 'No bank balances yet. Import a statement or wait for a balance email.'
+                  : bad.isEmpty
+                      ? 'Matches the bank on all ${rows.length} days.'
+                      : 'Differs on ${bad.length} of ${rows.length} days. It starts on ${dayLabel(firstBad!.r.asOf)}: '
+                          'look for a missing or extra transaction that day.',
+              style: TextStyle(color: bad.isEmpty ? Colors.green.shade700 : scheme.error, fontWeight: FontWeight.w600),
+            ),
+          ),
+          for (final x in rows)
+            ListTile(
+              dense: true,
+              title: Text(dayLabel(x.r.asOf)),
+              subtitle: Text('Bank ${money(x.r.balance)} · App ${x.app < 0 ? '−' : ''}${money(x.app.abs())}'),
+              trailing: (x.r.balance - x.app).abs() < 1
+                  ? Icon(Icons.check, color: Colors.green.shade700)
+                  : Text('${x.r.balance - x.app > 0 ? '+' : '−'}${money((x.r.balance - x.app).abs())}',
+                      style: TextStyle(color: scheme.error, fontWeight: FontWeight.w600)),
+              onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                builder: (_) => ListenableBuilder(listenable: data, builder: (_, _) => TransactionsScreen(data: data, accountId: account.id)),
+              )),
+            ),
+        ],
       ),
     );
   }

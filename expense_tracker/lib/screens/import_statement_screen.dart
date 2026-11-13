@@ -171,6 +171,7 @@ class _ImportStatementScreenState extends State<ImportStatementScreen> {
             const SizedBox(height: 8),
             Text('${done['added']} transactions added to ${done['account']}',
                 textAlign: TextAlign.center, style: text.titleMedium),
+            if (done['balanceCheck'] is Map) _BalanceCheckResult(check: done['balanceCheck'] as Map),
             const SizedBox(height: 8),
             const Text(
               'Categories, friends and loan payments are filled in where the app could tell. '
@@ -181,6 +182,66 @@ class _ImportStatementScreenState extends State<ImportStatementScreen> {
             FilledButton(onPressed: () => Navigator.pop(context), child: const Text('Done')),
           ],
         ],
+      ),
+    );
+  }
+}
+
+/// "Matches the bank on all 245 days" or the days where the app's balance differs.
+class _BalanceCheckResult extends StatelessWidget {
+  const _BalanceCheckResult({required this.check});
+
+  final Map check;
+
+  @override
+  Widget build(BuildContext context) {
+    final days = (check['days'] as num?)?.toInt() ?? 0;
+    final bad = (check['differentDays'] as num?)?.toInt() ?? 0;
+    final list = (check['differences'] as List?) ?? const [];
+    final scheme = Theme.of(context).colorScheme;
+    String d(Object? iso) => iso is String && DateTime.tryParse(iso) != null ? dayLabel(DateTime.parse(iso)) : '$iso';
+    double n(Object? v) => v is num ? v.toDouble() : 0;
+    return Card.outlined(
+      margin: const EdgeInsets.only(top: 16),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(children: [
+              Icon(bad == 0 ? Icons.verified_outlined : Icons.warning_amber_rounded,
+                  color: bad == 0 ? Colors.green.shade700 : scheme.error),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  bad == 0 ? 'Balance matches the bank on all $days days' : 'Balance differs from the bank on $bad of $days days',
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+            ]),
+            if (bad > 0) ...[
+              const SizedBox(height: 6),
+              Text(
+                'The first day it differs is where a transaction is missing or extra in the app '
+                '(e.g. a cash deposit, or the opening balance not set). Days after it carry the same difference.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 6),
+              for (final r in list.take(8))
+                if (r is Map)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2),
+                    child: Row(children: [
+                      Expanded(child: Text(d(r['date']))),
+                      Text('bank ${money(n(r['bank']))} · app ${money(n(r['app']))} · ',
+                          style: Theme.of(context).textTheme.bodySmall),
+                      Text('${n(r['difference']) > 0 ? '+' : '−'}${money(n(r['difference']).abs())}',
+                          style: TextStyle(color: scheme.error, fontWeight: FontWeight.w600)),
+                    ]),
+                  ),
+            ],
+          ],
+        ),
       ),
     );
   }

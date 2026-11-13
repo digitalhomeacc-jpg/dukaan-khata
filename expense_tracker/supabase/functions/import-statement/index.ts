@@ -168,7 +168,7 @@ Deno.serve(async (req) => {
     const at = new Date(new Date(`${t.date}T06:00:00${IST_OFFSET}`).getTime() + t.seq * 1000).toISOString();
     return {
       user_id: user.id, source: "statement", email_id: keyOf(t), account_id: account!.id,
-      amount: t.amount, direction: t.direction, merchant, method: t.method, txn_at: at,
+      amount: t.amount, direction: t.direction, merchant, method: t.method, txn_at: at, payee_vpa: t.vpa,
       bank: st.bank, account_last4: st.accountLast4, category_id: category,
       excluded: t.atm, counter_account_id: t.atm ? (cash?.id ?? null) : null,
       needs_review: !merchant, note: t.narration.slice(0, 200),
@@ -197,8 +197,46 @@ Deno.serve(async (req) => {
     await supabase.from("accounts").update({ opening_balance: st.openingBalance, opening_date: st.from }).eq("id", account!.id);
   }
   await supabase.rpc("link_loan_transactions", { p_user: user.id });
+  await supabase.rpc("apply_payee_names", { p_user: user.id });
+  await supabase.rpc("apply_people", { p_user: user.id });
   await supabase.rpc("link_wallet_topups", { p_user: user.id });
   await supabase.rpc("link_self_transfers", { p_user: user.id });
 
-  return json(200, { ...summary, added, account: account!.name });
+  return json(200, { ...summary, added, account: account!.name, balanceCheck: await checkDays(user.id, account!.id, lastOfDay) });
 });
+
+/** The app's balance at the end of each statement day next to the bank's closing balance. */
+async function checkDays(userId: string, accountId: string, bankByDay: Map<string, number>) {
+  const { data: acc } = await supabase.from("accounts").select("opening_balance, opening_date").eq("id", accountId).single();
+  const rows: Array<{ amount: number; direction: string; txn_at: string; account_id: string | null; counter_account_id: string | null; excluded: boolean }> = [];
+  for (let from = 0; ; from += 1000) {
+    const { data } = await supabase.from("transactions")
+      .select("amount, direction, txn_at, account_id, counter_account_id, excluded")
+      .eq("user_id", userId).or(`account_id.eq.${accountId},counter_account_id.eq.${accountId}`)
+      .order("txn_at").range(from, from + 999);
+    rows.push(...((data ?? []) as typeof rows));
+    if (!data || data.length < 1000) break;
+  }
+  const openingDate = (acc?.opening_date as string | null) ?? null;
+  const effects = rows
+    .filter((t) => !openingDate || dayOf(t.txn_at) >= openingDate)
+    .map((t) => {
+      const signed = (t.direction === "debit" ? -1 : 1) * Number(t.amount);
+      let e = 0;
+      if (t.account_id === accountId) e += signed;
+      if (t.excluded && t.counter_account_id === accountId) e -= signed;
+      return { day: dayOf(t.txn_at), e };
+    })
+    .filter((x) => x.e !== 0);
+  const days = [...bankByDay.keys()].sort();
+  let i = 0, bal = Number(acc?.opening_balance ?? 0);
+  const differences: Array<{ date: string; bank: number; app: number; difference: number }> = [];
+  for (const d of days) {
+    if (openingDate && d < openingDate) continue;
+    while (i < effects.length && effects[i].day <= d) bal += effects[i++].e;
+    const bank = bankByDay.get(d)!, app = Math.round(bal * 100) / 100;
+    if (Math.abs(bank - app) >= 1) differences.push({ date: d, bank, app, difference: Math.round((bank - app) * 100) / 100 });
+  }
+  return { days: days.filter((d) => !openingDate || d >= openingDate).length, differences: differences.slice(0, 50), differentDays: differences.length };
+}
+
