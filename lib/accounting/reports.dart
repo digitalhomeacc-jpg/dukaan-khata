@@ -423,6 +423,45 @@ class Reports {
     );
   }
 
+  /// जुन्या नोंदी: the old (pre-books) entries of a party with their own
+  /// running balance, and whether that ends at the opening balance.
+  Future<ReportTable?> oldEntriesTable(String ledgerId) async {
+    final st = await ledgers.statement(ledgerId);
+    if (st.references.isEmpty) return null;
+    String bal(int b) => b == 0 ? '0' : '${Money.fmt(b, abs: true)} ${b > 0 ? tr('dr_short') : tr('cr_short')}';
+    final last = st.references.last.balance, opening = st.ledger.openingBalance;
+    return ReportTable(
+      title: '${st.ledger.name} – ${tr('old_entries_ref')}',
+      subtitle: '${tr('old_total')}: ${bal(last)} · ${tr('opening_balance')}: ${bal(opening)}'
+          '${last == opening ? ' · ✓ ${tr('old_matches')}' : ' · ${tr('old_diff')} ${bal(opening - last)}'}',
+      columns: [
+        ReportColumn(tr('date'), flex: 2),
+        ReportColumn(tr('details'), flex: 5),
+        ReportColumn.num(tr('debit_given')),
+        ReportColumn.num(tr('credit_got')),
+        ReportColumn.num(tr('balance')),
+      ],
+      rows: [
+        for (final r in st.references)
+          [
+            shortDate(r.date),
+            [tr('old_${r.kind ?? 'sale'}'), if (r.details.isNotEmpty) r.details].join(' · '),
+            r.debit == 0 ? '' : Money.fmt(r.debit),
+            r.credit == 0 ? '' : Money.fmt(r.credit),
+            bal(r.balance),
+          ]
+      ],
+      rowRefs: [for (final r in st.references) r.voucherId],
+      totals: [
+        '',
+        tr('total'),
+        Money.fmt(st.references.fold(0, (s, r) => s + r.debit)),
+        Money.fmt(st.references.fold(0, (s, r) => s + r.credit)),
+        bal(last),
+      ],
+    );
+  }
+
   Future<ReportTable> moneyBook(List<String> ledgerIds, String title, String from, String to) async {
     final rows = <List<String>>[];
     final refs = <String?>[];

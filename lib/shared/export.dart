@@ -25,6 +25,8 @@ class Exporter {
   /// PDFs are English only: known names become their English names, any
   /// other Marathi word is spelt in English letters.
   static String latin(String s) {
+    // signs the PDF font cannot draw
+    s = s.replaceAll('✓', 'OK').replaceAll('✗', 'X').replaceAll('⚠', '!');
     if (!hasDevanagari(s)) return s;
     var out = s;
     if (englishNames.isNotEmpty) {
@@ -99,6 +101,8 @@ class Exporter {
     }
 
     doc.addPage(pw.MultiPage(
+      // a long khata (hundreds of old entries) runs to many pages – the library stops at 20 by default
+      maxPages: 2000,
       // wide tables (daily stock register: one column per item) print sideways
       pageFormat: wide ? PdfPageFormat.a4.landscape : PdfPageFormat.a4,
       margin: const pw.EdgeInsets.all(24),
@@ -185,6 +189,10 @@ class Exporter {
       fileNameOverrides: [name],
     ));
   }
+
+  static Future<void> printPdfMulti(List<ReportTable> tables, {required String heading, String shop = ''}) => tables.length == 1
+      ? printPdf(tables.single, shop: shop)
+      : Printing.layoutPdf(onLayout: (_) => pdfMulti(tables, shop: shop, heading: heading), name: latin(heading));
 
   static Future<void> printPdf(ReportTable t, {String shop = ''}) =>
       Printing.layoutPdf(onLayout: (_) => pdf(t, shop: shop), name: latin(t.title));

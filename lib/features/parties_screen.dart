@@ -439,6 +439,22 @@ class _KhataScreenState extends State<KhataScreen> {
 
   bool _sharing = false; // drawing the customer's copy (no vehicle names)
 
+  /// PDF / Excel / print: also the old entries? (null = cancelled)
+  static Future<bool?> _askOld(BuildContext context, int n) {
+    final t = App.read(context).t;
+    return showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(t('old_in_pdf_q')),
+        content: Text(t('old_in_pdf_help').replaceAll('{n}', '$n')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(t('old_in_pdf_no'))),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(t('old_in_pdf_yes'))),
+        ],
+      ),
+    );
+  }
+
   /// जुन्या नोंदी एकदम काढा: old entries grouped by when they were added
   /// (one import = one group); a whole group goes in one tap. Old entries
   /// change no figure, so removing them changes none either.
@@ -593,12 +609,30 @@ class _KhataScreenState extends State<KhataScreen> {
                 onSelected: (v) async {
                   final rep = app.reports;
                   switch (v) {
-                    case 'pdf':
-                      await Exporter.sharePdf(await app.pdfTable(() => app.reports.ledgerStatement(l.id, from: from, to: to, forCustomer: true)), shop: app.pdfShopName);
-                    case 'xls':
-                      await Exporter.shareExcel([await rep.ledgerStatement(l.id, from: from, to: to, forCustomer: true)], l.name);
-                    case 'print':
-                      await Exporter.printPdf(await app.pdfTable(() => app.reports.ledgerStatement(l.id, from: from, to: to, forCustomer: true)), shop: app.pdfShopName);
+                    case 'pdf' || 'xls' || 'print':
+                      // old entries first (when there are any and the whole khata is asked)
+                      final withOld = from == null && to == null && (await app.ledgers.statement(l.id)).references.isNotEmpty && context.mounted
+                          ? await _askOld(context, (await app.ledgers.statement(l.id)).references.length)
+                          : false;
+                      if (withOld == null) return; // cancelled
+                      if (v == 'xls') {
+                        await Exporter.shareExcel([
+                          if (withOld) (await rep.oldEntriesTable(l.id))!,
+                          await rep.ledgerStatement(l.id, from: from, to: to, forCustomer: true),
+                        ], l.name);
+                        return;
+                      }
+                      final tables = [
+                        if (withOld) (await app.pdfTable(() async => (await app.reports.oldEntriesTable(l.id))!)),
+                        await app.pdfTable(() => app.reports.ledgerStatement(l.id, from: from, to: to, forCustomer: true)),
+                      ];
+                      if (v == 'pdf') {
+                        tables.length == 1
+                            ? await Exporter.sharePdf(tables.single, shop: app.pdfShopName)
+                            : await Exporter.sharePdfMulti(tables, heading: tables.last.title, shop: app.pdfShopName);
+                      } else {
+                        await Exporter.printPdfMulti(tables, heading: tables.last.title, shop: app.pdfShopName);
+                      }
                     case 'v_sale':
                       if (context.mounted) await VoucherScreen.open(context, VoucherType.sale, partyId: l.id);
                     case 'v_receipt':

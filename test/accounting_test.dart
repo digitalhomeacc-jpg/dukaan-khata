@@ -1030,6 +1030,22 @@ void main() {
     expect(ppc[5], Money.fmt(rs(286))); // the whole year so far: also 10 %
     // payments and the security transfer are not costs: the year shows 10 %
     expect(rep.subtitle, contains('(10.0%)'));
+    // re-import with an item for a line that came in without one: items added, nothing duplicated
+    final xt = await sr.save(name: 'Wonder Xtreme', category: 'cement', unit: 'bag');
+    final withItem = [
+      for (final l in lines)
+        l.note == 'Trf to Security Ledger' || l.kind != 'purchase' || l.items.isNotEmpty
+            ? l
+            : OldLine(l.date, l.kind, l.amount, l.note, stmtKind: l.stmtKind, items: [ItemLine.fromTotal(xt, 5, l.amount)]),
+    ];
+    expect(await vs.importOldEntries(sup, withItem, owner), 0);
+    expect(vs.itemsAdded, 1); // the second ₹13,140 line got its item
+    expect((await lr.statement(sup)).references.length, 6);
+    expect(await sr.stockAt(xt, '2026-12-31'), 0);
+    // old entries in the khata PDF: running balance and total match
+    final ot = (await Reports(db, biz, (k) => k).oldEntriesTable(sup))!;
+    expect(ot.rows.length, 6);
+    expect(ot.totals![2], Money.fmt(rs(500000) + rs(16803.80)));
     // undo the whole import in one go: nothing changes, entries gone
     final batches = await vs.oldBatches(sup);
     expect(batches.length, 1);

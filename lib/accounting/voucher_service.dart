@@ -736,26 +736,59 @@ class VoucherService {
   /// date, kind, amount) are skipped. Each entry is marked `stmt:<kind>|<batch>`
   /// (kind = invoice / payment / discount / charge) so the whole import can be
   /// undone in one tap and the real-cost report can tell discounts from payments.
+  /// How many existing old entries got their items in the last import.
+  int itemsAdded = 0;
+
   Future<int> importOldEntries(String partyId, List<OldLine> lines, Actor actor, {void Function(int, int)? onProgress}) async {
     if (!actor.isOwner) throw PermissionDenied('err_owner_old');
-    final have = <String, int>{};
+    // old entries already there, by date | kind | amount – and whether they have item lines
+    final have = <String, List<(String, bool)>>{};
     for (final r in await db.getAll(
-        "SELECT vdate, pay_ledger_id, amount, paid FROM vouchers WHERE party_id = ? AND vtype = 'history' AND deleted = 0", [partyId])) {
+        "SELECT v.id, v.vdate, v.pay_ledger_id, v.amount, v.paid, "
+        "EXISTS (SELECT 1 FROM inventory_lines il WHERE il.voucher_id = v.id AND il.deleted = 0) AS has_items "
+        "FROM vouchers v WHERE v.party_id = ? AND v.vtype = 'history' AND v.deleted = 0 ORDER BY v.created_at, v.id",
+        [partyId])) {
       final kind = '${r['pay_ledger_id'] ?? ''}'.replaceFirst(historyKindPrefix, '');
       final amt = ((r['amount'] as int?) ?? 0) != 0 ? r['amount'] as int : (r['paid'] as int?) ?? 0;
-      final k = '${r['vdate']}|$kind|$amt';
-      have[k] = (have[k] ?? 0) + 1;
+      (have['${r['vdate']}|$kind|$amt'] ??= []).add((r['id'] as String, (r['has_items'] as int) == 1));
     }
     final todo = <OldLine>[];
+    final fill = <(String, OldLine)>[]; // already there without items: add the items now
     for (final l in lines) {
       if (!Books.isHistory(l.date) || l.amount <= 0) continue;
-      final k = '${l.date}|${l.kind}|${l.amount}';
-      if ((have[k] ?? 0) > 0) {
-        have[k] = have[k]! - 1;
+      final same = have['${l.date}|${l.kind}|${l.amount}'];
+      if (same != null && same.isNotEmpty) {
+        final (id, hasItems) = same.removeAt(0);
+        if (!hasItems && l.items.isNotEmpty) fill.add((id, l));
         continue;
       }
       todo.add(l);
     }
+    if (fill.isNotEmpty) {
+      await db.writeTransaction((tx) async {
+        for (final (id, l) in fill) {
+          var n = 0;
+          for (final it in l.items) {
+            // old bill lines: for the record and the cost report, no stock effect
+            await tx.execute(
+              'INSERT INTO inventory_lines (id, business_id, voucher_id, item_id, qty, rate, amount, direction, vdate, deleted) '
+              'VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, 0)',
+              ['$id:I${n++}', businessId, id, it.itemId, it.qty, it.rate, it.amount, l.date],
+            );
+          }
+        }
+      });
+      final party = (await db.getOptional('SELECT name FROM ledgers WHERE id = ?', [partyId]))?['name'];
+      await AuditLog.write(db,
+          businessId: businessId,
+          recordId: newId(),
+          action: 'edit',
+          kind: 'import',
+          title: '$party · items added to ${fill.length} old entries',
+          after: {'count': '${fill.length}', 'entries': [for (final (_, l) in fill) '${l.date} ${Money.fmt(l.amount)}'].join('; ')},
+          by: actor);
+    }
+    itemsAdded = fill.length;
     if (todo.isEmpty) return 0;
     final batch = newId();
     final now = nowIso();

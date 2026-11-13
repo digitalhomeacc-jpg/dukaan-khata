@@ -172,7 +172,11 @@ class _SupplierMatchScreenState extends State<SupplierMatchScreen> {
           if (mounted) setState(() => progress = '$d / $n');
         },
       );
-      if (mounted) toast(context, t('sm_imported').replaceAll('{n}', '$added').replaceAll('{s}', '${old.length - added}'));
+      final filled = app.vouchers.itemsAdded;
+      if (mounted) {
+        toast(context,
+            '${t('sm_imported').replaceAll('{n}', '$added').replaceAll('{s}', '${old.length - added}')}${filled > 0 ? ' · ${t('sm_items_added').replaceAll('{n}', '$filled')}' : ''}');
+      }
     } catch (e) {
       if (mounted) toast(context, errText(context, e), error: true);
     }
