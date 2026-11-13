@@ -1349,4 +1349,13 @@ void main() {
       Books.start = keep;
     }
   });
+
+  test('cash counted: shared mark with who counted, per day', () async {
+    AuditLog.actor = staff;
+    expect(await lr.countedOn('2026-11-13'), isNull);
+    await lr.markCounted('2026-11-13', rs(68125), 0);
+    final c = await lr.countedOn('2026-11-13');
+    expect(c?.$1, 'Staff');
+    expect(await lr.countedOn('2026-11-14'), isNull, reason: 'each day separately');
+  });
 }

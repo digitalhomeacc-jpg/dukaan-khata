@@ -5,7 +5,6 @@ import '../accounting/models.dart';
 import '../accounting/reports.dart';
 import '../core/money.dart';
 import '../core/theme.dart';
-import '../shared/export.dart';
 import '../shared/widgets.dart';
 import '../state/app_controller.dart';
 import 'cash_count_screen.dart';
@@ -30,8 +29,9 @@ class _DayData {
   final int expenses;
   final int cashDiff; // + extra, − short (from today's cash count), 0 = none / matched
   final bool counted;
+  final (String, String)? countedBy; // who counted the cash, and when
   final List<Item> low;
-  _DayData(this.charges, this.dash, this.udhari, this.expenses, this.cashDiff, this.counted, this.low);
+  _DayData(this.charges, this.dash, this.udhari, this.expenses, this.cashDiff, this.counted, this.countedBy, this.low);
 }
 
 class _DayCloseScreenState extends State<DayCloseScreen> {
@@ -39,6 +39,7 @@ class _DayCloseScreenState extends State<DayCloseScreen> {
 
   Future<_DayData> _load(AppController app) async {
     final b = app.businessId;
+    final counted = await app.ledgers.countedOn(date);
     final exp = await app.db.get(
         'SELECT COALESCE(SUM(vl.debit - vl.credit), 0) AS s FROM voucher_lines vl JOIN ledgers l ON l.id = vl.ledger_id '
         "JOIN vouchers v ON v.id = vl.voucher_id WHERE vl.business_id = ? AND vl.vdate = ? AND vl.deleted = 0 AND v.vtype = 'payment' "
@@ -53,37 +54,38 @@ class _DayCloseScreenState extends State<DayCloseScreen> {
       await app.reports.udhariDay(date),
       (exp['s'] as num).toInt(),
       (diff['s'] as num).toInt(),
-      (diff['n'] as int) > 0 || app.prefInt('counted_$date', 0) == 1,
+      (diff['n'] as int) > 0 || counted != null || app.prefInt('counted_$date', 0) == 1,
+      counted,
       (await app.stock.list()).where((i) => i.lowStock > 0 && i.stock <= i.lowStock).toList(),
     );
   }
 
-  /// The message for WhatsApp (plain text, *bold* headings).
-  String _summary(AppController app, _DayData d) {
+  /// The day in short: (label, amount, colour) rows, grouped; null = gap.
+  List<(String, String, Color?)?> _summary(AppController app, _DayData d) {
     final t = app.t;
     String m(int v) => '₹${Money.fmt(v)}';
     final c = d.charges;
     return [
-      '*${app.businessName}* – ${shortDate(date)}',
-      '${t('today_sales')}: ${m(d.dash['sales']!)}',
-      '${t('today_collection')}: ${m(d.dash['collections']!)}',
-      if (d.udhari.given > 0) '${t('udhari_given')}: ${m(d.udhari.given)}',
-      if (d.udhari.taken > 0) '${t('udhari_taken')}: ${m(d.udhari.taken)}',
-      if (d.expenses > 0) '${t('expense')}: ${m(d.expenses)}',
-      if (c.hamaliToPay != 0 || c.hamaliPaid != 0) '${t('hamali')}: ${Money.fmt(c.hamaliToPay)} / ${Money.fmt(c.hamaliPaid)}',
-      if (c.transportCharged != 0) '${t('transport')}: ${Money.fmt(c.transportCharged)}${c.driversOwed > 0 ? ' · ${t('drivers_owed')} ${m(c.driversOwed)}' : ''}',
+      (t('today_sales'), m(d.dash['sales']!), null),
+      (t('today_collection'), m(d.dash['collections']!), AppColors.paid),
+      if (d.udhari.given > 0) (t('udhari_given'), m(d.udhari.given), AppColors.due),
+      if (d.udhari.taken > 0) (t('udhari_taken'), m(d.udhari.taken), null),
+      if (d.expenses > 0) (t('expense'), m(d.expenses), null),
+      if (c.hamaliToPay != 0 || c.hamaliPaid != 0) (t('hamali'), '${Money.fmt(c.hamaliToPay)} / ${Money.fmt(c.hamaliPaid)}', null),
+      if (c.transportCharged != 0) (t('transport'), Money.fmt(c.transportCharged), null),
+      if (c.driversOwed > 0) (t('drivers_owed'), m(c.driversOwed), AppColors.due),
       if (app.actor.isOwner) ...[
-        '',
-        '${t('cash_in_hand')}: ${m(d.dash['cash']!)}',
-        '${t('upi_balance')}: ${m(d.dash['upi']!)}',
-        '${t('bank_balance')}: ${m(d.dash['bank']!)}',
+        null,
+        (t('cash_in_hand'), m(d.dash['cash']!), null),
+        (t('upi_balance'), m(d.dash['upi']!), null),
+        (t('bank_balance'), m(d.dash['bank']!), null),
       ],
-      if (d.cashDiff != 0) '${t(d.cashDiff < 0 ? 'cash_short' : 'cash_extra')}: ${m(d.cashDiff.abs())}',
+      if (d.cashDiff != 0) (t(d.cashDiff < 0 ? 'cash_short' : 'cash_extra'), m(d.cashDiff.abs()), AppColors.due),
       if (d.low.isNotEmpty) ...[
-        '',
-        '*${t('low_stock_items')}*: ${d.low.map((i) => '${i.display(app.english)} ${fmtQty(i.stock)}').join(', ')}',
+        null,
+        (t('low_stock_items'), d.low.map((i) => '${i.display(app.english)} ${fmtQty(i.stock)}').join(', '), AppColors.haldi),
       ],
-    ].join('\n');
+    ];
   }
 
   @override
@@ -94,7 +96,7 @@ class _DayCloseScreenState extends State<DayCloseScreen> {
     return Scaffold(
       appBar: AppBar(title: Text('${t('day_close')} · ${shortDate(date)}')),
       body: LiveBuilder<_DayData>(
-        reloadKey: '$date|${app.prefInt('counted_$date', 0)}',
+        reloadKey: date,
         load: () => _load(app),
         builder: (context, d) {
           final c = d.charges;
@@ -136,27 +138,35 @@ class _DayCloseScreenState extends State<DayCloseScreen> {
             step(
               1,
               t('cash_count'),
-              d.cashDiff != 0
-                  ? '${t(d.cashDiff < 0 ? 'cash_short' : 'cash_extra')} ₹${Money.fmt(d.cashDiff.abs())}'
-                  : app.actor.isOwner
-                      ? '${t('cash_in_hand')}: ₹${Money.fmt(d.dash['cash']!)}'
-                      : t('cash_count_sub'),
+              [
+                if (d.countedBy != null)
+                  '${t('counted_by')}${d.countedBy!.$1.isEmpty ? '' : ' – ${d.countedBy!.$1}'}'
+                      '${DateTime.tryParse(d.countedBy!.$2) == null ? '' : ', ${TimeOfDay.fromDateTime(DateTime.parse(d.countedBy!.$2).toLocal()).format(context)}'}',
+                if (d.cashDiff != 0)
+                  '${t(d.cashDiff < 0 ? 'cash_short' : 'cash_extra')} ₹${Money.fmt(d.cashDiff.abs())}'
+                else if (d.countedBy == null)
+                  app.actor.isOwner ? '${t('cash_in_hand')}: ₹${Money.fmt(d.dash['cash']!)}' : t('cash_count_sub'),
+              ].join(' · '),
               d.counted,
-              action: FilledButton.tonal(
-                key: const Key('close_count'),
-                onPressed: () async {
-                  await CashCountScreen.open(context, date: date);
-                  await app.setPrefInt('counted_$date', 1);
-                },
-                child: Text(t('close_count_btn')),
-              ),
+              // saved count → ✓ on every phone; just opening the screen counts for nothing
+              action: d.counted
+                  ? TextButton(
+                      key: const Key('close_count'),
+                      onPressed: () => CashCountScreen.open(context, date: date),
+                      child: Text(t('count_again')),
+                    )
+                  : FilledButton.tonal(
+                      key: const Key('close_count'),
+                      onPressed: () => CashCountScreen.open(context, date: date),
+                      child: Text(t('close_count_btn')),
+                    ),
             ),
             // 2 · labourers
             step(
               2,
               t('hamali'),
               '${t('hamali_to_pay')}: ₹${Money.fmt(toPay)} · ${t('hamali_paid')}: ₹${Money.fmt(c.hamaliPaid)}',
-              hamaliPending <= 0 && (toPay > 0 || c.hamaliPaid > 0),
+              hamaliPending <= 0,
               action: hamaliPending > 0
                   ? FilledButton.tonal(
                       key: const Key('close_hamali'),
@@ -218,51 +228,23 @@ class _DayCloseScreenState extends State<DayCloseScreen> {
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text(t('close_summary'), style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
                   const SizedBox(height: 8),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(color: scheme.surfaceContainerHighest.withValues(alpha: 0.6), borderRadius: BorderRadius.circular(12)),
-                    child: Text(text.replaceAll('*', ''), style: const TextStyle(height: 1.5)),
-                  ),
-                  const SizedBox(height: 10),
-                  Row(children: [
-                    Expanded(
-                      child: FilledButton.icon(
-                        key: const Key('close_send'),
-                        style: FilledButton.styleFrom(backgroundColor: const Color(0xFF25A35A)),
-                        icon: const Icon(Icons.send),
-                        label: Text(t('close_send')),
-                        onPressed: () => WhatsApp.send(app.prefStr('summary_phone'), text),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    // whose WhatsApp it goes to (empty = choose each time)
-                    IconButton.filledTonal(
-                      tooltip: t('close_phone'),
-                      icon: const Icon(Icons.person_outline),
-                      onPressed: () async {
-                        final ctl = TextEditingController(text: app.prefStr('summary_phone'));
-                        final v = await showDialog<String>(
-                          context: context,
-                          builder: (ctx) => AlertDialog(
-                            title: Text(t('close_phone')),
-                            content: TextField(
-                                controller: ctl,
-                                autofocus: true,
-                                keyboardType: TextInputType.phone,
-                                decoration: InputDecoration(hintText: '98xxxxxxxx', helperText: t('close_phone_help'))),
-                            actions: [FilledButton(onPressed: () => Navigator.pop(ctx, ctl.text.trim()), child: Text(t('save')))],
+                  for (final r in text)
+                    if (r == null)
+                      const Divider(height: 18)
+                    else
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 3),
+                        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Expanded(flex: 3, child: Text(r.$1, style: TextStyle(color: scheme.onSurfaceVariant))),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            flex: 2,
+                            child: Text(r.$2,
+                                textAlign: TextAlign.right,
+                                style: TextStyle(fontWeight: FontWeight.w700, color: r.$3 ?? scheme.onSurface)),
                           ),
-                        );
-                        if (v != null) await app.setPrefStr('summary_phone', v);
-                      },
-                    ),
-                  ]),
-                  if (app.prefStr('summary_phone').isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 6),
-                      child: Text('→ ${app.prefStr('summary_phone')}', style: Theme.of(context).textTheme.bodySmall),
-                    ),
+                        ]),
+                      ),
                 ]),
               ),
             ),

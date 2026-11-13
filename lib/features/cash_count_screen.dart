@@ -68,8 +68,10 @@ class _CashCountScreenState extends State<CashCountScreen> {
     final t = app.t;
     final diff = counted - (book ?? 0);
     if (diff == 0) {
+      await app.ledgers.markCounted(date, counted, 0);
+      if (!mounted) return;
       toast(context, t('cash_ok'));
-      Navigator.pop(context);
+      Navigator.pop(context, true);
       return;
     }
     setState(() => saving = true);
@@ -90,9 +92,10 @@ class _CashCountScreenState extends State<CashCountScreen> {
         ),
         app.actor,
       );
+      await app.ledgers.markCounted(date, counted, diff);
       if (!mounted) return;
       toast(context, '${t('saved')} · ${t(diff < 0 ? 'cash_short' : 'cash_extra')} ₹${Money.fmt(diff.abs())}');
-      Navigator.pop(context);
+      Navigator.pop(context, true);
     } catch (e) {
       if (mounted) {
         toast(context, errText(context, e), error: true);

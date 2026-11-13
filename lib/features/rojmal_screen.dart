@@ -190,7 +190,14 @@ class _RojmalScreenState extends State<RojmalScreen> {
               : r.particulars.isNotEmpty
                   ? r.particulars
                   : App.of(context).t(r.type == VoucherType.sale ? 'cash_sale' : r.type == VoucherType.purchase ? 'cash_purchase' : 'vt_${r.type.code}')),
-          subtitle: Text([App.of(context).t('vt_${r.type.code}'), if (r.narration != null && r.narration != r.particulars) r.narration!].join(' · ')),
+          // second line only when it adds something ("रोख विक्री / विक्री" says it twice)
+          subtitle: (() {
+            final t = App.of(context).t;
+            final kind = t('vt_${r.type.code}');
+            final first = r.particulars.isEmpty && !r.varhai;
+            final parts = [if (!first) kind, if (r.narration != null && r.narration != r.particulars) r.narration!];
+            return parts.isEmpty ? null : Text(parts.join(' · '));
+          })(),
           trailing: Row(mainAxisSize: MainAxisSize.min, children: [
             if (r.gstBillNeeded) const Padding(padding: EdgeInsets.only(right: 4), child: Chip(label: Text('GST'), visualDensity: VisualDensity.compact)),
             Text(Money.fmt(inflow ? r.inflow : r.outflow), style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 15)),
@@ -319,6 +326,21 @@ class _DayEndCard extends StatelessWidget {
     final owedTotal = c.transporters.fold<int>(0, (s, d) => s + (d.owed > 0 ? d.owed : 0));
     Widget money(int v, {Color? color, bool bold = false}) => Text(Money.fmt(v),
         style: TextStyle(color: color, fontWeight: bold ? FontWeight.bold : null, fontFeatures: const [FontFeature.tabularFigures()]));
+    final soft = TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant);
+    // one calm line: label left (soft), amount right
+    Widget line(String label, int v) => Padding(
+          padding: const EdgeInsets.symmetric(vertical: 3),
+          child: Row(children: [Expanded(child: Text(label, style: soft)), money(v)]),
+        );
+    // a small heading for each group
+    Widget head(IconData icon, String title) => Padding(
+          padding: const EdgeInsets.only(top: 6, bottom: 6),
+          child: Row(children: [
+            Icon(icon, size: 18, color: Theme.of(context).colorScheme.primary),
+            const SizedBox(width: 6),
+            Text(title, style: TextStyle(fontWeight: FontWeight.w700, color: Theme.of(context).colorScheme.primary)),
+          ]),
+        );
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 8),
       child: ExpansionTile(
@@ -331,12 +353,10 @@ class _DayEndCard extends StatelessWidget {
             '${c.hasTransport ? ' · ${t('transport')}: ${Money.fmt(c.transportCharged)} / ${Money.fmt(c.transportPaid)}' : ''}'),
         childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
         children: [
-          Row(children: [Expanded(child: Text(t('hamali_charged'))), money(c.hamaliCharged)]),
-          Row(children: [
-            Expanded(child: Text('+ ${t('varhai')}')),
-            money(c.varhai),
-          ]),
-          const Divider(height: 12),
+          head(Icons.engineering_outlined, t('hamali')),
+          line(t('hamali_charged'), c.hamaliCharged),
+          if (c.varhai != 0) line('+ ${t('varhai')}', c.varhai),
+          const Divider(height: 14),
           Row(children: [
             Expanded(child: Text(t('hamali_to_pay'), style: const TextStyle(fontWeight: FontWeight.w600))),
             money(c.hamaliToPay, bold: true),
@@ -382,12 +402,9 @@ class _DayEndCard extends StatelessWidget {
                 Expanded(child: Text('+ ${t('hamal_pocket')}', style: TextStyle(color: Colors.red.shade700, fontWeight: FontWeight.w600))),
                 money(pocket, color: Colors.red.shade700, bold: true),
               ]),
-            Row(children: [
-              Expanded(child: Text(t('hamal_each'))),
-              money((toPay / hamals).round()),
-            ]),
+            line(t('hamal_each'), (toPay / hamals).round()),
           ],
-          Row(children: [Expanded(child: Text('− ${t('hamali_paid')}')), money(c.hamaliPaid)]),
+          line('− ${t('hamali_paid')}', c.hamaliPaid),
           Row(children: [
             // left to give the labourers / paid more than taken / all settled
             Expanded(
@@ -413,17 +430,19 @@ class _DayEndCard extends StatelessWidget {
             ),
           ]),
           if (c.hasTransport) ...[
-            const Divider(height: 20, thickness: 1.2),
+            const SizedBox(height: 8),
+            const Divider(height: 1),
+            const SizedBox(height: 6),
             // गाडी भाडे, the same way as hamali: taken on bills → drivers' share → ours
-            Row(children: [Expanded(child: Text(t('transport_charged'))), money(c.transportCharged)]),
-            if (c.driversEarned != 0)
-              Row(children: [Expanded(child: Text('− ${t('drivers_share')}')), money(c.driversEarned)]),
-            const Divider(height: 12),
+            head(Icons.local_shipping_outlined, t('transport')),
+            line(t('transport_charged'), c.transportCharged),
+            if (c.driversEarned != 0) line('− ${t('drivers_share')}', c.driversEarned),
+            const Divider(height: 14),
             Row(children: [
               Expanded(child: Text(t('transport_ours'), style: const TextStyle(fontWeight: FontWeight.bold))),
               money(c.ownTransport, color: c.ownTransport >= 0 ? Colors.green.shade700 : Colors.red.shade700, bold: true),
             ]),
-            if (c.driversPaid != 0) Row(children: [Expanded(child: Text(t('drivers_paid_today'))), money(c.driversPaid)]),
+            if (c.driversPaid != 0) line(t('drivers_paid_today'), c.driversPaid),
             if (owedTotal > 0)
               Row(children: [
                 Expanded(child: Text(t('drivers_owed'), style: const TextStyle(fontWeight: FontWeight.bold))),
@@ -484,7 +503,7 @@ class _DayEndCard extends StatelessWidget {
               ),
             ],
           ],
-          const SizedBox(height: 6),
+          const SizedBox(height: 10),
           Align(
             alignment: Alignment.centerLeft, // clear of the + button
             child: FilledButton.icon(

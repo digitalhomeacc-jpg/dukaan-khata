@@ -179,6 +179,22 @@ class LedgerRepo {
       title: name,
       after: {'recheck': on ? '✓' : '', 'note': on ? note.trim() : ''});
 
+  /// रोख मोजणी done for [date]: who counted and when (shared by every phone
+  /// through the change history), or null.
+  Future<(String, String)?> countedOn(String date) async {
+    final r = await db.getOptional(
+        "SELECT user_name, at FROM audit_log WHERE business_id = ? AND voucher_id = ? ORDER BY at DESC LIMIT 1", [businessId, 'counted:$date']);
+    return r == null ? null : ('${r['user_name'] ?? ''}', '${r['at'] ?? ''}');
+  }
+
+  Future<void> markCounted(String date, int counted, int diff) => AuditLog.write(db,
+      businessId: businessId,
+      recordId: 'counted:$date',
+      action: 'create',
+      kind: 'cash_count',
+      title: date,
+      after: {'counted_cash': Money.fmt(counted), if (diff != 0) 'cash_diff': Money.fmt(diff)});
+
   Future<Map<String, int>> daysUnpaid() async {
     final rows = await db.getAll(
       'SELECT l.id, l.opening_balance, $_balanceExpr AS balance, '
