@@ -1,6 +1,7 @@
 import 'package:dukaan_khata/accounting/voucher_service.dart';
 import 'package:dukaan_khata/accounting/ledger_repo.dart';
 import 'package:dukaan_khata/core/audit.dart';
+import 'package:dukaan_khata/core/backup.dart';
 import 'package:dukaan_khata/core/money.dart';
 import 'package:dukaan_khata/core/seed.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -57,6 +58,33 @@ void main() {
     expect(await db.getOptional('SELECT id FROM ledgers WHERE id = ?', [cash]), isNull);
     await db.writeTransaction((tx) => ensureSystemLedgers(tx, biz, only: {cash})); // server: genuinely missing
     expect(await db.getOptional('SELECT id FROM ledgers WHERE id = ?', [cash]), isNotNull);
+    await db.close();
+  });
+
+  test('openings typed before the history existed come back from a backup file', () async {
+    final db = await openTestDb(biz);
+    final lr = LedgerRepo(db, biz);
+    final cash = systemLedgerId(biz, 'cash'), upi = systemLedgerId(biz, 'upi_h');
+    // typed with no history line (as before the history feature)
+    await db.execute('UPDATE ledgers SET opening_balance = ? WHERE id = ?', [Money.fromRupees(81234.25), cash]);
+    await db.execute('UPDATE ledgers SET opening_balance = ? WHERE id = ?', [-Money.fromRupees(500), upi]);
+    final file = await Backup.export(db, biz);
+    expect((await lr.compareWithBackup(file)).$2, isEmpty);
+
+    for (final id in [cash, upi]) {
+      await db.execute('DELETE FROM ledgers WHERE id = ?', [id]);
+    }
+    await db.writeTransaction((tx) => ensureSystemLedgers(tx, biz));
+    expect(await lr.resetDamage(), isEmpty, reason: 'nothing in the history to go by');
+
+    final (_, fixes) = await lr.compareWithBackup(file);
+    expect({for (final f in fixes) f.id}, {cash, upi});
+    await lr.repair(fixes);
+    Future<int> opening(String id) async => (await db.get('SELECT opening_balance o FROM ledgers WHERE id = ?', [id]))['o'] as int;
+    expect(await opening(cash), Money.fromRupees(81234.25));
+    expect(await opening(upi), -Money.fromRupees(500));
+    expect((await lr.compareWithBackup(file)).$2, isEmpty);
+    await expectLater(lr.compareWithBackup(await Backup.export(db, 'other')), throwsFormatException);
     await db.close();
   });
 }

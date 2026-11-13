@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:sqlite_async/sqlite_async.dart';
 
@@ -277,7 +278,10 @@ class LedgerRepo {
   // ---- बदल इतिहास for accounts
   Future<Map<String, Object?>> _snap(String id) async {
     final r = await db.getOptional('SELECT * FROM ledgers WHERE id = ?', [id]);
-    if (r == null) return {};
+    return r == null ? {} : _snapRow(r);
+  }
+
+  static Map<String, Object?> _snapRow(Map<String, Object?> r) {
     String m(Object? p) => (p as int? ?? 0) == 0 ? '' : Money.fmt(p as int);
     return {
       'name': r['name'],
@@ -389,6 +393,35 @@ class LedgerRepo {
     }
     return out;
   }
+
+  /// The same check against a backup file (Drive or the app's own): built-in
+  /// accounts whose details differ from the file. Returns the file's date too.
+  Future<(String, List<AccountFix>)> compareWithBackup(Uint8List bytes) async {
+    final data = jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
+    if (data['format'] != 'dukaan-khata-backup') throw const FormatException('Not a Dukaan Khata backup file');
+    if (data['business_id'] != businessId) throw const FormatException('This backup is of another shop');
+    final rows = ((data['tables'] as Map)['ledgers'] as List? ?? const []).cast<Map>();
+    final out = <AccountFix>[];
+    for (final raw in rows) {
+      final r = raw.cast<String, Object?>();
+      if ('${r['system']}' != '1' && r['system'] != true) continue;
+      final id = r['id'] as String;
+      final cur = await _snap(id);
+      if (cur.isEmpty) continue;
+      String v(Object? x) => '${x ?? ''}';
+      final was = _snapRow({...r, 'opening_balance': _int(r['opening_balance']), 'credit_limit': _int(r['credit_limit']),
+        'interest_rate': _int(r['interest_rate']), 'salary': _int(r['salary']), 'salary_cut': _int(r['salary_cut']),
+        'archived': _int(r['archived'])});
+      final fix = AccountFix(id, v(cur['name']), '${data['exported_at'] ?? ''}', '');
+      for (final k in const ['name', 'name_en', 'page_no', 'opening_balance', 'credit_limit', 'hidden']) {
+        if (v(was[k]) != v(cur[k])) fix.changes[k] = (v(cur[k]), v(was[k]));
+      }
+      if (fix.changes.isNotEmpty) out.add(fix);
+    }
+    return ('${data['exported_at'] ?? ''}', out);
+  }
+
+  static int _int(Object? x) => x is int ? x : x is num ? x.round() : int.tryParse('${x ?? ''}') ?? 0;
 
   /// Puts the recorded values back (each restore is itself recorded).
   Future<void> repair(List<AccountFix> fixes) async {

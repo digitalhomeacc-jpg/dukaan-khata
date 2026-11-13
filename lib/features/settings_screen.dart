@@ -15,6 +15,7 @@ import '../shared/statement_parser.dart';
 import '../shared/widgets.dart';
 import '../state/app_controller.dart';
 import 'audit_screen.dart';
+import 'home_screen.dart';
 import 'bank_screen.dart';
 import 'booking_screen.dart';
 import 'books_screens.dart';
@@ -136,6 +137,14 @@ class SettingsScreen extends StatelessWidget {
                   ? null
                   : IconButton(tooltip: t('drive_link'), icon: const Icon(Icons.link), onPressed: () => _driveLink(context)),
               onTap: () => app.backupUrl.isEmpty ? _driveLink(context) : _driveBackup(context),
+            ),
+          if (app.actor.isOwner)
+            ListTile(
+              key: const Key('fix_from_backup'),
+              leading: const Icon(Icons.restore_page_outlined),
+              title: Text(t('fix_backup')),
+              subtitle: Text(t('fix_backup_sub')),
+              onTap: () => _fixFromBackup(context),
             ),
           ListTile(
             leading: const Icon(Icons.history),
@@ -580,5 +589,27 @@ class _UsersScreenState extends State<UsersScreen> {
         ],
       ]),
     );
+  }
+}
+
+/// Compares the built-in accounts with a backup file and offers to put back
+/// the file's opening balances (for books started before the change history).
+Future<void> _fixFromBackup(BuildContext context) async {
+  final app = App.read(context);
+  final t = app.t;
+  final files = await FilePicker.pickFiles(type: FileType.custom, allowedExtensions: ['json']);
+  if (files.isEmpty) return;
+  try {
+    final (at, fixes) = await app.ledgers.compareWithBackup(await files.single.readAsBytes());
+    if (!context.mounted) return;
+    if (fixes.isEmpty) {
+      toast(context, t('fix_backup_same'));
+      return;
+    }
+    final d = DateTime.tryParse(at)?.toLocal();
+    await fixAccountsDialog(context, fixes,
+        fromBackup: d == null ? at : '${shortDate(d.toIso8601String().substring(0, 10))} ${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}');
+  } catch (e) {
+    if (context.mounted) toast(context, errText(context, e), error: true);
   }
 }

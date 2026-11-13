@@ -62,7 +62,7 @@ class HomeScreen extends StatelessWidget {
                   leading: Icon(Icons.report_gmailerrorred, color: scheme.error),
                   title: Text(t('fix_title'), style: const TextStyle(fontWeight: FontWeight.w700)),
                   trailing: const Icon(Icons.chevron_right),
-                  onTap: () => _fixAccounts(context, damage),
+                  onTap: () => fixAccountsDialog(context, damage),
                 ),
               ),
             ],
@@ -428,7 +428,7 @@ class _TodayHero extends StatelessWidget {
 
 /// Shows what an app bug wiped from the built-in accounts and puts the
 /// figures from the change history back on confirm.
-Future<void> _fixAccounts(BuildContext context, List<AccountFix> fixes) async {
+Future<void> fixAccountsDialog(BuildContext context, List<AccountFix> fixes, {String? fromBackup}) async {
   final app = App.read(context);
   final t = app.t;
   final ok = await showDialog<bool>(
@@ -437,7 +437,7 @@ Future<void> _fixAccounts(BuildContext context, List<AccountFix> fixes) async {
       title: Text(t('fix_title')),
       content: SingleChildScrollView(
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-          Text(t('fix_body')),
+          Text(fromBackup == null ? t('fix_body') : t('fix_body_backup').replaceAll('{d}', fromBackup)),
           const SizedBox(height: 12),
           for (final f in fixes) ...[
             Text(f.name, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
