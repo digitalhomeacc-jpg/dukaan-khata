@@ -151,7 +151,14 @@ function post_(batch) {
   if (code !== 200) {
     throw new Error('Expense Tracker server said ' + code + ': ' + res.getContentText().slice(0, 300));
   }
-  return JSON.parse(res.getContentText());
+  var body;
+  try { body = JSON.parse(res.getContentText()); } catch (e) { body = null; }
+  if (!body || body.ok !== true) {
+    throw new Error('The Expense Tracker server gave an unexpected answer. Check that the Supabase ' +
+      'function "ingest-email" has the Expense Tracker code (not the sample). Answer: ' +
+      res.getContentText().slice(0, 200));
+  }
+  return body;
 }
 
 function isBankSender_(from, senders) {
