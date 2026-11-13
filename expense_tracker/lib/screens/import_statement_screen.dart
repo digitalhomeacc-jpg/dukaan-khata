@@ -1,12 +1,12 @@
 import 'dart:typed_data';
 
-import 'package:file_picker/file_picker.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show FunctionException;
 
 import '../data/app_data.dart';
 import '../models.dart';
 import '../ui/format.dart';
+import '../ui/pick_file.dart';
 
 Future<void> openImportStatement(BuildContext context, AppData data, {Account? account}) =>
     Navigator.of(context).push(MaterialPageRoute<void>(
@@ -44,15 +44,20 @@ class _ImportStatementScreenState extends State<ImportStatementScreen> {
   }
 
   Future<void> _pick() async {
-    final files = await FilePicker.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: const ['xls', 'xlsx', 'csv', 'txt'],
-    );
-    if (files.isEmpty) return;
-    final f = files.first;
-    final bytes = await f.readAsBytes();
+    final PickedFile? f;
+    try {
+      f = await pickStatementFile();
+    } catch (e) {
+      if (mounted) setState(() => _error = 'Could not open the file: ${_message(e)}');
+      return;
+    }
+    if (f == null) return;
+    if (f.bytes.isEmpty) {
+      setState(() => _error = 'That file is empty. Download the statement again and pick the new file.');
+      return;
+    }
     setState(() {
-      _bytes = bytes;
+      _bytes = f!.bytes;
       _name = f.name;
       _preview = null;
       _done = null;
