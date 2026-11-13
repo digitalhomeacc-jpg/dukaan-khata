@@ -95,6 +95,10 @@ flutter build apk --release --dart-define=SUPABASE_URL=... --dart-define=SUPABAS
 # → build/app/outputs/flutter-apk/app-release.apk
 ```
 
+**Web app (iPhones):** `tool/build_web.sh ../../expense-tracker` builds into a checkout of the
+`expense-tracker` repo (GitHub Pages, branch `main`), with every file stamped so phones load the new
+version. Commit and push that repo to publish.
+
 Tip: put both values in `env.json` (git-ignored) and use `--dart-define-from-file=env.json`.
 
 For iPhones, build from a Mac with Xcode (`flutter build ipa`) and share through TestFlight.

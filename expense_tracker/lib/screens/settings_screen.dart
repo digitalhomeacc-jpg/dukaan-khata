@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../config.dart';
 import '../data/app_data.dart';
 import '../ui/format.dart';
 import 'categories_screen.dart';
@@ -116,6 +117,14 @@ class SettingsScreen extends StatelessWidget {
             leading: const Icon(Icons.logout),
             title: const Text('Sign out'),
             onTap: data.signOut,
+          ),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text(
+              'Version ${AppConfig.build}',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Theme.of(context).colorScheme.outline),
+            ),
           ),
         ],
       ),

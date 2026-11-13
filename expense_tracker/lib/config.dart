@@ -10,6 +10,9 @@ class AppConfig {
   static const supabaseUrl = String.fromEnvironment('SUPABASE_URL');
   static const supabaseKey = String.fromEnvironment('SUPABASE_PUBLISHABLE_KEY');
 
+  /// When this copy of the app was built, shown in Settings (e.g. "13 Nov 14:50").
+  static const build = String.fromEnvironment('BUILD', defaultValue: 'dev');
+
   static bool get isConfigured => supabaseUrl.isNotEmpty && supabaseKey.isNotEmpty;
 
   /// Where each user's Gmail script sends bank emails.
