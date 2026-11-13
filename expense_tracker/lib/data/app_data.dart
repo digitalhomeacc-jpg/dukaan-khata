@@ -43,6 +43,10 @@ class AppData extends ChangeNotifier {
         _shareTotals = null;
         notifyListeners();
       }, onError: _onError),
+      db.from('budgets').stream(primaryKey: ['id']).listen((rows) {
+        budgets = rows.map(Budget.fromMap).toList();
+        notifyListeners();
+      }, onError: _onError),
       db.from('profiles').stream(primaryKey: ['id']).listen((rows) {
         if (rows.isNotEmpty) profile = rows.first;
         notifyListeners();
@@ -61,6 +65,7 @@ class AppData extends ChangeNotifier {
     this.loanEvents = const [],
     this.balanceReadings = const [],
     this.shares = const [],
+    this.budgets = const [],
     this.unread = const [],
     this.profile = const {},
   })  : _client = null,
@@ -81,6 +86,7 @@ class AppData extends ChangeNotifier {
   List<LoanEvent> loanEvents = const [];
   List<BalanceReading> balanceReadings = const [];
   List<TxnShare> shares = const [];
+  List<Budget> budgets = const [];
   ShareTotals? _shareTotals;
 
   /// Friends' parts of group payments, for the totals.
@@ -232,6 +238,83 @@ class AppData extends ChangeNotifier {
         'outstanding': owed,
         'outstanding_at': DateTime.now().toUtc().toIso8601String(),
       }).eq('id', loanId);
+
+  // ---------------------------------------------------------------- friends
+
+  Category? get friendsCategory => loanCategory;
+
+  static String keyOf(String name) => name.toLowerCase().replaceAll(RegExp(r'\s+'), ' ').trim();
+
+  /// Payees already decided: friends (by category) and "not a friend".
+  Set<String> get decidedPeople => {
+        for (final t in transactions)
+          if (t.merchant != null && loanCategoryIds.contains(t.categoryId)) keyOf(t.merchant!),
+        ...((profile['not_friends'] as List?) ?? const []).cast<String>(),
+      };
+
+  /// Marks a payee as a friend (or not): their money then goes to your balance with them.
+  Future<void> markFriend(String name, {bool friend = true}) async {
+    await _db.rpc('mark_friend', params: {'p_merchant_key': keyOf(name), 'p_friend': friend});
+  }
+
+  Future<void> markNotFriend(String name) async {
+    final list = {...((profile['not_friends'] as List?) ?? const []).cast<String>(), keyOf(name)}.toList();
+    profile = {...profile, 'not_friends': list};
+    notifyListeners();
+    await _db.from('profiles').update({'not_friends': list}).eq('id', user!.id);
+  }
+
+  /// An expense shared with friends. Paid by you: the whole amount from your account,
+  /// friends' parts owed to you. Paid by a friend: only your share, owed to them.
+  Future<void> addSharedExpense({
+    required String description,
+    required double total,
+    required DateTime at,
+    required String? categoryId,
+    required String? paidBy,
+    required String? accountId,
+    required double myShare,
+    required Map<String, double> friendShares,
+  }) async {
+    if (paidBy == null) {
+      final row = await _db.from('transactions').insert({
+        'amount': total, 'direction': 'debit', 'merchant': description, 'method': 'other',
+        'txn_at': at.toUtc().toIso8601String(), 'category_id': categoryId, 'account_id': accountId, 'source': 'manual',
+      }).select('id').single();
+      for (final e in friendShares.entries) {
+        if (e.value > 0) await addShare(row['id'] as String, e.key, e.value);
+      }
+    } else {
+      await _db.from('transactions').insert({
+        'amount': myShare, 'direction': 'debit', 'merchant': description, 'method': 'other',
+        'txn_at': at.toUtc().toIso8601String(), 'category_id': categoryId, 'source': 'manual',
+        'paid_by': paidBy.trim(), 'note': '$paidBy paid ₹${total.toStringAsFixed(total == total.roundToDouble() ? 0 : 2)} in total',
+      });
+    }
+  }
+
+  /// Settle up outside the bank (cash): you paid them, or they paid you.
+  Future<void> settleUp(String person, double amount, {required bool iPaid, String? accountId}) async {
+    final cat = friendsCategory?.id;
+    await _db.from('transactions').insert({
+      'amount': amount, 'direction': iPaid ? 'debit' : 'credit', 'merchant': person, 'method': 'cash',
+      'txn_at': DateTime.now().toUtc().toIso8601String(), 'category_id': cat, 'account_id': accountId ?? cashAccount?.id,
+      'source': 'manual', 'note': 'Settle up',
+    });
+  }
+
+  // ---------------------------------------------------------------- budgets
+
+  Future<void> saveBudget(String? categoryId, double amount) async {
+    final existing = budgets.where((b) => b.categoryId == categoryId).firstOrNull;
+    if (existing != null) {
+      await _db.from('budgets').update({'amount': amount}).eq('id', existing.id);
+    } else {
+      await _db.from('budgets').insert({'category_id': categoryId, 'amount': amount});
+    }
+  }
+
+  Future<void> deleteBudget(String id) => _db.from('budgets').delete().eq('id', id);
 
   // ------------------------------------------------------- shared payments
 

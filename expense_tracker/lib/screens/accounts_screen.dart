@@ -6,6 +6,7 @@ import '../logic/summary.dart';
 import '../models.dart';
 import '../ui/category_style.dart';
 import '../ui/format.dart';
+import 'lender_loans.dart';
 import 'transactions_screen.dart';
 
 /// Cash, bank accounts, cards and wallets with their balances.
@@ -107,6 +108,29 @@ class AccountsScreen extends StatelessWidget {
             ),
           ),
           for (final a in active) tile(a),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 8, 4),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text('Loans & credit',
+                      style: TextStyle(color: scheme.primary, fontWeight: FontWeight.w600)),
+                ),
+                TextButton.icon(
+                  onPressed: () => openLoanForm(context, data),
+                  icon: const Icon(Icons.add, size: 18),
+                  label: const Text('Add a loan'),
+                ),
+              ],
+            ),
+          ),
+          if (data.loans.where((l) => !l.closed).isEmpty)
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Text('Loans from banks or loan apps: see what you owe, EMIs left and the next due date. '
+                  'Loans from apps that send emails (such as Slice) appear here by themselves.'),
+            ),
+          for (final l in data.loans.where((l) => !l.closed)) LenderLoanCard(data: data, loan: l),
           if (archived.isNotEmpty)
             ExpansionTile(
               title: Text('Hidden accounts (${archived.length})'),

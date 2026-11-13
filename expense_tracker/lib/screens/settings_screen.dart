@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 import '../config.dart';
 import '../data/app_data.dart';
 import '../ui/format.dart';
+import 'budgets_screen.dart';
 import 'categories_screen.dart';
 import 'gmail_setup_screen.dart';
 import 'unread_emails_screen.dart';
@@ -99,6 +100,13 @@ class SettingsScreen extends StatelessWidget {
           ),
           const Divider(),
           _Section('Organise'),
+          ListTile(
+            leading: const Icon(Icons.savings_outlined),
+            title: const Text('Budgets'),
+            subtitle: Text(data.budgets.isEmpty ? 'Set a monthly limit' : '${data.budgets.length} set'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => _push(context, ListenableBuilder(listenable: data, builder: (_, _) => BudgetsScreen(data: data))),
+          ),
           ListTile(
             leading: const Icon(Icons.category_outlined),
             title: const Text('Categories'),

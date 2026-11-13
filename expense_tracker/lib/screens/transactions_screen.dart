@@ -5,6 +5,7 @@ import '../logic/summary.dart';
 import '../models.dart';
 import '../ui/category_style.dart';
 import '../ui/format.dart';
+import 'budgets_screen.dart';
 import 'month_bar.dart';
 import 'txn_editor.dart';
 
@@ -107,6 +108,14 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                 if (account != null && check != null)
                   SliverToBoxAdapter(child: BalanceCheckCard(data: data, account: account, check: check)),
                 SliverToBoxAdapter(child: _SummaryCard(summary: summary)),
+                if (_accountId == null)
+                  for (final p in budgetProgress(data.budgets.where((b) => b.categoryId == null), summary))
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                        child: BudgetBar(progress: p),
+                      ),
+                    ),
                 if (uncategorised > 0 && _filter != _Filter.uncategorised)
                   SliverToBoxAdapter(
                     child: Padding(

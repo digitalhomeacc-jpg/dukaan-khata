@@ -4,7 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../data/app_data.dart';
 import 'accounts_screen.dart';
 import 'insights_screen.dart';
-import 'loans_screen.dart';
+import 'friends_screen.dart';
 import 'settings_screen.dart';
 import 'transactions_screen.dart';
 import 'txn_editor.dart';
@@ -39,7 +39,7 @@ class _HomeShellState extends State<HomeShell> {
           children: [
             TransactionsScreen(data: data),
             AccountsScreen(data: data),
-            LoansScreen(data: data),
+            FriendsScreen(data: data),
             InsightsScreen(data: data),
             SettingsScreen(data: data),
           ],
@@ -58,7 +58,7 @@ class _HomeShellState extends State<HomeShell> {
           destinations: [
             const NavigationDestination(icon: Icon(Icons.receipt_long_outlined), selectedIcon: Icon(Icons.receipt_long), label: 'Home'),
             const NavigationDestination(icon: Icon(Icons.account_balance_outlined), selectedIcon: Icon(Icons.account_balance), label: 'Accounts'),
-            const NavigationDestination(icon: Icon(Icons.handshake_outlined), selectedIcon: Icon(Icons.handshake), label: 'Loans'),
+            const NavigationDestination(icon: Icon(Icons.group_outlined), selectedIcon: Icon(Icons.group), label: 'Friends'),
             const NavigationDestination(icon: Icon(Icons.pie_chart_outline), selectedIcon: Icon(Icons.pie_chart), label: 'Insights'),
             NavigationDestination(
               icon: Badge(isLabelVisible: data.unread.isNotEmpty, child: const Icon(Icons.settings_outlined)),

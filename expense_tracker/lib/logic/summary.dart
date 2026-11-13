@@ -217,7 +217,16 @@ List<LoanBalance> loanBalances(Iterable<Txn> txns, Set<String> loanCategoryIds, 
     owesYou[key] = (owesYou[key] ?? 0) + s.amount;
     byPerson.putIfAbsent(key, () => []);
   }
+  final owedToThem = <String, double>{};
   for (final t in txns) {
+    if (t.paidBy != null && t.paidBy!.trim().isNotEmpty) {
+      // A friend paid for you: you owe them your share.
+      final key = t.paidBy!.toLowerCase().trim();
+      names.putIfAbsent(key, () => t.paidBy!.trim());
+      owedToThem[key] = (owedToThem[key] ?? 0) + t.amount;
+      byPerson.putIfAbsent(key, () => []);
+      continue;
+    }
     if (!loanCategoryIds.contains(t.categoryId)) continue;
     final key = t.title.toLowerCase().trim();
     names.putIfAbsent(key, () => t.title);
@@ -227,7 +236,7 @@ List<LoanBalance> loanBalances(Iterable<Txn> txns, Set<String> loanCategoryIds, 
     for (final e in byPerson.entries)
       LoanBalance(
         names[e.key]!,
-        _round(e.value.fold(0.0, (s, t) => s + (t.isDebit ? -t.amount : t.amount)) - (owesYou[e.key] ?? 0)),
+        _round(e.value.fold(0.0, (s, t) => s + (t.isDebit ? -t.amount : t.amount)) - (owesYou[e.key] ?? 0) + (owedToThem[e.key] ?? 0)),
         e.value..sort((a, b) => b.txnAt.compareTo(a.txnAt)),
       ),
   ];
@@ -359,4 +368,88 @@ LoanStatus loanStatus(Loan loan, Iterable<LoanEvent> allEvents, {DateTime? now})
     nextDuePaid: duePaid,
     owedIsEmiBased: emiBased,
   );
+}
+
+// -------------------------------------------------------------------- budgets
+
+class BudgetProgress {
+  BudgetProgress(this.budget, this.spent);
+
+  final Budget budget;
+  final double spent;
+
+  double get left => budget.amount - spent;
+  double get share => budget.amount == 0 ? 0 : spent / budget.amount;
+  bool get over => spent > budget.amount;
+
+  /// 80% or more used.
+  bool get close => !over && share >= 0.8;
+}
+
+/// How much of each budget the month's spending (your share only) has used.
+List<BudgetProgress> budgetProgress(Iterable<Budget> budgets, MonthSummary month) {
+  final byCat = {for (final e in month.byCategory) e.key: e.value};
+  return [
+    for (final b in budgets) BudgetProgress(b, _round(b.categoryId == null ? month.spent : (byCat[b.categoryId] ?? 0))),
+  ]..sort((a, b) {
+      if ((a.budget.categoryId == null) != (b.budget.categoryId == null)) return a.budget.categoryId == null ? -1 : 1;
+      return b.share.compareTo(a.share);
+    });
+}
+
+// -------------------------------------------------------------------- friends
+
+const _businessWords = {
+  'store', 'stores', 'shop', 'shoppe', 'hotel', 'restaurant', 'cafe', 'caf', 'food', 'foods', 'mart', 'medical',
+  'medicals', 'pharmacy', 'chemist', 'pump', 'petrol', 'fuel', 'service', 'services', 'pvt', 'private', 'ltd', 'limited',
+  'llp', 'india', 'enterprise', 'enterprises', 'traders', 'trading', 'agency', 'agencies', 'center', 'centre', 'bank',
+  'general', 'kirana', 'bakery', 'bakers', 'sweets', 'sweet', 'dairy', 'stall', 'hospital', 'clinic', 'garage', 'motors',
+  'auto', 'electricals', 'electronics', 'pay', 'payment', 'payments', 'technologies', 'tech', 'solutions', 'mall',
+  'salon', 'studio', 'book', 'books', 'stationery', 'transport', 'travels', 'tours', 'school', 'college', 'academy',
+  'gym', 'fitness', 'online', 'retail', 'wholesale', 'industries', 'corporation', 'company', 'co', 'and', '&', 'the',
+  'pan', 'tea', 'juice', 'bar', 'dhaba', 'canteen', 'mess', 'kitchen', 'market', 'bazaar', 'super', 'supermarket',
+  'hardware', 'textiles', 'fashion', 'collection', 'jewellers', 'opticals', 'diagnostics', 'labs', 'lab', 'insurance',
+  'finance', 'capital', 'loan', 'recharge', 'broadband', 'digital', 'media', 'apple', 'google', 'amazon', 'slice',
+  'swiggy', 'zomato', 'uber', 'ola', 'rapido', 'blinkit', 'zepto', 'flipkart', 'myntra', 'paytm', 'phonepe',
+};
+
+/// "Sanket Pramod Patil" → true; "Hotel Vijay", "HP Petrol Pump", "abc@ybl" → false.
+bool looksLikePerson(String? name) {
+  final n = name?.trim() ?? '';
+  if (n.isEmpty || n.contains('@') || RegExp(r'\d').hasMatch(n)) return false;
+  final words = n.toLowerCase().split(RegExp(r'\s+'));
+  if (words.length < 2 || words.length > 4) return false;
+  for (final w in words) {
+    final clean = w.replaceAll('.', '');
+    if (!RegExp(r'^[a-z]+$').hasMatch(clean)) return false;
+    if (_businessWords.contains(clean)) return false;
+  }
+  return true;
+}
+
+class PayeeSummary {
+  PayeeSummary(this.key, this.name, this.count, this.sent, this.received);
+
+  final String key;
+  final String name;
+  final int count;
+  final double sent;
+  final double received;
+}
+
+/// People you paid or got money from that are not yet marked (friend or not), most frequent first.
+List<PayeeSummary> peopleToReview(Iterable<Txn> txns, {Set<String> decided = const {}}) {
+  final map = <String, PayeeSummary>{};
+  for (final t in txns) {
+    // Only bank payments: names typed by hand ("Pizza night") are not payees.
+    if (!t.fromEmail || t.excluded || t.isLoanTransfer || t.paidBy != null) continue;
+    final m = t.merchant?.trim();
+    if (!looksLikePerson(m)) continue;
+    final key = m!.toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+    if (decided.contains(key)) continue;
+    final p = map[key];
+    map[key] = PayeeSummary(key, p?.name ?? m, (p?.count ?? 0) + 1,
+        (p?.sent ?? 0) + (t.isDebit ? t.amount : 0), (p?.received ?? 0) + (t.isDebit ? 0 : t.amount));
+  }
+  return map.values.toList()..sort((a, b) => b.count.compareTo(a.count));
 }

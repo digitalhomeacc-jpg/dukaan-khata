@@ -75,6 +75,7 @@ class Txn {
     this.loanId,
     this.loanRole,
     this.emailBody,
+    this.paidBy,
   });
 
   final String id;
@@ -102,6 +103,9 @@ class Txn {
   final String? loanId;
   final String? loanRole;
   final String? emailBody;
+
+  /// A friend paid this for you; [amount] is your share and you owe it to them.
+  final String? paidBy;
 
   /// Borrowed money and loan repayments are neither income nor spending.
   bool get isLoanTransfer => loanRole == 'borrow' || loanRole == 'repay';
@@ -136,6 +140,7 @@ class Txn {
         loanId: m['loan_id'] as String?,
         loanRole: m['loan_role'] as String?,
         emailBody: m['email_body'] as String?,
+        paidBy: m['paid_by'] as String?,
       );
 
   /// Columns a user may write (id, user_id and source are set by the database).
@@ -151,6 +156,7 @@ class Txn {
         'counter_account_id': excluded ? counterAccountId : null,
         'excluded': excluded,
         'needs_review': false,
+        'paid_by': (paidBy?.trim().isEmpty ?? true) ? null : paidBy!.trim(),
       };
 }
 
@@ -305,4 +311,16 @@ class TxnShare {
         paidTxnId: m['paid_txn_id'] as String?,
         paidAt: m['paid_at'] == null ? null : DateTime.parse(m['paid_at'] as String).toLocal(),
       );
+}
+
+/// Monthly budget for a category, or overall when [categoryId] is null.
+class Budget {
+  const Budget({required this.id, required this.amount, this.categoryId});
+
+  final String id;
+  final String? categoryId;
+  final double amount;
+
+  factory Budget.fromMap(Map<String, dynamic> m) =>
+      Budget(id: m['id'] as String, categoryId: m['category_id'] as String?, amount: _num(m['amount']));
 }

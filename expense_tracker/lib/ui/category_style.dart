@@ -24,6 +24,7 @@ const categoryIcons = <String, IconData>{
   'savings': Icons.savings,
   'coffee': Icons.local_cafe,
   'handshake': Icons.handshake,
+  'group': Icons.group,
   'label': Icons.label,
 };
 

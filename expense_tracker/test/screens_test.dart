@@ -2,7 +2,7 @@ import 'package:expense_tracker/data/app_data.dart';
 import 'package:expense_tracker/models.dart';
 import 'package:expense_tracker/screens/accounts_screen.dart';
 import 'package:expense_tracker/screens/categories_screen.dart';
-import 'package:expense_tracker/screens/loans_screen.dart';
+import 'package:expense_tracker/screens/friends_screen.dart';
 import 'package:expense_tracker/screens/gmail_setup_screen.dart';
 import 'package:expense_tracker/screens/insights_screen.dart';
 import 'package:expense_tracker/screens/settings_screen.dart';
@@ -76,15 +76,15 @@ void main() {
     expect(find.text('SWIGGY LIMITED'), findsNothing);
   });
 
-  testWidgets('loans tab shows who owes whom', (tester) async {
+  testWidgets('friends tab shows who owes whom', (tester) async {
     final data = sample();
-    await pump(tester, LoansScreen(data: data));
+    await pump(tester, FriendsScreen(data: data));
     expect(find.text('Rahul'), findsOneWidget);
     expect(find.text('You owe'), findsWidgets);
     await tester.tap(find.text('Rahul'));
     await tester.pumpAndSettle();
     expect(find.text('You owe Rahul'), findsOneWidget);
-    expect(find.text('I paid back'), findsOneWidget);
+    expect(find.text('Settle up'), findsOneWidget);
   });
 
   testWidgets('loan editor asks for the friend', (tester) async {

@@ -2,7 +2,7 @@
 import 'package:expense_tracker/data/app_data.dart';
 import 'package:expense_tracker/models.dart';
 import 'package:expense_tracker/screens/lender_loans.dart';
-import 'package:expense_tracker/screens/loans_screen.dart';
+import 'package:expense_tracker/screens/accounts_screen.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -38,9 +38,10 @@ Future<void> pump(WidgetTester tester, Widget child) async {
 }
 
 void main() {
-  testWidgets('Loans tab shows lender loans with details', (tester) async {
+  testWidgets('Accounts tab shows lender loans with details', (tester) async {
     final data = sample();
-    await pump(tester, LoansScreen(data: data));
+    await pump(tester, AccountsScreen(data: data));
+    await tester.scrollUntilVisible(find.text('KreditBee'), 200, scrollable: find.byType(Scrollable).first);
     expect(find.text('Slice borrow'), findsOneWidget);
     expect(find.text('KreditBee'), findsOneWidget);
     expect(find.text('4 of 12 EMIs paid · 8 left'), findsOneWidget);

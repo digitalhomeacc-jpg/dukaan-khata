@@ -4,6 +4,7 @@ import '../data/app_data.dart';
 import '../logic/summary.dart';
 import '../ui/category_style.dart';
 import '../ui/format.dart';
+import 'budgets_screen.dart';
 import 'month_bar.dart';
 
 class InsightsScreen extends StatefulWidget {
@@ -30,6 +31,32 @@ class _InsightsScreenState extends State<InsightsScreen> {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
         children: [
+          if (data.budgets.isNotEmpty) ...[
+            Row(
+              children: [
+                Expanded(child: Text('Budgets', style: text.titleMedium)),
+                TextButton(
+                  onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                    builder: (_) => ListenableBuilder(listenable: data, builder: (_, _) => BudgetsScreen(data: data)),
+                  )),
+                  child: const Text('Edit'),
+                ),
+              ],
+            ),
+            for (final p in budgetProgress(data.budgets, s))
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(p.budget.categoryId == null ? 'All spending' : (data.category(p.budget.categoryId)?.name ?? 'Category'),
+                        style: const TextStyle(fontWeight: FontWeight.w500)),
+                    BudgetBar(progress: p),
+                  ],
+                ),
+              ),
+            const SizedBox(height: 24),
+          ],
           Text('Last 6 months', style: text.titleMedium),
           const SizedBox(height: 12),
           _TrendChart(points: trend, selected: _month, onTap: (m) => setState(() => _month = m)),
