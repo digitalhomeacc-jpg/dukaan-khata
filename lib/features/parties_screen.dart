@@ -439,6 +439,53 @@ class _KhataScreenState extends State<KhataScreen> {
 
   bool _sharing = false; // drawing the customer's copy (no vehicle names)
 
+  /// जुन्या नोंदी एकदम काढा: old entries grouped by when they were added
+  /// (one import = one group); a whole group goes in one tap. Old entries
+  /// change no figure, so removing them changes none either.
+  Future<void> _removeOld(Ledger l) async {
+    final app = App.read(context);
+    final t = app.t;
+    final batches = await app.vouchers.oldBatches(l.id);
+    if (!mounted) return;
+    if (batches.isEmpty) return toast(context, t('old_remove_none'));
+    final pick = await showModalBottomSheet<OldBatch>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: ListView(shrinkWrap: true, padding: const EdgeInsets.fromLTRB(12, 0, 12, 12), children: [
+          Text(t('old_remove'), style: Theme.of(ctx).textTheme.titleMedium),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            child: Text(t('old_remove_help'), style: Theme.of(ctx).textTheme.bodySmall),
+          ),
+          for (final b in batches)
+            Card(
+              child: ListTile(
+                title: Text('${b.ids.length} ${t('old_entries_n')} · ${shortDate(b.from)} – ${shortDate(b.to)}'),
+                subtitle: Text('${t('added_on')} ${_when(b.firstAt)} · ${b.by}${b.key != null ? ' · ${t('from_statement')}' : ''}'),
+                trailing: const Icon(Icons.delete_outline, color: AppColors.due),
+                onTap: () => Navigator.pop(ctx, b),
+              ),
+            ),
+        ]),
+      ),
+    );
+    if (pick == null || !mounted) return;
+    if (!await confirm(context, t('old_remove_q').replaceAll('{n}', '${pick.ids.length}'))) return;
+    try {
+      await app.vouchers.deleteOldEntries(pick.ids, app.actor, title: l.name);
+      if (mounted) toast(context, '${t('deleted')} · ${pick.ids.length}');
+    } catch (e) {
+      if (mounted) toast(context, errText(context, e), error: true);
+    }
+  }
+
+  static String _when(String iso) {
+    final d = DateTime.tryParse(iso)?.toLocal();
+    if (d == null) return '';
+    return '${d.day}/${d.month}/${d.year % 100} ${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
+  }
+
   /// कंपनी सूट: a credit note from the supplier (trade / quarterly / cash /
   /// yearly discount). Lowers what we owe; no money moves.
   Future<void> _companyDiscount(Ledger l) async {
@@ -572,18 +619,19 @@ class _KhataScreenState extends State<KhataScreen> {
                       if (context.mounted) await InterestScreen.open(context, l.id);
                     case 'co_discount':
                       if (context.mounted) await _companyDiscount(l);
+                    case 'old_remove':
+                      if (context.mounted) await _removeOld(l);
                     case 'co_match':
                       if (context.mounted) await SupplierMatchScreen.open(context, l);
                     case 'real_cost':
                       if (context.mounted) {
-                        // the last 12 months, so quarterly and yearly discounts are in
+                        // the last 13 months (old entries included): last year's same month is there
                         final now = DateTime.now();
-                        final start = isoDate(DateTime(now.year - 1, now.month + 1, 1));
+                        final start = isoDate(DateTime(now.year - 1, now.month, 1));
                         await Navigator.push(
                             context,
                             MaterialPageRoute(
-                                builder: (_) => ReportView(
-                                    load: () => app.reports.supplierCost(l.id, start.compareTo(Books.start) < 0 ? Books.start : start, todayIso()))));
+                                builder: (_) => ReportView(load: () => app.reports.supplierCost(l.id, start, todayIso()))));
                       }
                     case 'goods_out':
                       if (context.mounted) await VoucherScreen.open(context, VoucherType.goodsOut, partyId: l.id);
@@ -628,6 +676,7 @@ class _KhataScreenState extends State<KhataScreen> {
                     PopupMenuItem(value: 'goods_in', child: Text(t('goods_in'))),
                   ],
                   if (l.group.isParty) PopupMenuItem(value: 'old', child: Text(t('old_entry_add'))),
+                  if (l.group.isParty && app.actor.isOwner) PopupMenuItem(value: 'old_remove', child: Text(t('old_remove'))),
                   PopupMenuItem(value: 'range', child: Text('${t('from')} – ${t('to')}')),
                   PopupMenuItem(value: 'pdf', child: Text('${t('statement')} PDF')),
                   PopupMenuItem(value: 'xls', child: Text('${t('statement')} Excel')),
@@ -722,11 +771,23 @@ class _KhataScreenState extends State<KhataScreen> {
   }
 }
 
-class _KhataTable extends StatelessWidget {
+class _KhataTable extends StatefulWidget {
   final Statement st;
   final String shop;
   final bool forCustomer; // the shared copy: no vehicle names
   const _KhataTable({required this.st, required this.shop, this.forCustomer = false});
+  @override
+  State<_KhataTable> createState() => _KhataTableState();
+}
+
+class _KhataTableState extends State<_KhataTable> {
+  // old entries can be hundreds (a company statement): folded until asked,
+  // then the latest 50 unless "all" is tapped – keeps the khata fast
+  bool showOld = false, allOld = false;
+
+  Statement get st => widget.st;
+  String get shop => widget.shop;
+  bool get forCustomer => widget.forCustomer;
 
   @override
   Widget build(BuildContext context) {
@@ -764,13 +825,26 @@ class _KhataTable extends StatelessWidget {
       // what made up their balance, but never counted (the opening balance
       // below already includes them).
       if (st.references.isNotEmpty) ...[
-        Container(
-          width: double.infinity,
-          color: Theme.of(context).colorScheme.secondaryContainer.withValues(alpha: 0.5),
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-          child: Text(t('old_entries_ref'), style: small?.copyWith(fontWeight: FontWeight.w600)),
+        InkWell(
+          key: const Key('old_toggle'),
+          onTap: () => setState(() => showOld = !showOld),
+          child: Container(
+            width: double.infinity,
+            color: Theme.of(context).colorScheme.secondaryContainer.withValues(alpha: 0.5),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+            child: Row(children: [
+              Expanded(child: Text('${t('old_entries_ref')} (${st.references.length})', style: small?.copyWith(fontWeight: FontWeight.w600))),
+              Icon(showOld ? Icons.expand_less : Icons.expand_more, size: 20),
+            ]),
+          ),
         ),
-        for (final r in st.references)
+        if (showOld && !allOld && st.references.length > 50)
+          TextButton(
+            onPressed: () => setState(() => allOld = true),
+            child: Text(t('old_show_all').replaceAll('{n}', '${st.references.length - 50}')),
+          ),
+        if (showOld)
+        for (final r in allOld || st.references.length <= 50 ? st.references : st.references.sublist(st.references.length - 50))
           InkWell(
             onTap: () => VoucherScreen.edit(context, r.voucherId),
             child: Container(

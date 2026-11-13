@@ -117,6 +117,31 @@ class VoucherInput {
 
 /// Turns simple entries ("sale 15 bags at 275 to Suresh Jadhav, paid by PhonePe")
 /// into balanced double-entry vouchers – the Tally engine under a Khatabook face.
+/// One statement line to keep as an old entry.
+class OldLine {
+  final String date;
+  final String kind; // old-entry kind: purchase | paid
+  final int amount;
+  final String note;
+  final String stmtKind; // invoice | payment | discount | charge
+  final List<ItemLine> items; // goods on an invoice (no stock effect)
+  OldLine(this.date, this.kind, this.amount, this.note, {this.stmtKind = 'invoice', this.items = const []});
+}
+
+/// Old entries added together (one import, or one sitting).
+class OldBatch {
+  final String? key; // import batch id, if from a statement
+  final String by;
+  final String firstAt;
+  String lastAt;
+  String from, to;
+  final ids = <String>[];
+  OldBatch(this.key, this.by, this.firstAt, String date)
+      : lastAt = firstAt,
+        from = date,
+        to = date;
+}
+
 /// status of a विभागून transfer: `split:<main entry id>`.
 const splitPrefix = 'split:';
 
@@ -690,12 +715,14 @@ class VoucherService {
   }
 
   /// Statement lines before the books start → old entries on a supplier's
-  /// khata (reference only – they change no figure). [lines]: (date, kind
-  /// 'purchase' | 'paid', amount, note). Already imported lines (same date,
-  /// kind, amount) are skipped. [onProgress] gets (done, total). Returns how
-  /// many were added.
-  Future<int> importOldEntries(String partyId, List<(String, String, int, String)> lines, Actor actor,
-      {void Function(int, int)? onProgress}) async {
+  /// khata (reference only – they change no figure). Written in a few large
+  /// batches with one line in the change history, so hundreds of lines import
+  /// in seconds and sync in a handful of uploads. Lines already there (same
+  /// date, kind, amount) are skipped. Each entry is marked `stmt:<kind>|<batch>`
+  /// (kind = invoice / payment / discount / charge) so the whole import can be
+  /// undone in one tap and the real-cost report can tell discounts from payments.
+  Future<int> importOldEntries(String partyId, List<OldLine> lines, Actor actor, {void Function(int, int)? onProgress}) async {
+    if (!actor.isOwner) throw PermissionDenied('err_owner_old');
     final have = <String, int>{};
     for (final r in await db.getAll(
         "SELECT vdate, pay_ledger_id, amount, paid FROM vouchers WHERE party_id = ? AND vtype = 'history' AND deleted = 0", [partyId])) {
@@ -704,28 +731,127 @@ class VoucherService {
       final k = '${r['vdate']}|$kind|$amt';
       have[k] = (have[k] ?? 0) + 1;
     }
-    var added = 0, n = 0;
-    for (final (date, kind, amount, note) in lines) {
-      n++;
-      onProgress?.call(n, lines.length);
-      if (!Books.isHistory(date) || amount <= 0) continue;
-      final k = '$date|$kind|$amount';
+    final todo = <OldLine>[];
+    for (final l in lines) {
+      if (!Books.isHistory(l.date) || l.amount <= 0) continue;
+      final k = '${l.date}|${l.kind}|${l.amount}';
       if ((have[k] ?? 0) > 0) {
         have[k] = have[k]! - 1;
         continue;
       }
-      await save(
-          VoucherInput(
-              type: VoucherType.history,
-              date: date,
-              partyId: partyId,
-              payLedgerId: '$historyKindPrefix$kind',
-              amount: amount,
-              narration: note.length > 120 ? note.substring(0, 120) : note),
-          actor);
-      added++;
+      todo.add(l);
     }
-    return added;
+    if (todo.isEmpty) return 0;
+    final batch = newId();
+    final now = nowIso();
+    var done = 0;
+    for (var i = 0; i < todo.length; i += 150) {
+      final chunk = todo.sublist(i, i + 150 > todo.length ? todo.length : i + 150);
+      await db.writeTransaction((tx) async {
+        for (final l in chunk) {
+          final id = newId();
+          final vno = await _nextNo(tx, VoucherType.history, l.date);
+          final goods = l.items.fold<int>(0, (s, x) => s + x.amount);
+          await tx.execute(
+            'INSERT INTO vouchers (id, business_id, vtype, vno, vdate, party_id, pay_ledger_id, amount, paid, narration, '
+            "gst_bill_needed, hamali, transport, gst_rate, gst, status, created_by, created_at, updated_at, deleted, version) "
+            'VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 0, 0, 0, 0, 0, ?, ?, ?, ?, 0, 1)',
+            [id, businessId, 'history', vno, l.date, partyId, '$historyKindPrefix${l.kind}', l.items.isEmpty ? l.amount : goods,
+              l.note.length > 160 ? l.note.substring(0, 160) : l.note, 'stmt:${l.stmtKind}|$batch', actor.name, now, now],
+          );
+          var n = 0;
+          for (final it in l.items) {
+            // old bill lines: kept for the record and the cost report, no stock effect
+            await tx.execute(
+              'INSERT INTO inventory_lines (id, business_id, voucher_id, item_id, qty, rate, amount, direction, vdate, deleted) '
+              'VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, 0)',
+              ['$id:I${n++}', businessId, id, it.itemId, it.qty, it.rate, it.amount, l.date],
+            );
+          }
+        }
+        done += chunk.length;
+      });
+      onProgress?.call(done, todo.length);
+    }
+    final party = (await db.getOptional('SELECT name FROM ledgers WHERE id = ?', [partyId]))?['name'];
+    await AuditLog.write(db,
+        businessId: businessId,
+        recordId: batch,
+        action: 'create',
+        kind: 'import',
+        title: '$party · ${todo.length} old entries (${todo.first.date} – ${todo.last.date})',
+        after: {
+          'count': '${todo.length}',
+          'from': todo.first.date,
+          'to': todo.last.date,
+          'entries': [for (final l in todo) '${l.date} ${l.stmtKind} ${Money.fmt(l.amount)}'].join('; '),
+        },
+        by: actor);
+    return todo.length;
+  }
+
+  /// Old entries of a party grouped by when they were added: one import (or
+  /// one sitting of typing) per group – for "remove these together".
+  Future<List<OldBatch>> oldBatches(String partyId) async {
+    final rows = await db.getAll(
+        "SELECT id, vdate, created_at, created_by, status FROM vouchers WHERE party_id = ? AND vtype = 'history' AND deleted = 0 "
+        'ORDER BY created_at, id',
+        [partyId]);
+    final out = <OldBatch>[];
+    for (final r in rows) {
+      final st = (r['status'] as String?) ?? '';
+      final key = st.startsWith('stmt:') && st.contains('|') ? st.substring(st.indexOf('|') + 1) : null;
+      final at = (r['created_at'] as String?) ?? '';
+      final last = out.isEmpty ? null : out.last;
+      // same import, or typed within 10 minutes of the previous one by the same person
+      final same = last != null &&
+          (key != null
+              ? last.key == key
+              : last.key == null &&
+                  last.by == r['created_by'] &&
+                  (DateTime.tryParse(at)?.difference(DateTime.tryParse(last.lastAt) ?? DateTime(2000)).inMinutes ?? 99) < 10);
+      if (same) {
+        last.ids.add(r['id'] as String);
+        last.lastAt = at;
+        if ((r['vdate'] as String).compareTo(last.from) < 0) last.from = r['vdate'] as String;
+        if ((r['vdate'] as String).compareTo(last.to) > 0) last.to = r['vdate'] as String;
+      } else {
+        out.add(OldBatch(key, (r['created_by'] as String?) ?? '', at, r['vdate'] as String)..ids.add(r['id'] as String));
+      }
+    }
+    return out.reversed.toList(); // newest first
+  }
+
+  /// Removes many old entries at once (owner): one change-history line that
+  /// lists them all. Old entries change no figure, so nothing else moves.
+  Future<void> deleteOldEntries(List<String> ids, Actor actor, {required String title}) async {
+    if (!actor.isOwner) throw PermissionDenied('err_owner_delete');
+    final listed = <String>[];
+    final now = nowIso();
+    for (var i = 0; i < ids.length; i += 200) {
+      final chunk = ids.sublist(i, i + 200 > ids.length ? ids.length : i + 200);
+      final ph = List.filled(chunk.length, '?').join(',');
+      await db.writeTransaction((tx) async {
+        for (final r in await tx.getAll(
+            "SELECT vdate, pay_ledger_id, amount, paid FROM vouchers WHERE id IN ($ph) AND vtype = 'history'", chunk)) {
+          listed.add('${r['vdate']} ${'${r['pay_ledger_id']}'.replaceFirst(historyKindPrefix, '')} '
+              '${Money.fmt(((r['amount'] as int?) ?? 0) != 0 ? r['amount'] as int : (r['paid'] as int?) ?? 0)}');
+        }
+        // only old entries: never a real entry by mistake
+        await tx.execute("UPDATE vouchers SET deleted = 1, updated_at = ? WHERE id IN ($ph) AND vtype = 'history'", [now, ...chunk]);
+        await tx.execute(
+            "UPDATE inventory_lines SET deleted = 1 WHERE voucher_id IN ($ph) AND voucher_id IN (SELECT id FROM vouchers WHERE vtype = 'history')",
+            chunk);
+      });
+    }
+    await AuditLog.write(db,
+        businessId: businessId,
+        recordId: newId(),
+        action: 'delete',
+        kind: 'import',
+        title: '$title · ${listed.length} old entries removed',
+        before: {'count': '${listed.length}', 'entries': listed.join('; ')},
+        by: actor);
   }
 
   /// Entry types that post money (the rest are notes or stock-only).

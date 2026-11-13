@@ -48,6 +48,7 @@ class AppController extends ChangeNotifier {
   }
   SyncStatus? syncStatus;
   StreamSubscription<SyncStatus>? _statusSub;
+  Timer? _statusTimer;
 
   VoucherService? _vouchers;
   LedgerRepo? _ledgers;
@@ -545,9 +546,17 @@ class AppController extends ChangeNotifier {
         if (businessId != null) await refreshStorage();
       } catch (_) {}
     });
+    // the status changes many times a second while syncing; the screens only
+    // show connected / busy, so redraw only when that changes (≤ 2 per second)
+    String key(SyncStatus? s) => '${s?.connected}|${(s?.uploading ?? false) || (s?.downloading ?? false)}|${s?.hasSynced}';
     _statusSub ??= db.statusStream.listen((s) {
+      final changed = key(s) != key(syncStatus);
       syncStatus = s;
-      notifyListeners();
+      if (!changed) return;
+      _statusTimer ??= Timer(const Duration(milliseconds: 500), () {
+        _statusTimer = null;
+        notifyListeners();
+      });
     });
   }
 

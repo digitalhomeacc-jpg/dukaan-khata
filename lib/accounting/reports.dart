@@ -317,58 +317,89 @@ class Reports {
     );
   }
 
-  /// खरी किंमत: what a supplier's goods really cost after the company's
-  /// discounts (trade / quarterly / cash / yearly credit notes), month by month.
-  /// A discount counts in the month its credit note is dated.
+  /// खरी किंमत: what each of a supplier's items really cost per bag after
+  /// the company's discounts, month by month – so the rate paid a year ago
+  /// is there to price today's sales. Counts old entries brought in from the
+  /// company's statement (invoices with items, discounts) as well as the
+  /// purchases and credit notes since the books start. A month's discounts
+  /// are shared over that month's items by value; security / other charges
+  /// and payments are not costs.
   Future<ReportTable> supplierCost(String supplierId, String from, String to) async {
     final sup = (await ledgers.byId(supplierId))!;
-    final buys = await db.getAll(
-      "SELECT substr(il.vdate, 1, 7) AS m, SUM(CASE WHEN v.vtype = 'purchase' THEN il.qty ELSE -il.qty END) AS q, "
-      "SUM(CASE WHEN v.vtype = 'purchase' THEN il.amount ELSE -il.amount END) AS a "
-      'FROM inventory_lines il JOIN vouchers v ON v.id = il.voucher_id '
-      "WHERE v.party_id = ? AND v.deleted = 0 AND il.deleted = 0 AND v.vtype IN ('purchase', 'purchase_return') AND il.vdate BETWEEN ? AND ? "
-      'GROUP BY m',
+    final goods = await db.getAll(
+      "SELECT substr(il.vdate, 1, 7) AS m, il.item_id, i.name AS item, i.unit, "
+      "SUM(CASE WHEN v.vtype = 'purchase_return' THEN -il.qty ELSE il.qty END) AS q, "
+      "SUM(CASE WHEN v.vtype = 'purchase_return' THEN -il.amount ELSE il.amount END) AS a "
+      'FROM inventory_lines il JOIN vouchers v ON v.id = il.voucher_id JOIN items i ON i.id = il.item_id '
+      'WHERE v.party_id = ? AND v.deleted = 0 AND il.deleted = 0 AND il.vdate BETWEEN ? AND ? '
+      "AND (v.vtype IN ('purchase', 'purchase_return') OR (v.vtype = 'history' AND v.pay_ledger_id = 'hist:purchase')) "
+      'GROUP BY m, il.item_id ORDER BY m, i.name',
       [supplierId, from, to],
     );
-    final disc = await db.getAll(
-      'SELECT substr(vl.vdate, 1, 7) AS m, SUM(vl.credit - vl.debit) AS d FROM voucher_lines vl JOIN vouchers v ON v.id = vl.voucher_id '
-      'WHERE v.party_id = ? AND v.deleted = 0 AND vl.deleted = 0 AND vl.ledger_id = ? AND vl.vdate BETWEEN ? AND ? GROUP BY m',
-      [supplierId, '$businessId:discount_recd', from, to],
-    );
-    final months = <String, (double, int, int)>{}; // month → qty, bought, discount
-    for (final r in buys) {
-      months[r['m'] as String] = ((r['q'] as num).toDouble(), (r['a'] as num).toInt(), 0);
+    // discounts: credit notes since the books start + old ones from the statement
+    final disc = <String, int>{};
+    for (final r in await db.getAll(
+        'SELECT substr(vl.vdate, 1, 7) AS m, SUM(vl.credit - vl.debit) AS d FROM voucher_lines vl JOIN vouchers v ON v.id = vl.voucher_id '
+        'WHERE v.party_id = ? AND v.deleted = 0 AND vl.deleted = 0 AND vl.ledger_id = ? AND vl.vdate BETWEEN ? AND ? GROUP BY m',
+        [supplierId, '$businessId:discount_recd', from, to])) {
+      disc[r['m'] as String] = (disc[r['m'] as String] ?? 0) + (r['d'] as num).toInt();
     }
-    for (final r in disc) {
-      final m = r['m'] as String, old = months[m] ?? (0.0, 0, 0);
-      months[m] = (old.$1, old.$2, (r['d'] as num).toInt());
+    for (final r in await db.getAll(
+        "SELECT substr(vdate, 1, 7) AS m, SUM(amount) AS d FROM vouchers WHERE party_id = ? AND vtype = 'history' AND deleted = 0 "
+        "AND vdate BETWEEN ? AND ? AND (status LIKE 'stmt:discount%' OR (COALESCE(status, '') NOT LIKE 'stmt:%' "
+        "AND pay_ledger_id = 'hist:paid' AND (narration LIKE '%discount%' OR narration LIKE '%सूट%' OR narration LIKE '%scheme%'))) GROUP BY m",
+        [supplierId, from, to])) {
+      disc[r['m'] as String] = (disc[r['m'] as String] ?? 0) + (r['d'] as num).toInt();
     }
-    String rate(int amount, double qty) => qty <= 0 ? '' : Money.fmt((amount / qty).round());
-    var tq = 0.0, ta = 0, td = 0;
-    final keys = months.keys.toList()..sort();
+    final monthValue = <String, int>{};
+    for (final g in goods) {
+      monthValue[g['m'] as String] = (monthValue[g['m'] as String] ?? 0) + (g['a'] as num).toInt();
+    }
+    String rate(int amount, double qty) => qty <= 0 ? '' : Money.fmt(((amount / qty) / 100).round() * 100);
+    String mon(String m) => '${m.substring(5)}/${m.substring(2, 4)}';
     final rows = <List<String>>[];
-    for (final m in keys) {
-      final (q, a, d) = months[m]!;
-      tq += q;
+    final per = <String, (String, double, int, int)>{}; // item → name, qty, value, discount
+    var ta = 0, td = 0;
+    var tq = 0.0;
+    for (final g in goods) {
+      final m = g['m'] as String;
+      final q = (g['q'] as num).toDouble(), a = (g['a'] as num).toInt();
+      final mv = monthValue[m] ?? 0;
+      final d = mv <= 0 ? 0 : ((disc[m] ?? 0) * a / mv).round();
+      final name = '${g['item']}';
+      rows.add([mon(m), name, fmtQty(q), rate(a, q), d == 0 ? '' : Money.fmt(d), rate(a - d, q)]);
+      final p = per[g['item_id'] as String] ?? (name, 0.0, 0, 0);
+      per[g['item_id'] as String] = (name, p.$2 + q, p.$3 + a, p.$4 + d);
       ta += a;
       td += d;
-      rows.add(['${m.substring(5)}/${m.substring(2, 4)}', fmtQty(q), Money.fmt(a), d == 0 ? '' : Money.fmt(d), Money.fmt(a - d), rate(a, q), rate(a - d, q)]);
+      tq += q;
+    }
+    // discounts in a month with no purchase (e.g. a yearly scheme paid later)
+    for (final e in disc.entries) {
+      if ((monthValue[e.key] ?? 0) <= 0 && e.value != 0) {
+        rows.add([mon(e.key), tr('real_cost_no_goods'), '', '', Money.fmt(e.value), '']);
+      }
+    }
+    rows.sort((x, y) => x[0].substring(3).compareTo(y[0].substring(3)) != 0
+        ? x[0].substring(3).compareTo(y[0].substring(3))
+        : x[0].compareTo(y[0]));
+    // whole period, per item
+    for (final p in per.values) {
+      rows.add(['${tr('total')}', p.$1, fmtQty(p.$2), rate(p.$3, p.$2), p.$4 == 0 ? '' : Money.fmt(p.$4), rate(p.$3 - p.$4, p.$2)]);
     }
     return ReportTable(
       title: '${tr('r_real_cost')} – ${sup.name}',
       subtitle: '${_range(from, to)} · ${tr('real_cost_note')}',
       columns: [
         ReportColumn(tr('month'), flex: 2),
+        ReportColumn(tr('item'), flex: 4),
         ReportColumn.num(tr('qty'), flex: 2),
-        ReportColumn.num(tr('purchase'), flex: 3),
-        ReportColumn.num(tr('discount'), flex: 3),
-        ReportColumn.num(tr('net_cost'), flex: 3),
         ReportColumn.num(tr('bill_rate'), flex: 2),
+        ReportColumn.num(tr('discount'), flex: 3),
         ReportColumn.num(tr('net_rate'), flex: 2),
       ],
       rows: rows,
-      // over the whole period: the discounts of the year spread over everything bought
-      totals: [tr('total'), fmtQty(tq), Money.fmt(ta), Money.fmt(td), Money.fmt(ta - td), rate(ta, tq), rate(ta - td, tq)],
+      totals: ['', '', fmtQty(tq), rate(ta, tq), Money.fmt(td), rate(ta - td, tq)],
     );
   }
 

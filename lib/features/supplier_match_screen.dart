@@ -30,6 +30,8 @@ class _SupplierMatchScreenState extends State<SupplierMatchScreen> {
   SupplierMatch? match; // from the books start on
   int ourBalance = 0, ourOpening = 0;
   int oldImported = 0; // old entries already on the khata from a statement
+  /// Our units per statement unit (company: tonnes, us: bags → 20). Kept per supplier.
+  double get factor => App.read(context).prefInt('stmt_factor_${widget.supplier.id}', 20).toDouble();
   String? progress;
   bool busy = false;
   String? error;
@@ -65,9 +67,18 @@ class _SupplierMatchScreenState extends State<SupplierMatchScreen> {
     final weekBefore = isoDate(parseIso(Books.start).subtract(const Duration(days: 7)));
     final early = all.where((l) => Books.isHistory(l.date) && l.date.compareTo(weekBefore) >= 0).toList();
     final st = await app.ledgers.statement(widget.supplier.id, from: Books.start, to: all.last.date.compareTo(todayIso()) > 0 ? all.last.date : todayIso());
+    // goods on each bill, in our unit (bags) – to match the company's tonnes
+    final qty = {
+      for (final q in await app.db.getAll(
+          'SELECT il.voucher_id, SUM(il.qty) AS q FROM inventory_lines il JOIN vouchers v ON v.id = il.voucher_id '
+          "WHERE v.party_id = ? AND v.deleted = 0 AND il.deleted = 0 AND v.vtype = 'purchase' GROUP BY il.voucher_id",
+          [widget.supplier.id]))
+        q['voucher_id'] as String: (q['q'] as num).toDouble()
+    };
     final ours = [
       for (final r in st.rows)
-        KhataEntry(r.voucherId, r.date, '${app.t('vt_${r.type.code}')}${r.details.isEmpty ? '' : ' · ${r.details}'}', r.credit, r.debit)
+        KhataEntry(r.voucherId, r.date, '${app.t('vt_${r.type.code}')}${r.details.isEmpty ? '' : ' · ${r.details}'}', r.credit, r.debit,
+            qty: qty[r.voucherId] ?? 0)
     ];
     final fresh = await app.ledgers.byId(widget.supplier.id);
     final imported = await app.db.get(
@@ -75,7 +86,7 @@ class _SupplierMatchScreenState extends State<SupplierMatchScreen> {
     if (!mounted) return;
     setState(() {
       oldImported = imported['n'] as int;
-      match = SupplierMatch.match(inBooks, ours, early: early);
+      match = SupplierMatch.match(inBooks, ours, early: early, factor: factor);
       ourBalance = fresh?.balance ?? 0;
       ourOpening = fresh?.openingBalance ?? 0;
     });
@@ -99,18 +110,66 @@ class _SupplierMatchScreenState extends State<SupplierMatchScreen> {
     final app = App.read(context);
     final t = app.t;
     final old = _oldLines;
-    if (!await confirm(context, t('sm_import_q').replaceAll('{n}', '${old.length}').replaceAll('{date}', shortDate(Books.start)))) return;
+    // which of our items each statement product is (PPC → Wonder PPC …)
+    final products = {for (final l in old) if (l.kind == 'invoice') StatementImport.productOf(l.text)}..remove('');
+    final all = await app.stock.list();
+    final map = <String, String?>{for (final p in products) p: StatementImport.guessItem(p, all)?.id};
+    if (!mounted) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setD) => AlertDialog(
+          title: Text(t('sm_map_title')),
+          content: SingleChildScrollView(
+            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(t('sm_map_help').replaceAll('{n}', fmtQty(factor)), style: Theme.of(ctx).textTheme.bodySmall),
+              const SizedBox(height: 10),
+              for (final p in products) ...[
+                Text(p, style: const TextStyle(fontWeight: FontWeight.w700)),
+                DropdownButton<String?>(
+                  isExpanded: true,
+                  value: map[p],
+                  items: [
+                    DropdownMenuItem(value: null, child: Text(t('sm_map_none'))),
+                    for (final i in all) DropdownMenuItem(value: i.id, child: Text(i.display(app.english))),
+                  ],
+                  onChanged: (v) => setD(() => map[p] = v),
+                ),
+                const SizedBox(height: 6),
+              ],
+              const SizedBox(height: 4),
+              Text(t('sm_import_q').replaceAll('{n}', '${old.length}').replaceAll('{date}', shortDate(Books.start))),
+            ]),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(t('cancel'))),
+            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(t('sm_import_go'))),
+          ],
+        ),
+      ),
+    );
+    if (ok != true || !mounted) return;
     setState(() => busy = true);
     try {
       final added = await app.vouchers.importOldEntries(
         widget.supplier.id,
         [
           for (final l in old)
-            (l.date, StatementImport.kindOf(l), l.amount, [if (l.qty > 0) fmtQty(l.qty), l.text].join(' · ')),
+            OldLine(
+              l.date,
+              StatementImport.kindOf(l),
+              l.amount,
+              [if (l.qty > 0) '${fmtQty(l.qty)} ${t('sm_unit_them')}', l.text].join(' · '),
+              stmtKind: l.kind,
+              items: [
+                if (map[StatementImport.productOf(l.text)] case final String id when l.kind == 'invoice' && l.qty > 0)
+                  ItemLine.fromTotal(id, l.qty * factor, l.debit),
+              ],
+            ),
         ],
         app.actor,
         onProgress: (d, n) {
-          if (mounted && (d % 20 == 0 || d == n)) setState(() => progress = '$d / $n');
+          if (mounted) setState(() => progress = '$d / $n');
         },
       );
       if (mounted) toast(context, t('sm_imported').replaceAll('{n}', '$added').replaceAll('{s}', '${old.length - added}'));
@@ -233,6 +292,29 @@ class _SupplierMatchScreenState extends State<SupplierMatchScreen> {
                         ? '✓ ${t('sm_all_match').replaceAll('{n}', '${m.matched}')}'
                         : t('sm_result').replaceAll('{ok}', '${m.matched}').replaceAll('{a}', '${m.missing.length}').replaceAll('{b}', '${m.extra.length}'),
                     style: TextStyle(fontWeight: FontWeight.w700, color: m.missing.isEmpty && m.extra.isEmpty ? AppColors.paid : AppColors.haldi)),
+                const SizedBox(height: 8),
+                // 1 टन = 20 बॅग (tap to change for this supplier)
+                ActionChip(
+                  key: const Key('sm_factor'),
+                  avatar: const Icon(Icons.scale_outlined, size: 18),
+                  label: Text(t('sm_factor').replaceAll('{n}', fmtQty(factor))),
+                  onPressed: () async {
+                    final ctl = TextEditingController(text: fmtQty(factor));
+                    final v = await showDialog<String>(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        title: Text(t('sm_factor_q')),
+                        content: TextField(controller: ctl, autofocus: true, keyboardType: TextInputType.number),
+                        actions: [FilledButton(onPressed: () => Navigator.pop(ctx, ctl.text), child: Text(t('save')))],
+                      ),
+                    );
+                    final n = int.tryParse(normalizeDigits(v ?? '').trim());
+                    if (n != null && n > 0) {
+                      await app.setPrefInt('stmt_factor_${widget.supplier.id}', n);
+                      await _rematch();
+                    }
+                  },
+                ),
               ]),
             ),
           ),
@@ -258,6 +340,27 @@ class _SupplierMatchScreenState extends State<SupplierMatchScreen> {
                 ]),
               ),
             ),
+          if (m.rateDiff.isNotEmpty) ...[
+            SectionTitle('${t('sm_rate_diff')} (${m.rateDiff.length})'),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+              child: Text(t('sm_rate_diff_help'), style: Theme.of(context).textTheme.bodySmall),
+            ),
+            for (final (l, e, diff) in m.rateDiff)
+              Card(
+                child: ListTile(
+                  dense: true,
+                  title: Text('${shortDate(l.date)} · ${fmtQty(l.qty)} ${t('sm_unit_them')} = ${fmtQty(e.qty)} ${t('sm_unit_us')}'),
+                  subtitle: Text('${t('sm_theirs')} ₹${Money.fmt(l.debit)} · ${t('sm_ours')} ₹${Money.fmt(e.bought)}'),
+                  trailing: Text('${diff > 0 ? '+' : '−'}₹${Money.fmt(diff.abs())}',
+                      style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15, color: AppColors.haldi)),
+                  onTap: () async {
+                    await VoucherScreen.edit(context, e.voucherId);
+                    await _rematch();
+                  },
+                ),
+              ),
+          ],
           if (m.missing.isNotEmpty) ...[
             SectionTitle('${t('sm_missing')} (${m.missing.length})'),
             if (m.missing.where((l) => l.kind == 'discount').length > 1)
@@ -273,7 +376,8 @@ class _SupplierMatchScreenState extends State<SupplierMatchScreen> {
               Card(
                 child: ListTile(
                   dense: true,
-                  title: Text('${shortDate(l.date)} · ${t('sm_kind_${l.kind}')}${l.qty > 0 ? ' · ${fmtQty(l.qty)}' : ''}'),
+                  title: Text('${shortDate(l.date)} · ${t('sm_kind_${l.kind}')}'
+                      '${l.qty > 0 ? ' · ${fmtQty(l.qty)} ${t('sm_unit_them')} = ${fmtQty(l.qty * factor)} ${t('sm_unit_us')}' : ''}'),
                   subtitle: Text(l.text, maxLines: 2, overflow: TextOverflow.ellipsis),
                   trailing: Row(mainAxisSize: MainAxisSize.min, children: [
                     Text(Money.fmt(l.amount),

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -26,6 +28,8 @@ class _LiveBuilderState<T> extends State<LiveBuilder<T>> {
   T? _data;
   Object? _error;
   dynamic _sub;
+  Timer? _debounce;
+  bool _loading = false, _again = false;
 
   @override
   void initState() {
@@ -36,7 +40,11 @@ class _LiveBuilderState<T> extends State<LiveBuilder<T>> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _sub ??= App.read(context).db.onChange(widget.tables).listen((_) => _reload());
+    // a sync brings changes in bursts: wait for a quiet moment, reload once
+    _sub ??= App.read(context).db.onChange(widget.tables).listen((_) {
+      _debounce?.cancel();
+      _debounce = Timer(const Duration(milliseconds: 350), _reload);
+    });
   }
 
   @override
@@ -46,6 +54,12 @@ class _LiveBuilderState<T> extends State<LiveBuilder<T>> {
   }
 
   Future<void> _reload() async {
+    // never two loads at once; changes during a load → one more after it
+    if (_loading) {
+      _again = true;
+      return;
+    }
+    _loading = true;
     try {
       final d = await widget.load();
       if (mounted) setState(() {
@@ -55,12 +69,19 @@ class _LiveBuilderState<T> extends State<LiveBuilder<T>> {
     } catch (e, st) {
       debugPrint('$e\n$st');
       if (mounted) setState(() => _error = e);
+    } finally {
+      _loading = false;
+      if (_again && mounted) {
+        _again = false;
+        _reload();
+      }
     }
   }
 
   @override
   void dispose() {
     _sub?.cancel();
+    _debounce?.cancel();
     super.dispose();
   }
 

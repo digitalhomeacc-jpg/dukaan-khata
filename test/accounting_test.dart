@@ -977,7 +977,7 @@ void main() {
     expect(await vs.deepCheck(), isEmpty);
     final rep = await Reports(db, biz, (k) => k).supplierCost(sup, today.substring(0, 8) + '01', today);
     // 90 bags, ₹28,800 billed, ₹2,700 discount → 320 billed, 290 net per bag
-    expect(rep.totals, ['total', '90', Money.fmt(rs(28800)), Money.fmt(rs(2700)), Money.fmt(rs(26100)), '320', '290']);
+    expect(rep.totals, ['', '', '90', '320', Money.fmt(rs(2700)), '290']);
   });
 
   test('days since a balance was last paid', () async {
@@ -998,14 +998,15 @@ void main() {
     final stock0 = await sr.stockAt(w.id, '2026-12-31');
     final before = await lr.balanceAt(sup);
     final cash0 = await lr.balanceAt(vs.sys('cash'));
+    final x = items['M']!;
     final lines = [
-      ('2026-04-09', 'purchase', rs(133489), 'PPC 21'),
-      ('2026-04-10', 'paid', rs(500000), 'Fund Received RTGS'),
-      ('2026-04-11', 'purchase', rs(34549), 'PLUS 5'),
-      ('2026-04-30', 'paid', rs(183772), 'Trade Discount for Apr 26'),
-      ('2026-04-30', 'purchase', rs(13140), 'Trf to Security Ledger'),
-      ('2026-04-30', 'purchase', rs(13140), 'same amount, same day – a second line'),
-      ('2026-11-09', 'purchase', rs(1000), 'after the books start – never an old entry'),
+      OldLine('2026-04-09', 'purchase', rs(133489), 'PPC 21', items: [ItemLine.fromTotal(w.id, 420, rs(133489))]),
+      OldLine('2026-04-10', 'paid', rs(500000), 'Fund Received RTGS', stmtKind: 'payment'),
+      OldLine('2026-04-11', 'purchase', rs(34549), 'PLUS 5', items: [ItemLine.fromTotal(x.id, 100, rs(34549))]),
+      OldLine('2026-04-30', 'paid', rs(183772), 'Trade Discount for Apr 26', stmtKind: 'discount'),
+      OldLine('2026-04-30', 'purchase', rs(13140), 'Trf to Security Ledger', stmtKind: 'charge'),
+      OldLine('2026-04-30', 'purchase', rs(13140), 'same amount, same day – a second line', stmtKind: 'charge'),
+      OldLine('2026-11-09', 'purchase', rs(1000), 'after the books start – never an old entry'),
     ];
     final added = await vs.importOldEntries(sup, lines, owner);
     expect(added, 6);
@@ -1019,6 +1020,22 @@ void main() {
     expect(st.references.last.balance, -rs(133489) + rs(500000) - rs(34549) + rs(183772) - rs(13140) * 2);
     expect(await lr.unbalanced(), isEmpty);
     expect(await vs.deepCheck(), isEmpty);
+    // real cost per bag: April – ₹1,68,038 of goods, ₹1,83,772 discount shared by value
+    final rep = await Reports(db, biz, (k) => k).supplierCost(sup, '2026-04-01', '2026-04-30');
+    final ppc = rep.rows.firstWhere((r) => r[0] == '04/26' && r[1] == w.name);
+    expect(ppc[2], '420');
+    expect(ppc[3], Money.fmt(rs(318))); // 1,33,489 / 420 bags
+    expect(ppc[4], Money.fmt((rs(183772) * rs(133489) / (rs(133489) + rs(34549))).round()));
+    // payments and the security transfer are not costs
+    expect(rep.totals![4], Money.fmt(rs(183772)));
+    // undo the whole import in one go: nothing changes, entries gone
+    final batches = await vs.oldBatches(sup);
+    expect(batches.length, 1);
+    expect(batches.single.ids.length, 6);
+    await vs.deleteOldEntries(batches.single.ids, owner, title: 'Wonder');
+    expect((await lr.statement(sup)).references, isEmpty);
+    expect(await lr.balanceAt(sup), before);
+    expect(await sr.stockAt(w.id, '2026-12-31'), stock0);
   });
 
   test('search: words in any order, page no., phone, amount, bill no.', () async {

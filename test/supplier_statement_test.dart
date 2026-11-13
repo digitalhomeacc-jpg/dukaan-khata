@@ -75,4 +75,23 @@ void main() {
     final m2 = SupplierMatch.match(const [], const [], early: [inv]);
     expect(m2.transit, isEmpty);
   });
+
+  test('company bills in tonnes, we enter bags: same goods, rounded rate → matched with the difference', () {
+    // 4.5 MT invoiced at ₹28,875; entered as 90 bags × ₹321 = ₹28,890
+    final inv = SupplierLine('2026-11-11', '100-015257531 PPC', 4.5, 2887500, 0, 2887500);
+    final ours = [KhataEntry('p1', '2026-11-11', 'purchase', 2889000, 0, qty: 90)];
+    final m = SupplierMatch.match([inv], ours, factor: 20);
+    expect(m.missing, isEmpty);
+    expect(m.extra, isEmpty);
+    expect(m.matched, 1);
+    expect(m.rateDiff.single.$3, 1500); // we have ₹15 more
+    // same rupees but a different quantity is not the same bill
+    final m2 = SupplierMatch.match([inv], [KhataEntry('p1', '2026-11-11', 'purchase', 2889000, 0, qty: 80)], factor: 20);
+    expect(m2.missing, [inv]);
+    // invoice 7/11, truck 8/11 – also in tonnes vs bags
+    final early = SupplierLine('2026-11-07', 'PPC', 12, 7699900, 0, 0);
+    final m3 = SupplierMatch.match(const [], [KhataEntry('p2', '2026-11-08', 'purchase', 7704000, 0, qty: 240)], early: [early], factor: 20);
+    expect(m3.transit, [early]);
+    expect(m3.extra, isEmpty);
+  });
 }

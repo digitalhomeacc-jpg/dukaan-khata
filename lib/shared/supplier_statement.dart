@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import '../accounting/models.dart';
 import '../core/money.dart';
 
 /// One line of a supplier's account statement (e.g. the cement company's
@@ -80,7 +81,8 @@ class KhataEntry {
   final String text;
   final int bought; // credit to the supplier – goods we bought
   final int paid; // debit – money we paid / discount received
-  KhataEntry(this.voucherId, this.date, this.text, this.bought, this.paid);
+  final double qty; // goods on the bill, in our unit (bags)
+  KhataEntry(this.voucherId, this.date, this.text, this.bought, this.paid, {this.qty = 0});
 }
 
 class SupplierMatch {
@@ -88,6 +90,9 @@ class SupplierMatch {
   /// Invoices dated just before the books start whose goods were entered as a
   /// purchase after it (invoice 7/11, truck 8/11): matched, not old entries.
   final List<SupplierLine> transit = [];
+  /// Same goods, slightly different rupees (company bills per tonne, we per
+  /// bag): matched, with the difference to correct. (line, entry, ours − theirs)
+  final List<(SupplierLine, KhataEntry, int)> rateDiff = [];
   final List<KhataEntry> extra = []; // in the khata, not on the statement
   int matched = 0;
   int stBilled = 0, stCredited = 0, ourBought = 0, ourPaid = 0;
@@ -98,7 +103,9 @@ class SupplierMatch {
   /// [early]: invoices from the days before the books start; each one that
   /// pairs with a purchase after the start counts as [transit], the rest are
   /// left alone (they are old entries).
-  static SupplierMatch match(List<SupplierLine> st, List<KhataEntry> ours, {int days = 7, List<SupplierLine> early = const []}) {
+  /// [factor]: our units per statement unit (1 MT = 20 bags → 20).
+  static SupplierMatch match(List<SupplierLine> st, List<KhataEntry> ours,
+      {int days = 7, List<SupplierLine> early = const [], double factor = 1}) {
     final r = SupplierMatch();
     final used = <int>{};
     for (final o in ours) {
@@ -143,6 +150,41 @@ class SupplierMatch {
         r.stBilled += l.debit;
       }
     }
+    // second pass: an invoice and a bill of the same quantity (tonnes → bags)
+    // a few rupees apart – the bag rate was rounded
+    final lateTransit = <SupplierLine>[];
+    for (final l in [...r.missing, ...early.where((x) => x.kind == 'invoice' && !r.transit.contains(x))]) {
+      if (l.kind != 'invoice' || l.qty <= 0) continue;
+      final d = parseIso(l.date);
+      int? best;
+      var bestGap = days + 1;
+      for (var i = 0; i < ours.length; i++) {
+        if (used.contains(i) || ours[i].bought == 0) continue;
+        final o = ours[i];
+        if ((o.qty - l.qty * factor).abs() > 0.01) continue;
+        // within 1 % (or ₹50 on a small bill)
+        final limit = l.debit ~/ 100 > 5000 ? l.debit ~/ 100 : 5000;
+        if ((o.bought - l.debit).abs() > limit) continue;
+        final gap = parseIso(o.date).difference(d).inDays.abs();
+        if (gap < bestGap) {
+          bestGap = gap;
+          best = i;
+        }
+      }
+      if (best != null) {
+        used.add(best);
+        if (r.missing.remove(l)) {
+          r.matched++;
+        } else {
+          lateTransit.add(l); // invoice before the books start, goods after
+        }
+        r.rateDiff.add((l, ours[best], ours[best].bought - l.debit));
+      }
+    }
+    for (final l in lateTransit) {
+      r.transit.add(l);
+      r.stBilled += l.debit;
+    }
     for (var i = 0; i < ours.length; i++) {
       if (!used.contains(i)) r.extra.add(ours[i]);
     }
@@ -161,4 +203,21 @@ class StatementImport {
   static String kindOf(SupplierLine l) => l.debit > 0 ? 'purchase' : 'paid';
 
   static String keyOf(String date, String kind, int amount) => '$date|$kind|$amount';
+
+  /// The product word on an invoice line ("100-014548215 SBIN4261… PPC" → PPC).
+  static String productOf(String text) {
+    final words = text.trim().split(RegExp(r'\s+'));
+    for (final w in words.reversed) {
+      if (RegExp(r'^[A-Za-z]{2,}$').hasMatch(w)) return w.toUpperCase();
+    }
+    return '';
+  }
+
+  /// Our item for a statement product: its name holds the word (PPC → "Wonder
+  /// PPC Cement"); with several, the one that also has the company's word.
+  static Item? guessItem(String product, List<Item> items, {String brand = 'WONDER'}) {
+    bool has(Item i, String w) => RegExp('\\b$w\\b').hasMatch('${i.name} ${i.nameEn ?? ''}'.toUpperCase());
+    final hits = items.where((i) => !i.isService && has(i, product)).toList();
+    return hits.where((i) => has(i, brand)).firstOrNull ?? hits.firstOrNull;
+  }
 }
