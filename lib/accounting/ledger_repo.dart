@@ -47,6 +47,8 @@ class DayCharges {
   final int varhai; // वराई: hamali money the company's driver handed over
   final int transportCharged; // गाडी भाडे taken from customers on today's bills
   final int freightPaid; // other भाडे paid today as an expense (not to a transporter's khata)
+  /// आज किती हमाल – shared by every phone (null = not set yet).
+  int? hamals;
   DayCharges(this.date, this.hamaliCharged, this.hamaliPaid, this.ownTransport, this.transporters,
       {this.varhai = 0, this.transportCharged = 0, this.freightPaid = 0});
   /// Outside drivers' share of today's fares / what they were paid today / still owed (all days).
@@ -616,6 +618,29 @@ class LedgerRepo {
       ))['n'] as int);
 
   /// Day-end settlement of hamali and transport for [date].
+  /// How many hamals worked on [date]: the latest saved count, shared by
+  /// every phone through the change history (which also shows who set it).
+  Future<int?> hamalsOn(String date) async {
+    final r = await db.getOptional(
+        "SELECT snapshot FROM audit_log WHERE business_id = ? AND voucher_id = ? ORDER BY at DESC LIMIT 1", [businessId, 'hamals:$date']);
+    if (r == null) return null;
+    try {
+      final after = (jsonDecode(r['snapshot'] as String) as Map)['after'] as Map?;
+      return int.tryParse('${after?['hamal_count'] ?? 0}') ?? 0;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> setHamals(String date, int n, int? before) => AuditLog.write(db,
+      businessId: businessId,
+      recordId: 'hamals:$date',
+      action: before == null ? 'create' : 'edit',
+      kind: 'hamals',
+      title: date,
+      before: before == null ? null : {'hamal_count': '$before'},
+      after: {'hamal_count': '$n'});
+
   Future<DayCharges> dayCharges(String date) async {
     Future<int> sum(String ledgerId, String expr) async => ((await db.get(
           'SELECT COALESCE(SUM($expr),0) AS s FROM voucher_lines WHERE ledger_id = ? AND vdate = ? AND deleted = 0',
@@ -651,8 +676,10 @@ class LedgerRepo {
       ['$businessId:freight', date],
     ))['s'] as num)
         .toInt();
-    return DayCharges(date, hamaliCharged, hamaliPaid, ownTransport, dues,
+    final dc = DayCharges(date, hamaliCharged, hamaliPaid, ownTransport, dues,
         varhai: varhai, transportCharged: transportCharged, freightPaid: freightPaid);
+    dc.hamals = await hamalsOn(date);
+    return dc;
   }
 
   /// "M 12.0×285.0" → "M 12×285"

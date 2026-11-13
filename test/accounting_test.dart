@@ -1249,4 +1249,17 @@ void main() {
     final listed = tb.rows.map((r) => Money.parse(r[3]) ?? 0).fold<int>(0, (a, b) => a + b);
     expect(listed, rs(460));
   });
+
+  test('hamal count is shared (kept in the synced history), latest wins', () async {
+    AuditLog.actor = owner;
+    expect(await lr.hamalsOn('2026-11-05'), isNull);
+    await lr.setHamals('2026-11-05', 3, null);
+    await Future<void>.delayed(const Duration(milliseconds: 5));
+    await lr.setHamals('2026-11-05', 4, 3);
+    expect(await lr.hamalsOn('2026-11-05'), 4);
+    expect(await lr.hamalsOn('2026-11-06'), isNull, reason: 'each day its own count');
+    expect((await lr.dayCharges('2026-11-05')).hamals, 4);
+    final n = await db.get("SELECT COUNT(*) n FROM audit_log WHERE voucher_id = 'hamals:2026-11-05'");
+    expect(n['n'], 2, reason: 'both changes are in the history, with who did them');
+  });
 }

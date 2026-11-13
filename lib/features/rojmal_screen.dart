@@ -304,7 +304,7 @@ class _DayEndCard extends StatelessWidget {
     final t = app.t;
     final c = charges;
     // आज किती हमाल: each gets at least the minimum; a shortfall is paid from pocket
-    final hamals = app.prefInt('hamals_${c.date}', 0);
+    final hamals = c.hamals ?? app.prefInt('hamals_${c.date}', 0); // older counts were kept on the phone
     final minEach = app.prefInt('hamal_min', 300) * 100;
     final minTotal = hamals * minEach;
     final pocket = minTotal > c.hamaliToPay ? minTotal - c.hamaliToPay : 0;
@@ -343,10 +343,10 @@ class _DayEndCard extends StatelessWidget {
                 const Icon(Icons.lock_outline, size: 16),
                 const SizedBox(width: 4),
                 Text('$hamals', key: const Key('hamal_saved'), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
-                TextButton(key: const Key('hamal_edit'), onPressed: () => _setHamals(context, c.date, hamals), child: Text(t('change'))),
+                TextButton(key: const Key('hamal_edit'), onPressed: () => setHamalsDialog(context, c.date, c.hamals, hamals), child: Text(t('change'))),
               ] else
                 FilledButton.tonal(
-                    key: const Key('hamal_set'), onPressed: () => _setHamals(context, c.date, hamals), child: Text(t('hamal_set'))),
+                    key: const Key('hamal_set'), onPressed: () => setHamalsDialog(context, c.date, c.hamals, hamals), child: Text(t('hamal_set'))),
             ]),
           ),
           if (hamals > 0) ...[
@@ -575,7 +575,7 @@ class _UdhariView extends StatelessWidget {
 }
 
 /// Hamal count for the day: picked in a box and saved with a button.
-Future<void> _setHamals(BuildContext context, String date, int current) async {
+Future<void> setHamalsDialog(BuildContext context, String date, int? saved0, int current) async {
   final app = App.read(context);
   final t = app.t;
   var n = current;
@@ -599,5 +599,5 @@ Future<void> _setHamals(BuildContext context, String date, int current) async {
       ),
     ),
   );
-  if (saved != null && saved != current) await app.setPrefInt('hamals_$date', saved);
+  if (saved != null && (saved != current || saved0 == null)) await app.ledgers.setHamals(date, saved, saved0);
 }

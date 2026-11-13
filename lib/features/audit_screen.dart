@@ -19,6 +19,7 @@ class AuditScreen extends StatefulWidget {
 
 /// Field → label key (most are the app's own words).
 const _labels = {
+  'hamal_count': 'hamal_count',
   'type': 'type',
   'date': 'date',
   'party': 'party',
@@ -250,7 +251,7 @@ class _AuditScreenState extends State<AuditScreen> {
       final party = parts.length > 2 && parts[2].isNotEmpty ? parts[2] : (e.row['party'] as String? ?? '');
       return '${type == null ? '' : t('vt_$type')} #$vno${party.isEmpty ? '' : ' · $party'}';
     }
-    return '${t('audit_kind_${e.kind}')} · ${e.title}';
+    return '${t('audit_kind_${e.kind}')} · ${e.kind == 'hamals' ? shortDate(e.title) : e.title}';
   }
 
   Widget _card(_Ev e, List<_Ev> story, AppController app) {

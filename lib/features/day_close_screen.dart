@@ -10,6 +10,7 @@ import '../shared/widgets.dart';
 import '../state/app_controller.dart';
 import 'cash_count_screen.dart';
 import 'voucher_screen.dart';
+import 'rojmal_screen.dart';
 
 /// दिवस बंद करा: the evening routine on one page – count the cash, pay the
 /// labourers and drivers, then send the day's summary on WhatsApp.
@@ -93,11 +94,11 @@ class _DayCloseScreenState extends State<DayCloseScreen> {
     return Scaffold(
       appBar: AppBar(title: Text('${t('day_close')} · ${shortDate(date)}')),
       body: LiveBuilder<_DayData>(
-        reloadKey: '$date|${app.prefInt('hamals_$date', 0)}|${app.prefInt('counted_$date', 0)}',
+        reloadKey: '$date|${app.prefInt('counted_$date', 0)}',
         load: () => _load(app),
         builder: (context, d) {
           final c = d.charges;
-          final hamals = app.prefInt('hamals_$date', 0);
+          final hamals = c.hamals ?? app.prefInt('hamals_$date', 0);
           final minTotal = hamals * app.prefInt('hamal_min', 300) * 100;
           final toPay = c.hamaliToPay > minTotal ? c.hamaliToPay : minTotal;
           final hamaliPending = toPay - c.hamaliPaid;
@@ -172,15 +173,13 @@ class _DayCloseScreenState extends State<DayCloseScreen> {
                   padding: const EdgeInsets.only(top: 6, left: 42),
                   child: Row(children: [
                     Expanded(child: Text(t('hamal_count'))),
-                    IconButton.filledTonal(
-                        visualDensity: VisualDensity.compact,
-                        icon: const Icon(Icons.remove, size: 18),
-                        onPressed: hamals > 0 ? () => app.setPrefInt('hamals_$date', hamals - 1) : null),
-                    SizedBox(width: 36, child: Text('$hamals', textAlign: TextAlign.center, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800))),
-                    IconButton.filledTonal(
-                        visualDensity: VisualDensity.compact,
-                        icon: const Icon(Icons.add, size: 18),
-                        onPressed: () => app.setPrefInt('hamals_$date', hamals + 1)),
+                    if (hamals > 0) ...[
+                      const Icon(Icons.lock_outline, size: 16),
+                      const SizedBox(width: 4),
+                      Text('$hamals', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+                      TextButton(onPressed: () => setHamalsDialog(context, date, c.hamals, hamals), child: Text(t('change'))),
+                    ] else
+                      FilledButton.tonal(onPressed: () => setHamalsDialog(context, date, c.hamals, hamals), child: Text(t('hamal_set'))),
                   ]),
                 ),
                 if (minTotal > c.hamaliToPay)

@@ -17,7 +17,7 @@ class LiveBuilder<T> extends StatefulWidget {
     super.key,
     required this.load,
     required this.builder,
-    this.tables = const ['vouchers', 'voucher_lines', 'inventory_lines', 'ledgers', 'items'],
+    this.tables = const ['vouchers', 'voucher_lines', 'inventory_lines', 'ledgers', 'items', 'audit_log'],
     this.reloadKey,
   });
   @override

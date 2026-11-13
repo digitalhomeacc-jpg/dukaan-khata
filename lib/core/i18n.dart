@@ -353,6 +353,7 @@ const Map<String, (String, String)> _s = {
   'audit_kind_ledger': ('खाते', 'Account'),
   'audit_kind_item': ('माल', 'Item'),
   'audit_kind_shop': ('दुकान माहिती', 'Shop details'),
+  'audit_kind_hamals': ('आज हमाल', 'Hamals for the day'),
   'audit_kind_user': ('वापरकर्ता', 'User'),
   'audit_kind_bank': ('बँक स्टेटमेंट', 'Bank statement'),
   'audit_postings': ('खात्यांवर परिणाम', 'Effect on accounts'),
