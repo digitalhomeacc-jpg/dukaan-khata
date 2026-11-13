@@ -142,6 +142,13 @@ void main() {
     await pump(tester, PlaceDetailScreen(data: data, keys: const {'vaibhav chetan parma'}));
     expect(find.text('Also Vaibhav?'), findsOneWidget);
     expect(find.text('Chetan V Parmar'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('You gave'), 200, scrollable: find.byType(Scrollable).first);
+    expect(find.text('You gave'), findsOneWidget);
+    await tester.tap(find.byTooltip('Also known as…'));
+    await tester.pumpAndSettle();
+    expect(find.text('Vaibhav is also…'), findsOneWidget);
+    expect(find.text('likely Vaibhav', findRichText: true), findsNothing);
+    expect(find.textContaining('likely Vaibhav'), findsOneWidget);
   });
 
   testWidgets('people review lists people, not shops', (tester) async {

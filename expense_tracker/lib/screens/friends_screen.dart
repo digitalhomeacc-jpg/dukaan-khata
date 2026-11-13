@@ -412,52 +412,7 @@ class FriendDetailScreen extends StatelessWidget {
     }
   }
 
-  Future<void> _alias(BuildContext context) async {
-    final known = <String>{
-      for (final t in data.transactions)
-        if (t.fromEmail || t.source == 'statement')
-          if (looksLikePerson(t.merchant) && AppData.keyOf(t.merchant!) != AppData.keyOf(person)) t.merchant!.trim(),
-    }.toList()..sort();
-    final ctl = TextEditingController();
-    final picked = await showDialog<String>(
-      context: context,
-      builder: (c) => AlertDialog(
-        title: Text('Also known as'),
-        content: SizedBox(
-          width: 360,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                'Does $person sometimes pay from another account, like a parent\'s? Pick that name: its payments then count as $person.',
-                style: Theme.of(c).textTheme.bodySmall,
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: ctl,
-                decoration: const InputDecoration(labelText: 'Name as the bank shows it'),
-              ),
-              const SizedBox(height: 8),
-              Flexible(
-                child: ListView(
-                  shrinkWrap: true,
-                  children: [
-                    for (final n in known.take(40))
-                      ListTile(dense: true, title: Text(n), onTap: () => Navigator.pop(c, n)),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(c), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(c, ctl.text.trim()), child: const Text('Add')),
-        ],
-      ),
-    );
-    if (picked != null && picked.isNotEmpty) await data.addAlias(picked, person);
-  }
+  Future<void> _alias(BuildContext context) => showAlsoKnownAs(context, data, person);
 
   String _entryText(SharedEntry e, String me) {
     final mine = e.creditor == me;

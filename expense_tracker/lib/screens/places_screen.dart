@@ -219,6 +219,7 @@ class PlaceDetailScreen extends StatelessWidget {
     final friendsCat = data.loanCategory;
     final inLedger = friendsCat != null && g.txns.isNotEmpty && g.txns.every((t) => t.categoryId == friendsCat.id);
     final ledger = placeLedger(g.txns, shares: data.shareTotalsNow);
+    final person = looksLikePerson(g.name);
     final months = g.byMonth.reversed.take(12).toList();
     final maxMonth = months.fold(0.0, (m, e) => e.value > m ? e.value : m);
 
@@ -242,6 +243,12 @@ class PlaceDetailScreen extends StatelessWidget {
         title: Text(g.name, maxLines: 1, overflow: TextOverflow.ellipsis),
         actions: [
           IconButton(tooltip: 'Rename', icon: const Icon(Icons.edit_outlined), onPressed: () => _rename(context, g)),
+          if (looksLikePerson(g.name))
+            IconButton(
+              tooltip: 'Also known as…',
+              icon: const Icon(Icons.person_add_alt),
+              onPressed: () => showAlsoKnownAs(context, data, g.name),
+            ),
         ],
       ),
       body: CustomScrollView(
@@ -432,15 +439,15 @@ class PlaceDetailScreen extends StatelessWidget {
                     Expanded(child: Text('Ledger', style: text.titleSmall)),
                     SizedBox(
                       width: 74,
-                      child: Text('Out', textAlign: TextAlign.end, style: text.labelSmall),
+                      child: Text(person ? 'You gave' : 'Out', textAlign: TextAlign.end, style: text.labelSmall),
                     ),
                     SizedBox(
                       width: 74,
-                      child: Text('In', textAlign: TextAlign.end, style: text.labelSmall),
+                      child: Text(person ? 'You got' : 'In', textAlign: TextAlign.end, style: text.labelSmall),
                     ),
                     SizedBox(
                       width: 86,
-                      child: Text('Net', textAlign: TextAlign.end, style: text.labelSmall),
+                      child: Text('Balance', textAlign: TextAlign.end, style: text.labelSmall),
                     ),
                   ],
                 ),
@@ -479,7 +486,16 @@ class PlaceDetailScreen extends StatelessWidget {
                               children: [
                                 Text(DateFormat('d MMM, h:mm a').format(l.txn.txnAt), style: text.bodyMedium),
                                 Text(
-                                  cat?.isLoan == true ? 'Friends ledger' : (cat?.name ?? 'No category'),
+                                  [
+                                    cat?.isLoan == true ? 'Friends ledger' : (cat?.name ?? 'No category'),
+                                    if (l.txn.merchant != null &&
+                                        AppData.keyOf(l.txn.merchant!) != AppData.keyOf(g.name) &&
+                                        !AppData.keyOf(g.name).startsWith(AppData.keyOf(l.txn.merchant!)))
+                                      'as ${l.txn.merchant}',
+                                    if ((l.txn.note ?? '').isNotEmpty) l.txn.note!,
+                                  ].join(' · '),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
                                   style: text.bodySmall?.copyWith(
                                     color: cat == null ? scheme.error : scheme.onSurfaceVariant,
                                   ),
