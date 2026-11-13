@@ -134,6 +134,51 @@ class LedgerRepo {
   /// customer paid us (or we paid a supplier); if never, since their first
   /// entry (or the books start for an opening balance). Parties with a
   /// balance only. Key = ledger id.
+  /// Old entries per party (one pass over all of them).
+  Future<Map<String, OldSummary>> oldSummaries() async {
+    final out = <String, OldSummary>{};
+    for (final r in await db.getAll(
+        "SELECT party_id, vdate, amount, paid, pay_ledger_id FROM vouchers WHERE business_id = ? AND vtype = 'history' "
+        'AND deleted = 0 AND party_id IS NOT NULL ORDER BY vdate',
+        [businessId])) {
+      final (_, d, c) = oldEntryEffect(r['pay_ledger_id'] as String?, (r['amount'] as int?) ?? 0, (r['paid'] as int?) ?? 0);
+      final o = out.putIfAbsent(r['party_id'] as String, OldSummary.new);
+      o.total += d - c;
+      o.count++;
+      final date = r['vdate'] as String;
+      if (o.first.isEmpty) o.first = date;
+      o.last = date;
+    }
+    return out;
+  }
+
+  /// हिशोब पुन्हा तपासायचा: parties marked for a manual re-check (shared by
+  /// every phone through the change history; the latest mark wins).
+  Future<Map<String, String>> recheckMarks() async {
+    final out = <String, String>{};
+    for (final r in await db.getAll(
+        "SELECT voucher_id, snapshot FROM audit_log WHERE business_id = ? AND voucher_id LIKE 'recheck:%' ORDER BY at", [businessId])) {
+      final id = (r['voucher_id'] as String).substring(8);
+      try {
+        final after = (jsonDecode(r['snapshot'] as String) as Map)['after'] as Map?;
+        if (after?['recheck'] == '✓') {
+          out[id] = '${after?['note'] ?? ''}';
+        } else {
+          out.remove(id);
+        }
+      } catch (_) {}
+    }
+    return out;
+  }
+
+  Future<void> setRecheck(String ledgerId, String name, bool on, {String note = ''}) => AuditLog.write(db,
+      businessId: businessId,
+      recordId: 'recheck:$ledgerId',
+      action: 'edit',
+      kind: 'recheck',
+      title: name,
+      after: {'recheck': on ? '✓' : '', 'note': on ? note.trim() : ''});
+
   Future<Map<String, int>> daysUnpaid() async {
     final rows = await db.getAll(
       'SELECT l.id, l.opening_balance, $_balanceExpr AS balance, '
@@ -151,14 +196,21 @@ class LedgerRepo {
       [businessId],
     );
     final today = parseIso(todayIso());
+    final olds = await oldSummaries();
     final out = <String, int>{};
     for (final r in rows) {
       final bal = (r['balance'] as num).toInt();
       if (bal == 0) continue;
       // they owe us → their last payment (a credit); we owe them → our last payment (a debit)
       final last = (bal > 0 ? (r['last_cr'] ?? r['old_cr']) : (r['last_dr'] ?? r['old_dr'])) as String?;
+      final opening = (r['opening_balance'] as int?) ?? 0;
+      final old = olds[r['id']];
+      // never paid: once the old entries are complete (they add up to the
+      // opening balance) count from the last of them; otherwise from the first
       final since = last ??
-          (((r['opening_balance'] as int?) ?? 0) != 0 ? (r['old_first'] as String? ?? Books.start) : r['first'] as String?);
+          (opening != 0
+              ? (old == null ? Books.start : (old.total == opening ? old.last : old.first))
+              : r['first'] as String?);
       if (since == null) continue;
       final d = today.difference(parseIso(since)).inDays;
       if (d > 0) out[r['id'] as String] = d;
@@ -545,20 +597,7 @@ class LedgerRepo {
     for (final r in refRows) {
       final amount = (r['amount'] as int?) ?? 0;
       final paid = (r['paid'] as int?) ?? 0;
-      var kind = ((r['pay_ledger_id'] as String?) ?? '').replaceFirst('hist:', '');
-      // entries saved before the kind was stored: money only = received, else goods given
-      if (!const {'sale', 'purchase', 'received', 'paid', 'opening', 'opening_cr'}.contains(kind)) {
-        kind = amount == 0 && paid > 0 ? 'received' : 'sale';
-      }
-      final (int d, int c) = switch (kind) {
-        'purchase' => (paid, amount),
-        // जुनी बाकी: the balance from an even older book – where the old ledger starts
-        'opening' => (amount, 0),
-        'opening_cr' => (0, amount),
-        'received' => (0, amount == 0 ? paid : amount),
-        'paid' => (amount, 0),
-        _ => (amount, paid),
-      };
+      final (kind, d, c) = oldEntryEffect(r['pay_ledger_id'] as String?, amount, paid);
       oldRun += d - c;
       final items = _cleanItems(r['items'] as String?);
       final parts = [
@@ -864,4 +903,31 @@ List<PendingBill> pendingBills(Statement st, String booksStart) {
     if (bill - used > 0) out.add(PendingBill(x.$1, x.$2, bill, bill - used, x.$5));
   }
   return out;
+}
+
+/// An old (pre-books) entry's kind and its नावे / जमा on the old khata – the
+/// one formula used by the khata, the days count and the "not matching" list.
+(String, int, int) oldEntryEffect(String? payLedgerId, int amount, int paid) {
+  var kind = (payLedgerId ?? '').replaceFirst('hist:', '');
+  // entries saved before the kind was stored: money only = received, else goods given
+  if (!const {'sale', 'purchase', 'received', 'paid', 'opening', 'opening_cr'}.contains(kind)) {
+    kind = amount == 0 && paid > 0 ? 'received' : 'sale';
+  }
+  final (int d, int c) = switch (kind) {
+    'purchase' => (paid, amount),
+    // जुनी बाकी: the balance from an even older book – where the old ledger starts
+    'opening' => (amount, 0),
+    'opening_cr' => (0, amount),
+    'received' => (0, amount == 0 ? paid : amount),
+    'paid' => (amount, 0),
+    _ => (amount, paid),
+  };
+  return (kind, d, c);
+}
+
+/// A party's old entries in short: their total (as on the old khata), how
+/// many, and the first and last dates.
+class OldSummary {
+  int total = 0, count = 0;
+  String first = '', last = '';
 }

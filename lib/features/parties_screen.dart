@@ -656,6 +656,8 @@ class _KhataScreenState extends State<KhataScreen> {
                       if (context.mounted) await _companyDiscount(l);
                     case 'old_remove':
                       if (context.mounted) await _removeOld(l);
+                    case 'recheck':
+                      if (context.mounted) await markRecheck(context, l);
                     case 'co_match':
                       if (context.mounted) await SupplierMatchScreen.open(context, l);
                     case 'real_cost':
@@ -712,6 +714,7 @@ class _KhataScreenState extends State<KhataScreen> {
                   ],
                   if (l.group.isParty) PopupMenuItem(value: 'old', child: Text(t('old_entry_add'))),
                   if (l.group.isParty && app.actor.isOwner) PopupMenuItem(value: 'old_remove', child: Text(t('old_remove'))),
+                  if (l.group.isParty) PopupMenuItem(value: 'recheck', child: Text(t('recheck_mark'))),
                   PopupMenuItem(value: 'range', child: Text('${t('from')} – ${t('to')}')),
                   PopupMenuItem(value: 'pdf', child: Text('${t('statement')} PDF')),
                   PopupMenuItem(value: 'xls', child: Text('${t('statement')} Excel')),
@@ -773,6 +776,7 @@ class _KhataScreenState extends State<KhataScreen> {
                 ),
               ),
             _OpenPromises(partyId: l.id),
+            _RecheckBanner(ledger: l),
             _GoodsOwedCard(party: l),
             _BookingsBanner(party: l),
             Expanded(
@@ -1174,6 +1178,70 @@ class _BookingsBanner extends StatelessWidget {
                     Expanded(
                       child: Text('${t('booking')} ${t('booking_left')}: ${bookingSummary(list, app)}',
                           style: const TextStyle(fontWeight: FontWeight.w700)),
+                    ),
+                    const Icon(Icons.chevron_right, size: 18),
+                  ]),
+                ),
+              ),
+            ),
+    );
+  }
+}
+
+/// Marks (or clears) a party for a manual re-check of its hisab, with a note.
+Future<void> markRecheck(BuildContext context, Ledger l) async {
+  final app = App.read(context);
+  final t = app.t;
+  final marks = await app.ledgers.recheckMarks();
+  if (!context.mounted) return;
+  final note = TextEditingController(text: marks[l.id] ?? '');
+  final on = marks.containsKey(l.id);
+  final r = await showDialog<String>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: Text(t('recheck_mark')),
+      content: TextField(
+        controller: note,
+        autofocus: !on,
+        decoration: InputDecoration(labelText: t('recheck_note'), hintText: t('recheck_note_hint')),
+      ),
+      actions: [
+        if (on) TextButton(onPressed: () => Navigator.pop(ctx, 'off'), child: Text(t('recheck_done'))),
+        TextButton(onPressed: () => Navigator.pop(ctx), child: Text(t('cancel'))),
+        FilledButton(onPressed: () => Navigator.pop(ctx, 'on'), child: Text(t('save'))),
+      ],
+    ),
+  );
+  if (r == null) return;
+  await app.ledgers.setRecheck(l.id, l.name, r == 'on', note: note.text);
+}
+
+/// Orange strip on a khata that is marked for re-checking.
+class _RecheckBanner extends StatelessWidget {
+  final Ledger ledger;
+  const _RecheckBanner({required this.ledger});
+  @override
+  Widget build(BuildContext context) {
+    final app = App.of(context);
+    final t = app.t;
+    return LiveBuilder<String?>(
+      reloadKey: ledger.id,
+      tables: const ['audit_log'],
+      load: () async => (await app.ledgers.recheckMarks())[ledger.id],
+      builder: (context, note) => note == null
+          ? const SizedBox.shrink()
+          : Material(
+              color: Colors.deepOrange.withValues(alpha: 0.12),
+              child: InkWell(
+                onTap: () => markRecheck(context, ledger),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  child: Row(children: [
+                    const Icon(Icons.flag, color: Colors.deepOrange, size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text('${t('recheck_flag')}${note.isEmpty ? '' : ' · $note'}',
+                          style: const TextStyle(fontWeight: FontWeight.w600)),
                     ),
                     const Icon(Icons.chevron_right, size: 18),
                   ]),

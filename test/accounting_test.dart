@@ -1318,4 +1318,35 @@ void main() {
       Books.start = keep;
     }
   });
+
+  test('days: complete old entries count from their last entry; marks for re-check are shared and clearable', () async {
+    final keep = Books.start;
+    Books.start = '2026-11-08';
+    AuditLog.actor = owner;
+    try {
+      final c = await lr.create(name: 'Nilesh', group: LedgerGroup.customer, openingBalance: rs(1000));
+      Future<void> old(String date, String kind, int amount) => vs.save(
+          VoucherInput(type: VoucherType.history, date: date, partyId: c, payLedgerId: '$historyKindPrefix$kind', amount: amount), owner);
+      await old('2026-05-30', 'opening', rs(200));
+      await old('2026-06-08', 'sale', rs(500));
+      int days(String from) => parseIso(todayIso()).difference(parseIso(from)).inDays;
+      // not complete yet (700 of 1,000): from the first old entry
+      expect((await lr.daysUnpaid())[c], days('2026-05-30'));
+      expect((await lr.oldSummaries())[c]!.total, rs(700));
+      await old('2026-06-22', 'sale', rs(300));
+      // complete: from the last old entry
+      expect((await lr.daysUnpaid())[c], days('2026-06-22'));
+      final st = await lr.statement(c);
+      expect((await lr.oldSummaries())[c]!.total, st.references.last.balance, reason: 'same formula as the khata');
+
+      expect(await lr.recheckMarks(), isEmpty);
+      await lr.setRecheck(c, 'Nilesh', true, note: 'see old book');
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      expect(await lr.recheckMarks(), {c: 'see old book'});
+      await lr.setRecheck(c, 'Nilesh', false);
+      expect(await lr.recheckMarks(), isEmpty);
+    } finally {
+      Books.start = keep;
+    }
+  });
 }
