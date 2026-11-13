@@ -30,6 +30,7 @@ class _LiveBuilderState<T> extends State<LiveBuilder<T>> {
   dynamic _sub;
   Timer? _debounce;
   bool _loading = false, _again = false;
+  bool _loaded = false; // a load has finished (its answer may itself be "nothing")
 
   @override
   void initState() {
@@ -64,6 +65,7 @@ class _LiveBuilderState<T> extends State<LiveBuilder<T>> {
       final d = await widget.load();
       if (mounted) setState(() {
         _data = d;
+        _loaded = true;
         _error = null;
       });
     } catch (e, st) {
@@ -88,7 +90,7 @@ class _LiveBuilderState<T> extends State<LiveBuilder<T>> {
   @override
   Widget build(BuildContext context) {
     if (_error != null) return Center(child: Padding(padding: const EdgeInsets.all(16), child: Text('$_error')));
-    if (_data == null) return const Center(child: CircularProgressIndicator());
+    if (!_loaded) return const Center(child: CircularProgressIndicator());
     return widget.builder(context, _data as T);
   }
 }
@@ -109,7 +111,11 @@ class BalanceText extends StatelessWidget {
     }
     final owesUs = balance > 0;
     final color = owesUs ? Colors.red.shade700 : Colors.green.shade700;
-    return Column(
+    // shrinks to fit its row instead of spilling out (large text, narrow rows)
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      alignment: Alignment.centerRight,
+      child: Column(
       crossAxisAlignment: CrossAxisAlignment.end,
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -123,6 +129,7 @@ class BalanceText extends StatelessWidget {
                   // quiet until it is old: grey → amber after a month → red after two
                   color: days! > 60 ? Colors.red.shade400 : days! > 30 ? Colors.orange.shade700 : Colors.grey.shade600)),
       ],
+      ),
     );
   }
 }
@@ -308,11 +315,14 @@ class DayStepper extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final d = parseIso(date);
-    return Row(mainAxisSize: MainAxisSize.min, children: [
-      IconButton(icon: const Icon(Icons.chevron_left), onPressed: () => onChanged(isoDate(d.subtract(const Duration(days: 1))))),
-      DateButton(date: date, onChanged: onChanged),
-      IconButton(icon: const Icon(Icons.chevron_right), onPressed: () => onChanged(isoDate(d.add(const Duration(days: 1))))),
-    ]);
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        IconButton(icon: const Icon(Icons.chevron_left), onPressed: () => onChanged(isoDate(d.subtract(const Duration(days: 1))))),
+        DateButton(date: date, onChanged: onChanged),
+        IconButton(icon: const Icon(Icons.chevron_right), onPressed: () => onChanged(isoDate(d.add(const Duration(days: 1))))),
+      ]),
+    );
   }
 }
 

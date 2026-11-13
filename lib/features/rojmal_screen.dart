@@ -12,6 +12,7 @@ import 'booking_screen.dart';
 import 'cash_count_screen.dart';
 import 'day_close_screen.dart';
 import 'review_screen.dart';
+import 'screen_tour.dart';
 import 'report_view.dart';
 import 'voucher_screen.dart';
 
@@ -128,20 +129,25 @@ class _RojmalScreenState extends State<RojmalScreen> {
             ),
             if (onUdhari) Expanded(child: _UdhariView(date: date)),
             if (!onUdhari) _summary(context, book),
-            if (!onUdhari && !charges.isEmpty) _DayEndCard(charges: charges),
+            // the day-end card scrolls with the lists: opened, it can be taller
+            // than the screen (large text, small phones) and its last button
+            // must stay reachable
             if (!onUdhari)
-            Expanded(
-              child: wide
-                  ? Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Expanded(child: _side(context, t('inflow'), ins, true)),
-                      const VerticalDivider(width: 1),
-                      Expanded(child: _side(context, t('outflow'), outs, false)),
+              Expanded(
+                child: ListView(padding: const EdgeInsets.only(bottom: 90), children: [
+                  if (!charges.isEmpty) _DayEndCard(charges: charges),
+                  if (wide)
+                    Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Expanded(child: _side(context, t('inflow'), ins, true, scroll: false)),
+                      const SizedBox(width: 1),
+                      Expanded(child: _side(context, t('outflow'), outs, false, scroll: false)),
                     ])
-                  : ListView(padding: const EdgeInsets.only(bottom: 90), children: [
-                      _side(context, t('inflow'), ins, true, scroll: false),
-                      _side(context, t('outflow'), outs, false, scroll: false),
-                    ]),
-            ),
+                  else ...[
+                    _side(context, t('inflow'), ins, true, scroll: false),
+                    _side(context, t('outflow'), outs, false, scroll: false),
+                  ],
+                ]),
+              ),
           ]),
         );
       },
@@ -316,6 +322,7 @@ class _DayEndCard extends StatelessWidget {
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 8),
       child: ExpansionTile(
+        initiallyExpanded: ScreenTour.expandAll,
         key: PageStorageKey('dayend_${c.date}'),
         leading: const Icon(Icons.fact_check_outlined),
         title: Text(t('day_end')),

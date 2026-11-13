@@ -638,6 +638,10 @@ class _KhataScreenState extends State<KhataScreen> {
                       if (context.mounted) await VoucherScreen.open(context, VoucherType.sale, partyId: l.id);
                     case 'v_receipt':
                       if (context.mounted) await VoucherScreen.open(context, VoucherType.receipt, partyId: l.id);
+                    case 'v_sret':
+                      if (context.mounted) await VoucherScreen.open(context, VoucherType.salesReturn, partyId: l.id);
+                    case 'v_pret':
+                      if (context.mounted) await VoucherScreen.open(context, VoucherType.purchaseReturn, partyId: l.id);
                     case 'v_purchase':
                       if (context.mounted) await VoucherScreen.open(context, VoucherType.purchase, partyId: l.id);
                     case 'v_payment':
@@ -688,6 +692,9 @@ class _KhataScreenState extends State<KhataScreen> {
                   }
                 },
                 itemBuilder: (_) => [
+                  // goods coming back (also goods bought before the books started)
+                  if (l.group == LedgerGroup.customer) PopupMenuItem(value: 'v_sret', child: Text(t('sales_return_goods'))),
+                  if (l.group == LedgerGroup.supplier) PopupMenuItem(value: 'v_pret', child: Text(t('purchase_return_goods'))),
                   // the "other side" for someone who is both customer and supplier
                   if (l.group == LedgerGroup.customer) ...[
                     PopupMenuItem(value: 'v_purchase', child: Text(t('purchase'))),
@@ -733,21 +740,33 @@ class _KhataScreenState extends State<KhataScreen> {
                   const SizedBox(width: 8),
                 ],
                 if (l.group.isParty)
-                  FilledButton.tonalIcon(
-                    icon: const Icon(Icons.chat),
-                    label: Text(t('remind')),
-                    onPressed: () => WhatsApp.send(
-                      l.phone,
-                      t('reminder_msg')
-                          .replaceAll('{name}', l.name)
-                          .replaceAll('{shop}', app.businessName)
-                          .replaceAll('{amount}', Money.fmt(st.closing, abs: true)),
+                  Flexible(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: FilledButton.tonalIcon(
+                        icon: const Icon(Icons.chat),
+                        label: Text(t('remind')),
+                        onPressed: () => WhatsApp.send(
+                          l.phone,
+                          t('reminder_msg')
+                              .replaceAll('{name}', l.name)
+                              .replaceAll('{shop}', app.businessName)
+                              .replaceAll('{amount}', Money.fmt(st.closing, abs: true)),
+                        ),
+                      ),
                     ),
                   ),
                 const SizedBox(width: 8),
                 IconButton.filledTonal(icon: const Icon(Icons.share), tooltip: t('statement'), onPressed: () => _shareImage(st)),
-                const Spacer(),
-                InkWell(
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerRight,
+                      child: InkWell(
                   key: const Key('open_aging'),
                   borderRadius: BorderRadius.circular(8),
                   onTap: st.closing == 0 ? null : () => PendingScreen.open(context, l.id),
@@ -757,6 +776,7 @@ class _KhataScreenState extends State<KhataScreen> {
                       Text('${t('pending_bills')} ›',
                           style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.w600)),
                   ]),
+                ))),
                 ),
               ]),
             ),

@@ -188,6 +188,7 @@ class AppController extends ChangeNotifier {
   List<HealthIssue>? health;
   DateTime? healthAt;
   bool healthBusy = false;
+  bool _healthQueued = false;
 
   /// Runs the check in the background (owner, data downloaded). [force]
   /// runs it now; otherwise at most every 2 hours.
@@ -195,11 +196,19 @@ class AppController extends ChangeNotifier {
     if (healthBusy || businessId == null || !actor.isOwner || _vouchers == null) return;
     if (!force && healthAt != null && DateTime.now().difference(healthAt!) < const Duration(hours: 2)) return;
     if (cloud && !(db.currentStatus.hasSynced ?? false)) return;
+    if (!force) {
+      // background run: let the app open and settle first
+      if (_healthQueued) return;
+      _healthQueued = true;
+      await Future<void>.delayed(const Duration(seconds: 30));
+      _healthQueued = false;
+      if (healthBusy || businessId == null || _vouchers == null) return;
+    }
     healthBusy = true;
     await Future<void>.delayed(Duration.zero); // never during a screen build
     notifyListeners();
     try {
-      health = await HealthCheck(db, businessId!, vouchers, ledgers, stock).run();
+      health = await HealthCheck(db, businessId!, vouchers, ledgers, stock).run(gentle: !force);
       healthAt = DateTime.now();
     } catch (_) {
       // never let the check itself get in the way of work

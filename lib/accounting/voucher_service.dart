@@ -941,7 +941,8 @@ class VoucherService {
   /// खोल तपासणी: for every money entry, works out afresh what it should have
   /// posted from its saved details and compares that with the lines in the
   /// books, account by account. Returns (entry, what differs); empty = all good.
-  Future<List<(Voucher, String)>> deepCheck() async {
+  /// [breathe] is awaited now and then so a background run never holds up the screen.
+  Future<List<(Voucher, String)>> deepCheck({Future<void> Function()? breathe}) async {
     final rows = await db.getAll(
         'SELECT v.*, p.name AS party_name FROM vouchers v LEFT JOIN ledgers p ON p.id = v.party_id '
         'WHERE v.business_id = ? AND v.deleted = 0 ORDER BY v.vdate, v.created_at',
@@ -956,7 +957,9 @@ class VoucherService {
     // goods and services are one bucket: an item may have been moved between them later
     String bucket(String id) => id == sys('service_income') ? sys('sales') : id == sys('service_cost') ? sys('purchase') : id;
     final bad = <(Voucher, String)>[];
+    var n = 0;
     for (final r in rows) {
+      if (breathe != null && ++n % 25 == 0) await breathe();
       final v = Voucher.fromRow(r);
       final actual = <String, int>{};
       var net = 0;

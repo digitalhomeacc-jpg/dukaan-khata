@@ -1654,7 +1654,9 @@ class _VoucherScreenState extends State<VoucherScreen> {
   String _typed = ''; // the item box text before a pick clears it
   Widget _quickEntry(AppController app) {
     final t = app.t;
-    return RawAutocomplete<Object>(
+    return KeyedSubtree(
+      key: _quickKey,
+      child: RawAutocomplete<Object>(
       textEditingController: quick,
       focusNode: quickFocus,
       displayStringForOption: (_) => '',
@@ -1683,6 +1685,9 @@ class _VoucherScreenState extends State<VoucherScreen> {
         key: const Key('quick_entry'),
         controller: c,
         focusNode: f,
+        // bring the box to the top so the list below it stays above the keyboard
+        onTap: _liftQuick,
+        onChanged: (_) => _liftQuick(),
         autofocus: editing == null && party != null,
         textInputAction: TextInputAction.done,
         onSubmitted: (s) {
@@ -1711,13 +1716,19 @@ class _VoucherScreenState extends State<VoucherScreen> {
       ),
       optionsViewBuilder: (context, onSelected, options) {
         final scheme = Theme.of(context).colorScheme;
+        // only as tall as the room really left between the box and the keyboard
+        final mq = MediaQuery.of(this.context);
+        final box = _quickKey.currentContext?.findRenderObject() as RenderBox?;
+        final below = box == null || !box.hasSize
+            ? 320.0
+            : mq.size.height - mq.viewInsets.bottom - box.localToGlobal(Offset(0, box.size.height)).dy - 12;
         return Align(
           alignment: Alignment.topLeft,
           child: Material(
             elevation: 6,
             borderRadius: BorderRadius.circular(10),
             child: ConstrainedBox(
-              constraints: BoxConstraints(maxHeight: 320, maxWidth: MediaQuery.of(context).size.width - 32),
+              constraints: BoxConstraints(maxHeight: below.clamp(130.0, 320.0), maxWidth: MediaQuery.of(context).size.width - 32),
               child: ListView(shrinkWrap: true, padding: EdgeInsets.zero, children: [
                 for (final o in options)
                   if (o is Item)
@@ -1744,7 +1755,23 @@ class _VoucherScreenState extends State<VoucherScreen> {
           ),
         );
       },
+    ),
     );
+  }
+
+  final _quickKey = GlobalKey();
+
+  /// Scrolls the item box to the top of the screen (again once the keyboard
+  /// has finished opening) so its suggestions are not hidden behind the keyboard.
+  void _liftQuick() {
+    for (final ms in const [60, 380, 750]) {
+      Future<void>.delayed(Duration(milliseconds: ms), () {
+        final c = _quickKey.currentContext;
+        if (c != null && c.mounted) {
+          Scrollable.ensureVisible(c, alignment: 0.02, duration: const Duration(milliseconds: 160));
+        }
+      });
+    }
   }
 
   Widget _itemChips(AppController app) => SizedBox(

@@ -71,8 +71,15 @@ class HealthCheck {
   final LedgerRepo ledgers;
   final StockRepo stock;
 
-  Future<List<HealthIssue>> run() async {
+  /// [gentle]: pause briefly as it goes (background runs on a phone in use).
+  Future<List<HealthIssue>> run({bool gentle = false}) async {
     final out = <HealthIssue>[];
+    var n = 0;
+    Future<void> breathe() => Future<void>.delayed(const Duration(milliseconds: 12));
+    Future<void> tick() async {
+      if (gentle && ++n % 25 == 0) await breathe();
+    }
+
     final b = businessId;
 
     // 1. the books balance
@@ -142,7 +149,7 @@ class HealthCheck {
     }
 
     // 3. each entry's money lines worked out again from its details
-    for (final (v, why) in await vouchers.deepCheck()) {
+    for (final (v, why) in await vouchers.deepCheck(breathe: gentle ? breathe : null)) {
       out.add(HealthIssue('postings', '${v.type.code} #${v.vno}', why, voucherId: v.id));
     }
 
@@ -165,6 +172,7 @@ class HealthCheck {
     for (final r in await db.getAll("SELECT id, vtype, vno, deleted FROM vouchers WHERE business_id = ? AND vtype <> 'history'", [
       b,
     ])) {
+      await tick();
       final id = r['id'] as String;
       final h = last[id];
       if (h == null) continue; // made before the history existed
@@ -200,6 +208,7 @@ class HealthCheck {
 
     // accounts
     for (final r in await db.getAll('SELECT id, name FROM ledgers WHERE business_id = ?', [b])) {
+      await tick();
       final id = r['id'] as String;
       final h = last[id];
       if (h == null || h.$1 == 'delete' || h.$2 == null) continue;
@@ -227,6 +236,7 @@ class HealthCheck {
 
     // items
     for (final r in await db.getAll('SELECT id, name FROM items WHERE business_id = ?', [b])) {
+      await tick();
       final id = r['id'] as String;
       final h = last[id];
       if (h == null || h.$1 == 'delete' || h.$2 == null) continue;

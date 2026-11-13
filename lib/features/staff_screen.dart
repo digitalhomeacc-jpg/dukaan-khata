@@ -78,11 +78,15 @@ class _StaffBalance extends StatelessWidget {
     final t = App.of(context).t;
     if (balance == 0) return Text(t('settled'), style: TextStyle(color: Colors.grey.shade600));
     final adv = balance > 0;
-    return Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.end, children: [
-      Text('₹${Money.fmt(balance.abs())}',
-          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: adv ? AppColors.due : AppColors.haldi)),
-      Text(t(adv ? 'advance_due' : 'salary_due'), style: TextStyle(fontSize: 11, color: adv ? AppColors.due : AppColors.haldi)),
-    ]);
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      alignment: Alignment.centerRight,
+      child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.end, children: [
+        Text('₹${Money.fmt(balance.abs())}',
+            style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: adv ? AppColors.due : AppColors.haldi)),
+        Text(t(adv ? 'advance_due' : 'salary_due'), style: TextStyle(fontSize: 11, color: adv ? AppColors.due : AppColors.haldi)),
+      ]),
+    );
   }
 }
 

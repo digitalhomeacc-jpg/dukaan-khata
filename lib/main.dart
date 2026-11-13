@@ -6,7 +6,9 @@ import 'core/theme.dart';
 import 'features/auth_screens.dart';
 import 'features/home_screen.dart';
 import 'features/parties_screen.dart';
+import 'core/demo.dart';
 import 'features/rojmal_screen.dart';
+import 'features/screen_tour.dart';
 import 'features/settings_screen.dart';
 import 'features/stock_screen.dart';
 import 'features/voucher_screen.dart';
@@ -36,6 +38,10 @@ class DukaanKhataApp extends StatelessWidget {
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
+      // layout check (demo tour) at a larger text size, like a phone set to big fonts
+      builder: (ctx, child) => ScreenTour.textScale == null
+          ? child!
+          : MediaQuery(data: MediaQuery.of(ctx).copyWith(textScaler: TextScaler.linear(ScreenTour.textScale!)), child: child!),
       home: switch (app.stage) {
         Stage.loading => const Scaffold(body: Center(child: CircularProgressIndicator())),
         Stage.error => Scaffold(body: Center(child: Padding(padding: const EdgeInsets.all(24), child: Text(app.error ?? 'Error')))),
@@ -58,6 +64,15 @@ class Shell extends StatefulWidget {
 
 class _ShellState extends State<Shell> {
   int index = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    // demo build, opened with ?tour=1: walk through every screen (layout check)
+    if (demoMode && Uri.base.queryParameters['tour'] != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => ScreenTour.run(context));
+    }
+  }
 
   @override
   Widget build(BuildContext context) {

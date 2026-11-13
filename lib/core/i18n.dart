@@ -34,6 +34,8 @@ const Map<String, (String, String)> _s = {
   'contra': ('रोख / बँक बदल', 'Cash / bank transfer'),
   'journal': ('जर्नल', 'Journal'),
   'sales_return': ('विक्री परत', 'Sales return'),
+  'sales_return_goods': ('माल परत आला (विक्री परत)', 'Goods returned (sales return)'),
+  'purchase_return_goods': ('माल परत दिला (खरेदी परत)', 'Goods sent back (purchase return)'),
   'purchase_return': ('खरेदी परत', 'Purchase return'),
   'stock_adjust': ('स्टॉक दुरुस्ती', 'Stock adjustment'),
   'save': ('जतन करा', 'Save'),

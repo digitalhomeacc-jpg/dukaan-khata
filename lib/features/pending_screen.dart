@@ -91,21 +91,28 @@ class PendingScreen extends StatelessWidget {
                     onTap: b.row == null ? null : () => VoucherScreen.edit(context, b.row!.voucherId),
                     leading: SizedBox(
                       width: 52,
-                      child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                        Text('${age(b)}', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: tone(age(b)))),
-                        Text(t('days'), style: TextStyle(fontSize: 10, color: tone(age(b)))),
-                      ]),
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Column(mainAxisSize: MainAxisSize.min, children: [
+                          Text('${age(b)}', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: tone(age(b)))),
+                          Text(t('days'), style: TextStyle(fontSize: 10, color: tone(age(b)))),
+                        ]),
+                      ),
                     ),
                     title: Text(label(b), style: const TextStyle(fontWeight: FontWeight.w600)),
                     subtitle: Text([
                       shortDate(b.date),
                       if (b.row != null && b.row!.details.isNotEmpty) b.row!.details,
                     ].join(' · ')),
-                    trailing: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.end, children: [
-                      Text(Money.fmt(b.left), style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
-                      if (b.left != b.amount)
-                        Text('${t('pending_of')} ${Money.fmt(b.amount)}', style: Theme.of(context).textTheme.bodySmall),
-                    ]),
+                    trailing: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerRight,
+                      child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.end, children: [
+                        Text(Money.fmt(b.left), style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+                        if (b.left != b.amount)
+                          Text('${t('pending_of')} ${Money.fmt(b.amount)}', style: Theme.of(context).textTheme.bodySmall),
+                      ]),
+                    ),
                   ),
                 ),
           ]);

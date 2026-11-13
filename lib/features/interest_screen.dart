@@ -331,11 +331,15 @@ class _InterestListScreenState extends State<InterestListScreen> {
                         '${fmtRate(l.interestRate)}% ${t('per_month')} · '
                         '${c.slabs.isEmpty ? t('interest_upto_date') : '${shortDate(c.from)} – ${shortDate(c.to)}'}',
                       ),
-                      trailing: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.end, children: [
-                        Text(c.interest > 0 ? '₹${Money.fmt(c.interest)}' : '–',
-                            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: c.interest > 0 ? AppColors.due : scheme.onSurfaceVariant)),
-                        BalanceText(l.balance, size: 12),
-                      ]),
+                      trailing: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerRight,
+                        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.end, children: [
+                          Text(c.interest > 0 ? '₹${Money.fmt(c.interest)}' : '–',
+                              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: c.interest > 0 ? AppColors.due : scheme.onSurfaceVariant)),
+                          BalanceText(l.balance, size: 12),
+                        ]),
+                      ),
                       onTap: () async {
                         await InterestScreen.open(context, l.id);
                         if (mounted) setState(() => reload++);
