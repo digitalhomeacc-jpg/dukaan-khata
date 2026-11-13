@@ -22,6 +22,7 @@ import {
   looksTransactional,
   merchantKey,
   type ParsedTxn,
+  defaultCategoryName,
   parseBalanceEmail,
   parseBankEmail,
   SEARCH_KEYWORDS,
@@ -74,6 +75,11 @@ Deno.serve(async (req) => {
   const { data: rules } = await supabase
     .from("merchant_rules").select("merchant_key, category_id").eq("user_id", userId);
   const ruleFor = new Map((rules ?? []).map((r) => [r.merchant_key as string, r.category_id as string]));
+  const { data: cats } = await supabase.from("categories").select("id, name").eq("user_id", userId);
+  const categoryNamed = new Map((cats ?? []).map((c) => [c.name as string, c.id as string]));
+  /** The user's rule for this payee, else a default for well-known names (Zomato → Food & Dining). */
+  const categoryFor = (merchant: string | null): string | null =>
+    ruleFor.get(merchantKey(merchant)) ?? categoryNamed.get(defaultCategoryName(merchant) ?? "") ?? null;
 
   const accounts = await loadAccounts(userId);
   const cashId = accounts.find((a) => a.kind === "cash")?.id ?? null;
@@ -134,7 +140,7 @@ Deno.serve(async (req) => {
       if (t.balanceAfter != null && accountId) {
         readings.push({ user_id: userId, account_id: accountId, balance: t.balanceAfter, as_of: t.txnAt, email_id: email.id });
       }
-      const rule = ruleFor.get(merchantKey(t.merchant)) ?? null;
+      const rule = categoryFor(t.merchant);
       const old = existing.get(email.id);
       if (!old) {
         inserts.push({ ...row, user_id: userId, source: "email", email_id: email.id, category_id: rule });
@@ -203,7 +209,7 @@ Deno.serve(async (req) => {
         user_id: userId, source: "email", email_id: email.id,
         amount: ev.amount, direction: "debit", merchant: ev.merchant, method: "other",
         txn_at: ev.at, account_id: loan.account_id, loan_id: loan.id, loan_role: "spend",
-        category_id: ruleFor.get(merchantKey(ev.merchant)) ?? null,
+        category_id: categoryFor(ev.merchant),
         email_subject: email.subject.slice(0, 200), email_body: email.body.slice(0, KEEP_BODY),
         email_from: email.from.slice(0, 200), email_received_at: email.date,
       }, { onConflict: "user_id,email_id" }).select("id").maybeSingle();
@@ -250,7 +256,15 @@ async function accountFor(userId: string, accounts: Account[], t: ParsedTxn): Pr
   if (!t.bank) return null;
   if (!t.accountLast4) {
     const same = accounts.filter((a) => a.bank === t.bank && a.kind === t.accountKind);
-    return same.length === 1 ? same[0].id : null;
+    if (same.length === 1) return same[0].id;
+    if (t.accountKind !== "wallet" || same.length > 1) return null;
+    // A wallet has no account number: one per provider, e.g. "Amazon Pay balance".
+    const { data } = await supabase.from("accounts")
+      .upsert({ user_id: userId, name: `${t.bank} balance`, kind: "wallet", bank: t.bank }, { onConflict: "user_id,name" })
+      .select("id, name, kind, bank, last4").single();
+    if (!data) return null;
+    accounts.push(data as Account);
+    return (data as Account).id;
   }
   const found = accounts.find((a) => a.bank === t.bank && a.last4 === t.accountLast4);
   if (found) return found.id;

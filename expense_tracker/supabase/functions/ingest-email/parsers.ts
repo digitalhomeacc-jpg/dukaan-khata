@@ -23,7 +23,7 @@ export interface ParsedTxn {
   bank: string | null;
   accountLast4: string | null;
   /** Credit card vs. bank account (debit cards and UPI belong to the bank account). */
-  accountKind: "bank" | "card";
+  accountKind: "bank" | "card" | "wallet";
   method: Method;
   /** ISO timestamp of the transaction. */
   txnAt: string;
@@ -98,7 +98,7 @@ export const BANK_SENDERS = [
 ];
 
 /** New senders whose emails are kept whole until their format is learned. */
-export const REVIEW_SENDERS = ["amazonpay.in"];
+export const REVIEW_SENDERS: string[] = [];
 
 export function isReviewSender(from: string): boolean {
   const f = from.toLowerCase();
@@ -203,6 +203,7 @@ function cleanMerchant(raw: string | undefined | null): string | null {
   if (/^(your|the|a|an|on|via|using|account|a\/c)$/i.test(s)) return null;
   // Footer and help text is never a payee.
   if (/support you|every step|report it|customer care|toll.?free|your (hdfc|icici|sbi|axis)? ?(bank )?(account|a\/c)/i.test(s)) return null;
+  s = s.replace(/\s+(?:private\s+limited|pvt\.?\s*ltd\.?|limited|ltd\.?)$/i, "").trim() || s;
   if (s.length > 48) s = s.slice(0, 48).trim();
   return tidyCase(s);
 }
@@ -366,8 +367,42 @@ function resolveTime(text: string, emailDate: string): string {
   return days > 10 ? fallback : iso.toISOString();
 }
 
+/** Amazon Pay wallet emails: payments from the balance, cashback and refunds into it. */
+function parseAmazonPay(email: EmailInput, text: string): ParseResult {
+  const t = text.toLowerCase();
+  const no: ParseResult = { ok: false, reason: "not_transaction" };
+  if (/\b(failed|declined|unsuccessful)\b|payment reminder|was due on|bill is due/.test(t)) return no;
+  const txn = (amount: string, direction: Direction, merchant: string | null): ParseResult => ({
+    ok: true,
+    txn: {
+      amount: Math.round(Number(amount.replace(/,/g, "")) * 100) / 100,
+      direction,
+      merchant,
+      bank: "Amazon Pay",
+      accountLast4: null,
+      accountKind: "wallet",
+      method: "other",
+      txnAt: resolveTime(text, email.date),
+      isTransfer: false,
+      balanceAfter: null,
+    },
+  });
+  let m = text.match(new RegExp(String.raw`(?:rs\.?|₹)\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)\s+was\s+paid\s+on\s+([A-Za-z0-9.\- ]{2,40}?)(?=\.\s|\s+hi\b|\s*$)`, "i"));
+  if (m) return txn(m[1], "debit", cleanMerchant(m[2].replace(/\.in$/i, "")));
+  m = text.match(new RegExp(String.raw`payment\s+of\s+(?:rs\.?|₹)\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)\s+to\s+(.{2,50}?)\s+was\s+successful`, "i"));
+  if (m) return txn(m[1], "debit", cleanMerchant(m[2]));
+  m = text.match(new RegExp(String.raw`(?:rs\.?|₹)\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)\s+cashback`, "i"));
+  if (m) return txn(m[1], "credit", "Amazon Pay cashback");
+  m = text.match(new RegExp(String.raw`refund[^.]{0,80}?(?:rs\.?|₹)\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)`, "i")) ??
+    text.match(new RegExp(String.raw`(?:rs\.?|₹)\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)[^.]{0,60}?refund`, "i"));
+  if (m) return txn(m[1], "credit", "Amazon refund");
+  if (/refund/.test(t)) return { ok: false, reason: "unreadable" }; // refund without an amount: the user adds it
+  return no;
+}
+
 export function parseBankEmail(email: EmailInput): ParseResult {
   if (isMarketingSender(email.from)) return { ok: false, reason: "not_transaction" };
+  if (/amazonpay\.in/i.test(email.from)) return parseAmazonPay(email, normalize(`${email.subject}. ${email.body}`));
   const text = normalize(`${email.subject}. ${email.body}`);
   if (isNoise(text)) return { ok: false, reason: "not_transaction" };
   const amount = findAmount(text);
@@ -521,4 +556,25 @@ export function parseBalanceEmail(email: EmailInput): BalanceReading | null {
     asOf = d ? new Date(`${d}T23:59:00${IST}`).toISOString() : received.toISOString();
   }
   return { bank: detectBank(email.from, text), accountLast4: findLast4(text), balance: b.balance, asOf };
+}
+
+// ------------------------------------------------------- default categories
+
+/** Well-known payees → the name of a default category. Used when the user has no rule. */
+const KNOWN_PAYEES: Array<[RegExp, string]> = [
+  [/\b(zomato|swiggy|domino|pizza|mcdonald|kfc|burger|starbucks|cafe|restaurant|hotel|dhaba|biryani|bakery|chai|tea)\b/i, "Food & Dining"],
+  [/\b(blinkit|zepto|bigbasket|dmart|d-mart|instamart|grocer|kirana|supermarket|reliance fresh|jiomart|milk|dairy)\b/i, "Groceries"],
+  [/\b(amazon|flipkart|myntra|ajio|meesho|nykaa|tata cliq|decathlon|reliance digital|croma)\b/i, "Shopping"],
+  [/\b(uber|ola|rapido|metro|irctc|redbus|petrol|fuel|hp |indian oil|bharat petroleum|fastag|parking)\b/i, "Transport"],
+  [/\b(airtel|jio|vodafone|vi |bsnl|recharge|electricity|bescom|msedcl|mahavitaran|tata power|gas|broadband|act fibernet|dth|tata play)\b/i, "Bills & Utilities"],
+  [/\b(netflix|prime video|hotstar|spotify|youtube|bookmyshow|pvr|inox|apple media|google play|steam)\b/i, "Entertainment"],
+  [/\b(apollo|pharmacy|medical|medplus|1mg|pharmeasy|hospital|clinic|diagnostic|lab)\b/i, "Health"],
+  [/\b(makemytrip|goibibo|indigo|air india|vistara|akasa|oyo|airbnb|cleartrip)\b/i, "Travel"],
+  [/\bcashback\b/i, "Other"],
+];
+
+export function defaultCategoryName(merchant: string | null): string | null {
+  if (!merchant) return null;
+  for (const [re, name] of KNOWN_PAYEES) if (re.test(merchant)) return name;
+  return null;
 }

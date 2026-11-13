@@ -29,7 +29,7 @@ test("HDFC UPI debit", () => {
   ));
   assert.equal(t.amount, 250);
   assert.equal(t.direction, "debit");
-  assert.equal(t.merchant, "Swiggy Limited");
+  assert.equal(t.merchant, "Swiggy");
   assert.equal(t.bank, "HDFC");
   assert.equal(t.accountLast4, "4321");
   assert.equal(t.method, "upi");
@@ -373,4 +373,48 @@ test("balance as on a date", () => {
   assert.ok(r);
   assert.equal(r.balance, 1234.56);
   assert.equal(r.accountLast4, "3191");
+});
+
+// ---------------------------------------------------------------- Amazon Pay (made-up amounts)
+const AMZ = "Amazon Pay India <no-reply@amazonpay.in>";
+
+test("Amazon Pay balance: paid on Amazon.in", () => {
+  const t = ok(mail(AMZ, "Rs 802.00 was paid on Amazon.in", "Hi Asha, Thanks for using Amazon Pay Balance. Your payment was successful."));
+  assert.equal(t.amount, 802);
+  assert.equal(t.direction, "debit");
+  assert.equal(t.merchant, "Amazon");
+  assert.equal(t.bank, "Amazon Pay");
+  assert.equal(t.accountKind, "wallet");
+});
+
+test("Amazon Pay: Zomato payment with its own date and time", () => {
+  const t = ok(mail(AMZ, "Your payment of ₹ 1071.98 to Zomato Limited was successful",
+    "Hi Asha, Your payment to Zomato Limited is Approved. Amount: ₹1071.98 Payment date: Monday, 02 November, 2026 12:21:52 PM IST Terms and Conditions:", "2026-11-02T06:52:00.000Z"));
+  assert.equal(t.amount, 1071.98);
+  assert.equal(t.merchant, "Zomato");
+  assert.equal(t.txnAt, "2026-11-02T06:51:52.000Z");
+  const late = ok(mail(AMZ, "Your payment of ₹ 1079.01 to Zomato Limited was successful",
+    "Amount: ₹1079.01 Payment date: Sunday, 18 October, 2026 13:48:09 PM IST", "2026-10-18T08:18:30.000Z"));
+  assert.equal(late.txnAt, "2026-10-18T08:18:09.000Z");
+});
+
+test("Amazon Pay: cashback is money into the wallet; reminders and failures are not transactions", () => {
+  const c = ok(mail(AMZ, "Your cashback of ₹21.71 is here!", "Hi Asha, Yay! Here’s ₹21.71 cashback! You’ve got this cashback for diapers"));
+  assert.equal(c.direction, "credit");
+  assert.equal(c.amount, 21.71);
+  rejected(mail(AMZ, "Payment Reminder", "Your prepaid recharge bill payment was due on 11 Nov 2026"));
+  rejected(mail(AMZ, "Your Mobile recharge for Rs. 1298 is successful", "We are sorry that your Electricity bill payment for Rs.1298 has failed."));
+});
+
+import { defaultCategoryName } from "./parsers.ts";
+
+test("well-known payees get a default category", () => {
+  assert.equal(defaultCategoryName("Zomato"), "Food & Dining");
+  assert.equal(defaultCategoryName("Swiggy"), "Food & Dining");
+  assert.equal(defaultCategoryName("Amazon"), "Shopping");
+  assert.equal(defaultCategoryName("Uber India"), "Transport");
+  assert.equal(defaultCategoryName("HP Petrol Pump Loni"), "Transport");
+  assert.equal(defaultCategoryName("Apple Media Services"), "Entertainment");
+  assert.equal(defaultCategoryName("Aayush medical and general store"), "Health");
+  assert.equal(defaultCategoryName("Sanket Pramod Patil"), null);
 });
