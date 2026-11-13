@@ -324,6 +324,11 @@ class Reports {
   /// purchases and credit notes since the books start. A month's discounts
   /// are shared over that month's items by value; security / other charges
   /// and payments are not costs.
+  /// Rewards paid out as gift cards (Wonder Coin) and insurance (GMC policy)
+  /// are not a discount on the goods: left out of the real cost.
+  static const _notScheme = "AND COALESCE(v.narration, '') NOT LIKE '%coin%' AND COALESCE(v.narration, '') NOT LIKE '%GMC%' "
+      "AND COALESCE(v.narration, '') NOT LIKE '%gift%'";
+
   Future<ReportTable> supplierCost(String supplierId, String from, String to) async {
     final sup = (await ledgers.byId(supplierId))!;
     // whole financial years, so a year's discounts are spread over all of its goods
@@ -342,14 +347,15 @@ class Reports {
     final disc = <String, int>{};
     for (final r in await db.getAll(
         'SELECT substr(vl.vdate, 1, 7) AS m, SUM(vl.credit - vl.debit) AS d FROM voucher_lines vl JOIN vouchers v ON v.id = vl.voucher_id '
-        'WHERE v.party_id = ? AND v.deleted = 0 AND vl.deleted = 0 AND vl.ledger_id = ? AND vl.vdate BETWEEN ? AND ? GROUP BY m',
+        'WHERE v.party_id = ? AND v.deleted = 0 AND vl.deleted = 0 AND vl.ledger_id = ? AND vl.vdate BETWEEN ? AND ? $_notScheme GROUP BY m',
         [supplierId, '$businessId:discount_recd', from, to])) {
       disc[r['m'] as String] = (disc[r['m'] as String] ?? 0) + (r['d'] as num).toInt();
     }
     for (final r in await db.getAll(
         "SELECT substr(vdate, 1, 7) AS m, SUM(amount) AS d FROM vouchers WHERE party_id = ? AND vtype = 'history' AND deleted = 0 "
         "AND vdate BETWEEN ? AND ? AND (status LIKE 'stmt:discount%' OR (COALESCE(status, '') NOT LIKE 'stmt:%' "
-        "AND pay_ledger_id = 'hist:paid' AND (narration LIKE '%discount%' OR narration LIKE '%सूट%' OR narration LIKE '%scheme%'))) GROUP BY m",
+        "AND pay_ledger_id = 'hist:paid' AND (narration LIKE '%discount%' OR narration LIKE '%सूट%' OR narration LIKE '%scheme%'))) "
+        '${_notScheme.replaceAll('v.narration', 'narration')} GROUP BY m',
         [supplierId, from, to])) {
       disc[r['m'] as String] = (disc[r['m'] as String] ?? 0) + (r['d'] as num).toInt();
     }
