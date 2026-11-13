@@ -97,6 +97,26 @@ function resyncLast30Days() {
   Logger.log(JSON.stringify(syncBankEmails()));
 }
 
+/** Shows what the script can see, to find out why nothing arrives. Run it and read the log. */
+function checkSetup() {
+  var senders = BANK_SENDERS.concat(CONFIG.EXTRA_SENDERS || []);
+  var since = Math.floor(Date.now() / 1000) - CONFIG.BACKFILL_DAYS * 86400;
+  var from = 'from:(' + senders.join(' OR ') + ')';
+  var all = GmailApp.search(from + ' after:' + since, 0, 100);
+  var tx = GmailApp.search(from + ' {' + KEYWORDS.join(' ') + '} after:' + since, 0, 100);
+  Logger.log('Bank emails in the last ' + CONFIG.BACKFILL_DAYS + ' days: ' + all.length +
+    ' threads, ' + tx.length + ' look like transactions.');
+  tx.slice(0, 10).forEach(function (t) {
+    var m = t.getMessages()[0];
+    Logger.log('  ' + m.getDate().toISOString().slice(0, 10) + ' | ' + m.getFrom() + ' | ' + m.getSubject());
+  });
+  if (!all.length) Logger.log('No bank emails found. Check that your bank sends email alerts, and add its sender to EXTRA_SENDERS.');
+  var triggers = ScriptApp.getProjectTriggers().filter(function (t) { return t.getHandlerFunction() === 'syncBankEmails'; });
+  Logger.log('Automatic sync: ' + (triggers.length ? 'on (every 5 minutes)' : 'OFF – run setup'));
+  var last = PropertiesService.getUserProperties().getProperty('lastSyncEpoch');
+  Logger.log('Last sync: ' + (last ? new Date(Number(last) * 1000).toString() : 'never'));
+}
+
 /** Stops the automatic sync. */
 function stopSync() {
   ScriptApp.getProjectTriggers().forEach(function (t) { ScriptApp.deleteTrigger(t); });
