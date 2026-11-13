@@ -7,6 +7,7 @@ import '../ui/category_picker.dart';
 import '../ui/category_style.dart';
 import '../ui/format.dart';
 import '../ui/same_person_card.dart';
+import 'friends_screen.dart';
 import 'txn_editor.dart';
 
 enum _Period { month, three, year, all }
@@ -336,6 +337,22 @@ class PlaceDetailScreen extends StatelessWidget {
                   'me' => 'Your own account: money to and from it is a move, not spending or income.',
                   _ => 'Tell the app who this is: it then counts their money the right way.',
                 }, style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
+                if (role == 'friend') ...[
+                  const SizedBox(height: 12),
+                  OutlinedButton.icon(
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => ListenableBuilder(
+                          listenable: data,
+                          builder: (_, _) =>
+                              FriendDetailScreen(data: data, person: data.personNames[AppData.keyOf(g.name)] ?? g.name),
+                        ),
+                      ),
+                    ),
+                    icon: const Icon(Icons.account_balance_wallet_outlined),
+                    label: Text('Balance with ${g.name.split(' ').first}: opening, settle up'),
+                  ),
+                ],
                 if (role == 'friend' && friendsCat != null) ...[
                   const SizedBox(height: 12),
                   SegmentedButton<bool>(

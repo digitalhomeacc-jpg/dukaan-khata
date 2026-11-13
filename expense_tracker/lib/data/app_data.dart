@@ -7,7 +7,7 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../config.dart';
-import '../logic/summary.dart' show ShareTotals, samePersonCandidates, shareTotals;
+import '../logic/summary.dart' show LoanBalance, ShareTotals, loanBalances, samePersonCandidates, shareTotals;
 import '../models.dart';
 
 /// Live copy of the signed-in user's data, kept up to date by Supabase Realtime.
@@ -68,6 +68,15 @@ class AppData extends ChangeNotifier {
       db.from('people').stream(primaryKey: ['user_id', 'name_key']).listen((rows) {
         people = {for (final r in rows) r['name_key'] as String: r['role'] as String};
         personNames = {for (final r in rows) r['name_key'] as String: r['name'] as String};
+        ledgerStarts = {
+          for (final r in rows)
+            if (r['ledger_from'] != null)
+              r['name_key'] as String: (
+                name: r['name'] as String,
+                from: DateTime.parse(r['ledger_from'] as String),
+                opening: ((r['opening'] as num?) ?? 0).toDouble(),
+              ),
+        };
         notifyListeners();
       }, onError: _onError),
       db.from('profiles').stream(primaryKey: ['id']).listen((rows) {
@@ -121,6 +130,34 @@ class AppData extends ChangeNotifier {
 
   /// Person (lower-case name) → role: friend, family, me or shop.
   Map<String, String> people = const {};
+
+  /// Friends started fresh: from that day, with an opening balance (positive: you owe them).
+  Map<String, ({String name, DateTime from, double opening})> ledgerStarts = const {};
+
+  /// Balance with each friend, honouring fresh starts.
+  List<LoanBalance> get friendBalances =>
+      loanBalances(transactions, loanCategoryIds, shares: shares, aliases: aliases, starts: ledgerStarts);
+
+  /// Starts [names] fresh from [from]: older entries become history. [opening] by name key (positive: you owe).
+  Future<void> startFresh(Map<String, String> names, DateTime from, {Map<String, double> opening = const {}}) async {
+    final day = DateTime(from.year, from.month, from.day);
+    ledgerStarts = {
+      ...ledgerStarts,
+      for (final MapEntry(:key, :value) in names.entries) key: (name: value, from: day, opening: opening[key] ?? 0),
+    };
+    notifyListeners();
+    final d = '${day.year}-${day.month.toString().padLeft(2, '0')}-${day.day.toString().padLeft(2, '0')}';
+    await _db.from('people').upsert([
+      for (final MapEntry(:key, :value) in names.entries)
+        {
+          'name_key': key,
+          'name': value,
+          'role': people[key] ?? 'friend',
+          'ledger_from': d,
+          'opening': opening[key] ?? 0,
+        },
+    ], onConflict: 'user_id,name_key');
+  }
 
   /// How each person's name is written, by name key.
   Map<String, String> personNames = const {};

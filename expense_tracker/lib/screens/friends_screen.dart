@@ -32,7 +32,7 @@ class FriendRow {
 /// Everyone in your Friends list: from your own payments, and connected friends' shared record.
 List<FriendRow> friendRows(AppData data) {
   final rows = <String, FriendRow>{};
-  for (final l in loanBalances(data.transactions, data.loanCategoryIds, shares: data.shares, aliases: data.aliases)) {
+  for (final l in data.friendBalances) {
     final link = data.linkFor(l.person);
     rows[AppData.keyOf(l.person)] = FriendRow(
       l.person,
@@ -105,6 +105,29 @@ class FriendsScreen extends StatelessWidget {
       appBar: AppBar(
         title: const Text('Friends'),
         actions: [
+          IconButton(
+            tooltip: 'Start everyone fresh',
+            icon: const Icon(Icons.restart_alt),
+            onPressed: () async {
+              final yes = await showDialog<bool>(
+                context: context,
+                builder: (c) => AlertDialog(
+                  title: const Text('Start everyone fresh from today?'),
+                  content: const Text(
+                    'Everything with friends before today counts as settled. Older entries stay as history. '
+                    'Then open a friend and set their opening balance if something is still owed.',
+                  ),
+                  actions: [
+                    TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancel')),
+                    FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Start fresh')),
+                  ],
+                ),
+              );
+              if (yes == true) {
+                await data.startFresh({for (final r in rows) AppData.keyOf(r.person): r.person}, DateTime.now());
+              }
+            },
+          ),
           IconButton(
             tooltip: 'Enter an invite code',
             icon: const Icon(Icons.person_add_alt_1),
@@ -371,11 +394,19 @@ class FriendDetailScreen extends StatelessWidget {
 
   /// "Not all of it is a loan": set what is really owed; the rest is kept as a note, e.g. his spends through you.
   Future<void> _correct(BuildContext context, double balance) async {
-    final result = await showDialog<({double owed, String reason})>(
+    final result = await showDialog<({double owed, String reason, bool fresh})>(
       context: context,
       builder: (c) => _CorrectBalanceDialog(person: person, balance: balance),
     );
     if (result == null) return;
+    if (result.fresh) {
+      await data.startFresh(
+        {AppData.keyOf(person): person},
+        DateTime.now(),
+        opening: {AppData.keyOf(person): result.owed},
+      );
+      return;
+    }
     final change = result.owed - balance; // positive: you owe more
     if (change.abs() < 0.005) return;
     await data.correctFriendBalance(person, change, result.reason);
@@ -429,12 +460,20 @@ class FriendDetailScreen extends StatelessWidget {
     final link = data.linkFor(person);
     final pending = data.pendingInviteFor(person);
     final me = data.me;
-    final l = loanBalances(
-      data.transactions,
-      data.loanCategoryIds,
-      shares: data.shares,
-      aliases: data.aliases,
-    ).where((x) => AppData.keyOf(x.person) == key).firstOrNull;
+    final l = data.friendBalances.where((x) => AppData.keyOf(x.person) == key).firstOrNull;
+    final start = data.ledgerStarts[key];
+    String canonKey(String name) => AppData.keyOf(data.aliases[AppData.keyOf(name)] ?? name);
+    final history = start == null
+        ? const <Txn>[]
+        : (data.transactions
+              .where(
+                (t) =>
+                    t.txnAt.isBefore(start.from) &&
+                    data.loanCategoryIds.contains(t.categoryId) &&
+                    canonKey(t.title) == key,
+              )
+              .toList()
+            ..sort((a, b) => b.txnAt.compareTo(a.txnAt)));
     final balance = link != null && me != null ? sharedBalance(data.sharedEntries, link.id, me) : (l?.balance ?? 0);
     final open = data.shares.where((s) => !s.paid && AppData.keyOf(s.person) == key).toList();
     final paidForMe = data.transactions.where((t) => t.paidBy != null && AppData.keyOf(t.paidBy!) == key).toList();
@@ -519,7 +558,7 @@ class FriendDetailScreen extends StatelessWidget {
                     child: OutlinedButton.icon(
                       onPressed: () => _correct(context, balance),
                       icon: const Icon(Icons.tune),
-                      label: const Text('Set balance'),
+                      label: const Text('Opening balance'),
                     ),
                   ),
                 ],
@@ -661,6 +700,40 @@ class FriendDetailScreen extends StatelessWidget {
                   onTap: () => openTxnEditor(context, data, existing: t),
                 ),
           ],
+          if (start != null) ...[
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.flag_outlined),
+              title: Text('Opening balance · ${dayLabel(start.from)}'),
+              subtitle: Text(
+                start.opening.abs() < 0.005
+                    ? 'Everything before was settled'
+                    : (start.opening > 0 ? 'You owed $person' : '$person owed you'),
+              ),
+              trailing: Text(
+                start.opening.abs() < 0.005 ? '₹0' : money(start.opening.abs()),
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ),
+            if (history.isNotEmpty)
+              ExpansionTile(
+                leading: const Icon(Icons.history),
+                title: Text('History before ${dayLabel(start.from)}'),
+                subtitle: Text('${history.length} entries · not counted'),
+                children: [
+                  for (final t in history)
+                    ListTile(
+                      dense: true,
+                      enabled: false,
+                      title: Text('${t.isDebit ? 'You sent' : 'You got'} ${money(t.amount)}'),
+                      subtitle: Text(
+                        [dayLabel(t.txnAt), if (AppData.keyOf(t.title) != key) 'as ${t.title}'].join(' · '),
+                      ),
+                      onTap: () => openTxnEditor(context, data, existing: t),
+                    ),
+                ],
+              ),
+          ],
         ],
       ),
     );
@@ -684,6 +757,7 @@ class _CorrectBalanceDialogState extends State<_CorrectBalanceDialog> {
   late var _youOwe = widget.balance >= 0;
   late final _amount = TextEditingController(text: _plain(widget.balance.abs()));
   var _reason = _reasons.first;
+  var _fresh = true;
 
   static String _plain(double v) => v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toStringAsFixed(2);
 
@@ -728,7 +802,17 @@ class _CorrectBalanceDialogState extends State<_CorrectBalanceDialog> {
               decoration: const InputDecoration(labelText: 'Amount', prefixText: '₹ '),
               onChanged: (_) => setState(() {}),
             ),
-            if (diff != null && diff >= 0.005) ...[
+            const SizedBox(height: 8),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              value: _fresh,
+              onChanged: (v) => setState(() => _fresh = v),
+              title: const Text('Start fresh from today'),
+              subtitle: const Text(
+                'Older entries stay as history but stop counting; this amount is the opening balance',
+              ),
+            ),
+            if (!_fresh && diff != null && diff >= 0.005) ...[
               const SizedBox(height: 12),
               Text('The other ${money(diff)} was:', style: Theme.of(context).textTheme.titleSmall),
               const SizedBox(height: 6),
@@ -761,6 +845,7 @@ class _CorrectBalanceDialogState extends State<_CorrectBalanceDialog> {
               : () => Navigator.pop(context, (
                   owed: owed,
                   reason: _reason == _reasons.first ? '$first\'s spends through me' : _reason,
+                  fresh: _fresh,
                 )),
           child: const Text('Save'),
         ),

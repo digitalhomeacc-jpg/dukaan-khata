@@ -58,9 +58,11 @@ void main() {
   testWidgets('set what is really owed: the rest is a friend\'s spends', (tester) async {
     await pump(tester, FriendDetailScreen(data: sample(), person: 'Rahul Kumar'));
     expect(find.text('Rahul Kumar owes you'), findsOneWidget);
-    await tester.tap(find.text('Set balance'));
+    await tester.tap(find.text('Opening balance'));
     await tester.pumpAndSettle();
     expect(find.text('What is really owed?'), findsOneWidget);
+    expect(find.text('Start fresh from today'), findsOneWidget);
+    await tester.tap(find.byType(Switch));
     await tester.enterText(find.byType(TextField), '200');
     await tester.pumpAndSettle();
     expect(find.text('The other ₹300 was:'), findsOneWidget);
@@ -149,6 +151,23 @@ void main() {
     expect(find.text('Vaibhav is also…'), findsOneWidget);
     expect(find.text('likely Vaibhav', findRichText: true), findsNothing);
     expect(find.textContaining('likely Vaibhav'), findsOneWidget);
+  });
+
+  test('a fresh start: older entries stop counting, the opening balance stands in', () {
+    final today = DateTime(2026, 11, 14);
+    final txns = [
+      Txn(id: 'old', amount: 1817, isDebit: false, txnAt: DateTime(2026, 11, 4), merchant: 'Yash Gawali', categoryId: 'fr'),
+      Txn(id: 'new', amount: 200, isDebit: true, txnAt: DateTime(2026, 11, 14, 10), merchant: 'Yash Gawali', categoryId: 'fr'),
+    ];
+    final none = loanBalances(txns, {'fr'});
+    expect(none.single.balance, 1617);
+    final fresh = loanBalances(txns, {'fr'}, starts: {'yash gawali': (name: 'Yash Gawali', from: today, opening: -1264)});
+    expect(fresh.single.balance, -1464); // owes you 1264, and you sent 200 more
+    expect(fresh.single.txns.map((t) => t.id), ['new']);
+    // A friend with only an opening balance is listed too.
+    final only = loanBalances(const [], {'fr'}, starts: {'v p': (name: 'V P', from: today, opening: -1264)});
+    expect(only.single.person, 'V P');
+    expect(only.single.balance, -1264);
   });
 
   testWidgets('people review lists people, not shops', (tester) async {

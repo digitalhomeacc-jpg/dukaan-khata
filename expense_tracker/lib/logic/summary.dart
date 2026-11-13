@@ -224,7 +224,15 @@ List<LoanBalance> loanBalances(
   Set<String> loanCategoryIds, {
   Iterable<TxnShare> shares = const [],
   Map<String, String> aliases = const {},
+  Map<String, ({String name, DateTime from, double opening})> starts = const {},
 }) {
+  // A fresh start: entries before it are history; the opening balance stands in for them.
+  bool before(String key, DateTime at) {
+    final s = starts[key];
+    return s != null && at.isBefore(s.from);
+  }
+
+  final txnById = {for (final t in txns) t.id: t};
   // "Also known as": a payee name (e.g. a parent's account) counts as that friend.
   String canon(String name) => aliases[name.toLowerCase().replaceAll(RegExp(r'\s+'), ' ').trim()] ?? name.trim();
   final byPerson = <String, List<Txn>>{};
@@ -234,6 +242,8 @@ List<LoanBalance> loanBalances(
     if (s.paid) continue;
     final person = canon(s.person);
     final key = person.toLowerCase();
+    final shared = txnById[s.txnId];
+    if (shared != null && before(key, shared.txnAt)) continue;
     names.putIfAbsent(key, () => person);
     owesYou[key] = (owesYou[key] ?? 0) + s.amount;
     byPerson.putIfAbsent(key, () => []);
@@ -244,6 +254,7 @@ List<LoanBalance> loanBalances(
       // A friend paid for you: you owe them your share.
       final person = canon(t.paidBy!);
       final key = person.toLowerCase();
+      if (before(key, t.txnAt)) continue;
       names.putIfAbsent(key, () => person);
       owedToThem[key] = (owedToThem[key] ?? 0) + t.amount;
       byPerson.putIfAbsent(key, () => []);
@@ -252,8 +263,14 @@ List<LoanBalance> loanBalances(
     if (!loanCategoryIds.contains(t.categoryId)) continue;
     final person = canon(t.title);
     final key = person.toLowerCase();
+    if (before(key, t.txnAt)) continue;
     names.putIfAbsent(key, () => person);
     byPerson.putIfAbsent(key, () => []).add(t);
+  }
+  for (final MapEntry(:key, :value) in starts.entries) {
+    if (value.opening.abs() < 0.005 && !byPerson.containsKey(key)) continue;
+    names.putIfAbsent(key, () => value.name);
+    byPerson.putIfAbsent(key, () => []);
   }
   final out = [
     for (final e in byPerson.entries)
@@ -262,7 +279,8 @@ List<LoanBalance> loanBalances(
         _round(
           e.value.fold(0.0, (s, t) => s + (t.isDebit ? -t.amount : t.amount)) -
               (owesYou[e.key] ?? 0) +
-              (owedToThem[e.key] ?? 0),
+              (owedToThem[e.key] ?? 0) +
+              (starts[e.key]?.opening ?? 0),
         ),
         e.value..sort((a, b) => b.txnAt.compareTo(a.txnAt)),
       ),

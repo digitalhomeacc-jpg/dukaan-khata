@@ -33,10 +33,7 @@ class _SharedExpenseScreenState extends State<SharedExpenseScreen> {
   var _busy = false;
   String? _error;
 
-  late final List<String> _friends = {
-    for (final l in loanBalances(widget.data.transactions, widget.data.loanCategoryIds, shares: widget.data.shares))
-      l.person,
-  }.toList()..sort();
+  late final List<String> _friends = {for (final l in widget.data.friendBalances) l.person}.toList()..sort();
 
   @override
   void dispose() {
