@@ -176,9 +176,7 @@ class _RojmalScreenState extends State<RojmalScreen> {
   Widget _side(BuildContext context, String title, List<CashRow> rows, bool inflow, {bool scroll = true}) {
     final color = inflow ? Colors.green.shade700 : Colors.red.shade700;
     final total = rows.fold<int>(0, (s, r) => s + (inflow ? r.inflow : r.outflow));
-    final tiles = [
-      for (final r in rows)
-        ListTile(
+    Widget tile(CashRow r) => ListTile(
           dense: true,
           leading: r.code == null ? null : CircleAvatar(radius: 14, child: Text(r.code!, style: const TextStyle(fontSize: 11))),
           title: Text(r.varhai
@@ -192,8 +190,34 @@ class _RojmalScreenState extends State<RojmalScreen> {
             Text(Money.fmt(inflow ? r.inflow : r.outflow), style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 15)),
           ]),
           onTap: () => VoucherScreen.edit(context, r.voucherId),
-        ),
-    ];
+        );
+    // counter sales without a customer name (रोख विक्री): one line with the
+    // total, tap to see each bill
+    bool walkIn(CashRow r) => r.type == VoucherType.sale && r.particulars.isEmpty && !r.varhai;
+    final groups = <String, List<CashRow>>{}; // by cash / PhonePe / bank
+    for (final r in rows.where(walkIn)) {
+      groups.putIfAbsent(r.code ?? '', () => []).add(r);
+    }
+    final tiles = <Widget>[];
+    for (final r in rows) {
+      final g = walkIn(r) ? groups[r.code ?? '']! : const <CashRow>[];
+      if (g.length < 2) {
+        tiles.add(tile(r));
+      } else if (identical(r, g.first)) {
+        final t = App.of(context).t;
+        tiles.add(ExpansionTile(
+          key: Key('counter_sales_${inflow}_${r.code}'),
+          dense: true,
+          leading: r.code == null ? null : CircleAvatar(radius: 14, child: Text(r.code!, style: const TextStyle(fontSize: 11))),
+          title: Text('${t('cash_sale')} · ${g.length} ${t('bills')}', style: const TextStyle(fontWeight: FontWeight.w600)),
+          subtitle: Text(t('tap_to_see')),
+          trailing: Text(Money.fmt(g.fold<int>(0, (s, r) => s + (inflow ? r.inflow : r.outflow))),
+              style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 15)),
+          childrenPadding: const EdgeInsets.only(left: 16),
+          children: [for (final c in g) tile(c)],
+        ));
+      }
+    }
     final header = Container(
       color: color.withValues(alpha: 0.08),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),

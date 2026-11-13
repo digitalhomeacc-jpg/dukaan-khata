@@ -112,6 +112,8 @@ const Map<String, (String, String)> _s = {
   'quick_entry': ('झटपट: M 12×285, U 15/275, M 7=2000', 'Quick: M 12×285, U 15/275, M 7=2000'),
   'add_line': ('ओळ जोडा', 'Add line'),
   'cash_sale': ('रोख विक्री', 'Cash sale'),
+  'bills': ('बिले', 'bills'),
+  'tap_to_see': ('प्रत्येक बिल पाहण्यासाठी दाबा', 'Tap to see each bill'),
   'walk_in': ('रोख ग्राहक', 'Walk-in'),
   'new_balance': ('नवीन बाकी', 'New balance'),
   'they_owe': ('येणे', 'To receive'),
