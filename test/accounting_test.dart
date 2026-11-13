@@ -1290,4 +1290,32 @@ void main() {
       Books.start = keep;
     }
   });
+
+  test('bill-wise pending: payments clear the oldest bills first, old entries give the dates', () async {
+    final keep = Books.start;
+    Books.start = '2026-11-08';
+    try {
+      final c = await lr.create(name: 'Aging', group: LedgerGroup.customer, openingBalance: rs(15000));
+      Future<void> old(String date, String kind, int amount) => vs.save(
+          VoucherInput(type: VoucherType.history, date: date, partyId: c, payLedgerId: '$historyKindPrefix$kind', amount: amount), owner);
+      await old('2026-09-01', 'sale', rs(10000));
+      await old('2026-09-20', 'received', rs(4000));
+      await old('2026-10-05', 'sale', rs(9000)); // old total 15,000 = opening
+      final m = items.values.first;
+      await vs.save(VoucherInput(type: VoucherType.sale, date: '2026-11-09', partyId: c, items: [ItemLine(m.id, 10, rs(500))]), owner); // 5,000
+      await vs.save(VoucherInput(type: VoucherType.receipt, date: '2026-11-10', partyId: c, payLedgerId: vs.sys('cash'), amount: rs(7000)), owner);
+      var p = pendingBills(await lr.statement(c), Books.start);
+      // paid 4,000 + 7,000 = 11,000: clears the 10,000 bill and 1,000 of the 9,000 one
+      expect([for (final b in p) (b.date, b.left)], [('2026-10-05', rs(8000)), ('2026-11-09', rs(5000))]);
+      expect(p.fold<int>(0, (s, b) => s + b.left), await lr.balanceAt(c));
+      expect(p.first.old, isTrue);
+      // old entries that do not add up: the opening is one lump on the books' start day
+      await old('2026-10-06', 'sale', rs(1));
+      p = pendingBills(await lr.statement(c), Books.start);
+      expect(p.first.date, '2026-11-08');
+      expect(p.fold<int>(0, (s, b) => s + b.left), await lr.balanceAt(c));
+    } finally {
+      Books.start = keep;
+    }
+  });
 }

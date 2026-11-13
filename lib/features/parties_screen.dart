@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
+import 'pending_screen.dart';
 import '../accounting/bookings.dart';
 import '../accounting/interest.dart';
 import '../accounting/ledger_repo.dart';
@@ -743,7 +744,17 @@ class _KhataScreenState extends State<KhataScreen> {
                 const SizedBox(width: 8),
                 IconButton.filledTonal(icon: const Icon(Icons.share), tooltip: t('statement'), onPressed: () => _shareImage(st)),
                 const Spacer(),
-                BalanceText(st.closing, supplier: isSup, size: 22, days: from == null && to == null ? unpaidDays : null),
+                InkWell(
+                  key: const Key('open_aging'),
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: st.closing == 0 ? null : () => PendingScreen.open(context, l.id),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                    BalanceText(st.closing, supplier: isSup, size: 22, days: from == null && to == null ? unpaidDays : null),
+                    if (st.closing != 0)
+                      Text('${t('pending_bills')} ›',
+                          style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.w600)),
+                  ]),
+                ),
               ]),
             ),
             // one tap: the whole balance as a जमा (customer) / payment (supplier)
@@ -838,6 +849,23 @@ class _KhataTableState extends State<_KhataTable> {
           child: FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: Text(s, style: style)),
         ));
     String bal(int b) => b == 0 ? '0' : '${Money.fmt(b, abs: true)} ${b > 0 ? t('dr_short') : t('cr_short')}';
+    // how old each line is (small, under its running balance)
+    final today = parseIso(todayIso());
+    final tiny = small?.copyWith(fontSize: 10.5, color: Colors.grey.shade600, fontStyle: FontStyle.normal);
+    Widget balCell(int b, String date, {TextStyle? style}) {
+      final d = today.difference(parseIso(date)).inDays;
+      return Expanded(
+        flex: 3,
+        child: Padding(
+          padding: pad,
+          child: Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+            Text(bal(b), textAlign: TextAlign.right, style: style),
+            Text(d <= 0 ? t('today') : t('days_unpaid').replaceAll('{n}', '$d'), style: tiny),
+          ]),
+        ),
+      );
+    }
+
     final red = TextStyle(color: Colors.red.shade700, fontWeight: FontWeight.w600);
     final green = TextStyle(color: Colors.green.shade700, fontWeight: FontWeight.w600);
     return Column(children: [
@@ -902,7 +930,7 @@ class _KhataTableState extends State<_KhataTable> {
                 cell(r.debit == 0 ? '' : Money.fmt(r.debit), a: TextAlign.right, style: small),
                 cell(r.credit == 0 ? '' : Money.fmt(r.credit), a: TextAlign.right, style: small),
                 // running balance of the old entries only (not counted anywhere)
-                cell(bal(r.balance), a: TextAlign.right, flex: 3, style: small?.copyWith(fontStyle: FontStyle.italic)),
+                balCell(r.balance, r.date, style: small?.copyWith(fontStyle: FontStyle.italic)),
               ]),
             ),
           ),
@@ -929,7 +957,7 @@ class _KhataTableState extends State<_KhataTable> {
         cell(t('opening_balance'), flex: 4, style: small),
         cell(''),
         cell(''),
-        cell(bal(st.opening), a: TextAlign.right, flex: 3, style: const TextStyle(fontWeight: FontWeight.bold)),
+        balCell(st.opening, st.from ?? Books.start, style: const TextStyle(fontWeight: FontWeight.bold)),
       ]),
       const Divider(height: 1),
       for (final r in st.rows)
@@ -954,7 +982,7 @@ class _KhataTableState extends State<_KhataTable> {
               ),
               cell(r.debit == 0 ? '' : Money.fmt(r.debit), a: TextAlign.right, style: red),
               cell(r.credit == 0 ? '' : Money.fmt(r.credit), a: TextAlign.right, style: green),
-              cell(bal(r.balance), a: TextAlign.right, flex: 3),
+              balCell(r.balance, r.date),
             ]),
           ),
         ),

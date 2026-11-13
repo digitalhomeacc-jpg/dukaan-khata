@@ -823,3 +823,45 @@ class AccountFix {
   final String id, name, lastChange, createdAt;
   final changes = <String, (String, String)>{};
 }
+
+/// One bill (or old balance) still not fully paid.
+class PendingBill {
+  PendingBill(this.date, this.row, this.amount, this.left, this.old);
+  final String date;
+  final StatementRow? row; // null = the opening balance
+  final int amount; // the bill
+  final int left; // still unpaid
+  final bool old; // from the old (reference) entries
+}
+
+/// बिलनिहाय बाकी: which bills make up the balance today. Payments clear the
+/// oldest bills first. Old entries are used for their dates when they add up
+/// to the opening balance; otherwise the opening balance is one lump on the
+/// day the books start. Changes nothing – it only reads the khata.
+List<PendingBill> pendingBills(Statement st, String booksStart) {
+  final items = <(String, StatementRow?, int dr, int cr, bool old)>[];
+  if (st.references.isNotEmpty && st.references.last.balance == st.opening) {
+    for (final r in st.references) {
+      items.add((r.date, r, r.debit, r.credit, true));
+    }
+  } else if (st.opening != 0) {
+    items.add((booksStart, null, st.opening > 0 ? st.opening : 0, st.opening < 0 ? -st.opening : 0, false));
+  }
+  for (final r in st.rows) {
+    items.add((r.date, r, r.debit, r.credit, false));
+  }
+  final closing = st.closing;
+  if (closing == 0) return const [];
+  final theyOwe = closing > 0;
+  // what was paid towards the bills, in total
+  var pool = items.fold<int>(0, (s, x) => s + (theyOwe ? x.$4 : x.$3));
+  final out = <PendingBill>[];
+  for (final x in items) {
+    final bill = theyOwe ? x.$3 : x.$4;
+    if (bill <= 0) continue;
+    final used = pool >= bill ? bill : pool;
+    pool -= used;
+    if (bill - used > 0) out.add(PendingBill(x.$1, x.$2, bill, bill - used, x.$5));
+  }
+  return out;
+}
