@@ -456,10 +456,24 @@ class DayByDayScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final readings = data.balanceReadings.where((r) => r.accountId == account.id && account.counts(r.asOf)).toList()
-      ..sort((a, b) => b.asOf.compareTo(a.asOf));
+    // One check per day: the bank's last balance of the day against the app's at the end of that day
+    // (an email can report a balance mid-day, before that day's later payments).
+    final lastOfDay = <DateTime, BalanceReading>{};
+    for (final r in data.balanceReadings.where((r) => r.accountId == account.id && account.counts(r.asOf))) {
+      final d = DateTime(r.asOf.year, r.asOf.month, r.asOf.day);
+      final cur = lastOfDay[d];
+      if (cur == null || r.asOf.isAfter(cur.asOf)) lastOfDay[d] = r;
+    }
+    final days = lastOfDay.keys.toList()..sort((a, b) => b.compareTo(a));
     final rows = [
-      for (final r in readings) (r: r, app: balanceAt(data.transactions, account, r.asOf)),
+      for (final d in days)
+        (
+          r: lastOfDay[d]!,
+          // End-of-day balances (statements, daily emails: 23:59) against the whole day; a balance from a
+          // payment alert against the moment it was sent.
+          app: balanceAt(data.transactions, account,
+              lastOfDay[d]!.asOf.hour == 23 && lastOfDay[d]!.asOf.minute == 59 ? DateTime(d.year, d.month, d.day, 23, 59, 59) : lastOfDay[d]!.asOf),
+        ),
     ];
     final bad = rows.where((x) => (x.r.balance - x.app).abs() >= 1).toList();
     final firstBad = bad.isEmpty ? null : bad.last; // oldest difference: where it started

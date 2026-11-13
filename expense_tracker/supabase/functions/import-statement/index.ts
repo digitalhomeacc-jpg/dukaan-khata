@@ -100,22 +100,34 @@ Deno.serve(async (req) => {
       .gte("txn_at", `${from}T00:00:00${IST_OFFSET}`).lte("txn_at", `${to}T23:59:59${IST_OFFSET}`)
     : { data: [] };
   const existing = (existingRows ?? []) as Array<{ id: string; amount: number; direction: string; txn_at: string; email_body: string | null; email_id: string | null }>;
-  const importedKeys = new Set(existing.map((e) => e.email_id).filter((k): k is string => !!k && k.startsWith("stmt:")));
-  const byRrn = new Map<string, string>();
-  for (const e of existing) for (const r of e.email_body?.match(/\b\d{12}\b/g) ?? []) byRrn.set(r, e.id);
+  // Each statement line is "already there" only if an unused entry of the same day, amount and
+  // direction exists (bank emails may be a day off). The same refund reference can repeat across
+  // several refunds, so a reference is only a tie-breaker, never enough on its own.
   const used = new Set<string>();
-
-  const keyOf = (t: StatementTxn) => `stmt:${last4}:${t.rrn ?? `${t.date}:${t.seq}`}:${t.direction}:${t.amount}`;
-  const fresh: StatementTxn[] = [];
+  const occurrence = new Map<string, number>();
+  const keyOf = (t: StatementTxn) => {
+    const base = `stmt2:${last4}:${t.date}:${t.rrn ?? "-"}:${t.direction}:${t.amount}`;
+    const n = (occurrence.get(base) ?? 0) + 1;
+    occurrence.set(base, n);
+    return n === 1 ? base : `${base}#${n}`;
+  };
+  const dayDiff = (a: string, b: string) => Math.abs(new Date(`${a}T12:00:00Z`).getTime() - new Date(`${b}T12:00:00Z`).getTime()) / 86_400_000;
+  const fresh: Array<StatementTxn & { key: string }> = [];
   let already = 0, fromEmails = 0;
   for (const t of st.txns) {
-    if (importedKeys.has(keyOf(t))) { already++; continue; }
-    const byRef = t.rrn ? byRrn.get(t.rrn) : undefined;
-    const match = byRef && !used.has(byRef) ? byRef : existing.find((e) =>
-      !used.has(e.id) && !e.email_id?.startsWith("stmt:") && Number(e.amount) === t.amount &&
-      e.direction === t.direction && dayOf(e.txn_at) === t.date)?.id;
-    if (match) { used.add(match); fromEmails++; continue; }
-    fresh.push(t);
+    const key = keyOf(t);
+    const candidates = existing.filter((e) =>
+      !used.has(e.id) && Number(e.amount) === t.amount && e.direction === t.direction &&
+      (e.email_id?.startsWith("stmt") ? dayOf(e.txn_at) === t.date : dayDiff(dayOf(e.txn_at), t.date) <= 1));
+    const byRef = t.rrn ? candidates.find((e) => e.email_body?.includes(t.rrn!) || e.email_id?.includes(t.rrn!)) : undefined;
+    const sameDay = candidates.find((e) => dayOf(e.txn_at) === t.date);
+    const match = byRef ?? sameDay ?? candidates[0];
+    if (match) {
+      used.add(match.id);
+      if (match.email_id?.startsWith("stmt")) already++; else fromEmails++;
+      continue;
+    }
+    fresh.push({ ...t, key });
   }
 
   const summary = {
@@ -167,7 +179,7 @@ Deno.serve(async (req) => {
     const category = ruleFor.get(merchantKey(merchant)) ?? catNamed.get(defaultCategoryName(merchant) ?? "") ?? null;
     const at = new Date(new Date(`${t.date}T06:00:00${IST_OFFSET}`).getTime() + t.seq * 1000).toISOString();
     return {
-      user_id: user.id, source: "statement", email_id: keyOf(t), account_id: account!.id,
+      user_id: user.id, source: "statement", email_id: t.key, account_id: account!.id,
       amount: t.amount, direction: t.direction, merchant, method: t.method, txn_at: at, payee_vpa: t.vpa,
       bank: st.bank, account_last4: st.accountLast4, category_id: category,
       excluded: t.atm, counter_account_id: t.atm ? (cash?.id ?? null) : null,
@@ -193,7 +205,8 @@ Deno.serve(async (req) => {
     await supabase.from("balance_readings").upsert(readings, { onConflict: "user_id,email_id", ignoreDuplicates: true });
   }
 
-  if (body.setOpening && st.openingBalance != null && st.from) {
+  // Only ever move the starting point earlier: a later file must not hide older months.
+  if (body.setOpening && st.openingBalance != null && st.from && (!account!.opening_date || st.from < account!.opening_date)) {
     await supabase.from("accounts").update({ opening_balance: st.openingBalance, opening_date: st.from }).eq("id", account!.id);
   }
   await supabase.rpc("link_loan_transactions", { p_user: user.id });
