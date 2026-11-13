@@ -396,7 +396,14 @@ class _SupplierMatchScreenState extends State<SupplierMatchScreen> {
                                     await VoucherScreen.open(context, VoucherType.payment,
                                         partyId: widget.supplier.id, amount: l.credit, narration: l.text, date: l.date);
                                   default:
-                                    await VoucherScreen.open(context, VoucherType.purchase, partyId: widget.supplier.id, date: l.date);
+                                    // the invoice as a purchase: our item, MT → bags, the exact total
+                                    final item = StatementImport.guessItem(StatementImport.productOf(l.text), await app.stock.list());
+                                    if (!context.mounted) return;
+                                    await VoucherScreen.open(context, VoucherType.purchase,
+                                        partyId: widget.supplier.id,
+                                        date: l.date,
+                                        narration: l.text,
+                                        lines: [if (item != null && l.qty > 0) ItemLine.fromTotal(item.id, l.qty * factor, l.debit)]);
                                 }
                                 await _rematch();
                               },

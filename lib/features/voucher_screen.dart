@@ -32,6 +32,7 @@ class VoucherScreen extends StatefulWidget {
   /// Self-check only (demo build): load the entry, save it untouched, close.
   final bool autoSave;
   final String? presetDate; // e.g. the date of a company statement line
+  final List<ItemLine> presetLines; // e.g. a company invoice: item, bags, exact total
   const VoucherScreen({
     super.key,
     required this.type,
@@ -43,6 +44,7 @@ class VoucherScreen extends StatefulWidget {
     this.historyKind,
     this.autoSave = false,
     this.presetDate,
+    this.presetLines = const [],
   });
 
   static Future<void> open(
@@ -53,11 +55,18 @@ class VoucherScreen extends StatefulWidget {
     int? amount,
     String? narration,
     String? date,
+    List<ItemLine> lines = const [],
   }) => Navigator.push(
     context,
     MaterialPageRoute(
       builder: (_) => VoucherScreen(
-          type: type, partyId: partyId, expenseMode: expense, presetAmount: amount, presetNarration: narration, presetDate: date),
+          type: type,
+          partyId: partyId,
+          expenseMode: expense,
+          presetAmount: amount,
+          presetNarration: narration,
+          presetDate: date,
+          presetLines: lines),
     ),
   );
 
@@ -367,6 +376,10 @@ class _VoucherScreenState extends State<VoucherScreen> {
       if (widget.presetAmount != null && widget.presetAmount! > 0) amount.text = _plain(widget.presetAmount!);
       if (widget.presetNarration != null) narration.text = widget.presetNarration!;
       if (widget.presetDate != null && !Books.isHistory(widget.presetDate!)) date = widget.presetDate!;
+      for (final l in widget.presetLines) {
+        final it = items.where((i) => i.id == l.itemId).firstOrNull;
+        if (it != null) lines.add(_LineCtl(it, l.qty, l.rate, amount: l.amount));
+      }
       // sensible default payment account
       if (creditAllowed) {
         // purchases are usually on credit; a sale without a name is a cash sale
@@ -1810,7 +1823,13 @@ class _VoucherScreenState extends State<VoucherScreen> {
                       focusNode: lines[i].focus,
                       keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
                       decoration: _lineField('${app.t('qty')} (${app.t('unit_${lines[i].item.unit}')})'),
-                      onChanged: (_) => setState(() {
+                      onChanged: (s) => setState(() {
+                        // "4.5t" / "4.5 mt" / "4.5 टन" on a bag item → 90 bags (1 MT = 20 bags)
+                        final m = RegExp(r'^\s*([\d.]+)\s*(t|mt|टन)\s*$', caseSensitive: false).firstMatch(normalizeDigits(s));
+                        if (m != null && lines[i].item.unit == 'bag' && double.tryParse(m[1]!) != null) {
+                          final bags = double.parse(m[1]!) * 20;
+                          lines[i].qty.value = TextEditingValue(text: fmtQty(bags), selection: TextSelection.collapsed(offset: fmtQty(bags).length));
+                        }
                         lines[i].qtyChanged();
                         _syncPaid();
                       }),
