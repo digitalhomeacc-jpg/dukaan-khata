@@ -326,6 +326,8 @@ class Reports {
   /// and payments are not costs.
   Future<ReportTable> supplierCost(String supplierId, String from, String to) async {
     final sup = (await ledgers.byId(supplierId))!;
+    // whole financial years, so a year's discounts are spread over all of its goods
+    from = fyStart(from);
     final goods = await db.getAll(
       "SELECT substr(il.vdate, 1, 7) AS m, il.item_id, i.name AS item, i.unit, "
       "SUM(CASE WHEN v.vtype = 'purchase_return' THEN -il.qty ELSE il.qty END) AS q, "
@@ -351,55 +353,67 @@ class Reports {
         [supplierId, from, to])) {
       disc[r['m'] as String] = (disc[r['m'] as String] ?? 0) + (r['d'] as num).toInt();
     }
-    final monthValue = <String, int>{};
+    // financial year (April–March): every discount of the year – trade,
+    // special, quarterly, coins, cash, yearly – spread over the year's goods
+    String fyOf(String m) => fyStart('$m-01').substring(0, 7);
+    final monthValue = <String, int>{}, fyValue = <String, int>{}, fyDisc = <String, int>{};
     for (final g in goods) {
-      monthValue[g['m'] as String] = (monthValue[g['m'] as String] ?? 0) + (g['a'] as num).toInt();
+      final m = g['m'] as String, a = (g['a'] as num).toInt();
+      monthValue[m] = (monthValue[m] ?? 0) + a;
+      fyValue[fyOf(m)] = (fyValue[fyOf(m)] ?? 0) + a;
     }
-    String rate(int amount, double qty) => qty <= 0 ? '' : Money.fmt(((amount / qty) / 100).round() * 100);
+    for (final e in disc.entries) {
+      fyDisc[fyOf(e.key)] = (fyDisc[fyOf(e.key)] ?? 0) + e.value;
+    }
+    String rate(num amount, double qty) => qty <= 0 ? '' : Money.fmt(((amount / qty) / 100).round() * 100);
     String mon(String m) => '${m.substring(5)}/${m.substring(2, 4)}';
+    String fyLabel(String f) {
+      final y = int.parse(f.substring(0, 4));
+      return '${y % 100}-${(y + 1) % 100}';
+    }
+
     final rows = <List<String>>[];
-    final per = <String, (String, double, int, int)>{}; // item → name, qty, value, discount
-    var ta = 0, td = 0;
-    var tq = 0.0;
+    final per = <String, (String, double, int, double)>{}; // item → name, qty, value, value after year's discounts
+    var ta = 0, tq = 0.0, tn = 0.0;
     for (final g in goods) {
-      final m = g['m'] as String;
+      final m = g['m'] as String, f = fyOf(m);
       final q = (g['q'] as num).toDouble(), a = (g['a'] as num).toInt();
       final mv = monthValue[m] ?? 0;
-      final d = mv <= 0 ? 0 : ((disc[m] ?? 0) * a / mv).round();
+      final dMonth = mv <= 0 ? 0.0 : (disc[m] ?? 0) * a / mv; // this month's discounts, by value
+      final fyShare = (fyValue[f] ?? 0) <= 0 ? 0.0 : (fyDisc[f] ?? 0) / fyValue[f]!; // year's discount per rupee
+      final net = a * (1 - fyShare);
       final name = '${g['item']}';
-      rows.add([mon(m), name, fmtQty(q), rate(a, q), d == 0 ? '' : Money.fmt(d), rate(a - d, q)]);
-      final p = per[g['item_id'] as String] ?? (name, 0.0, 0, 0);
-      per[g['item_id'] as String] = (name, p.$2 + q, p.$3 + a, p.$4 + d);
+      rows.add([mon(m), name, fmtQty(q), rate(a, q), rate(a - dMonth, q), rate(net, q)]);
+      final p = per[g['item_id'] as String] ?? (name, 0.0, 0, 0.0);
+      per[g['item_id'] as String] = (name, p.$2 + q, p.$3 + a, p.$4 + net);
       ta += a;
-      td += d;
       tq += q;
+      tn += net;
     }
-    // discounts in a month with no purchase (e.g. a yearly scheme paid later)
-    for (final e in disc.entries) {
-      if ((monthValue[e.key] ?? 0) <= 0 && e.value != 0) {
-        rows.add([mon(e.key), tr('real_cost_no_goods'), '', '', Money.fmt(e.value), '']);
-      }
-    }
-    rows.sort((x, y) => x[0].substring(3).compareTo(y[0].substring(3)) != 0
-        ? x[0].substring(3).compareTo(y[0].substring(3))
-        : x[0].compareTo(y[0]));
-    // whole period, per item
+    // per item over the whole period
     for (final p in per.values) {
-      rows.add(['${tr('total')}', p.$1, fmtQty(p.$2), rate(p.$3, p.$2), p.$4 == 0 ? '' : Money.fmt(p.$4), rate(p.$3 - p.$4, p.$2)]);
+      rows.add([tr('total'), p.$1, fmtQty(p.$2), rate(p.$3, p.$2), '', rate(p.$4, p.$2)]);
     }
+    final fys = {...fyValue.keys, ...fyDisc.keys}.toList()..sort();
     return ReportTable(
       title: '${tr('r_real_cost')} – ${sup.name}',
-      subtitle: '${_range(from, to)} · ${tr('real_cost_note')}',
+      subtitle: [
+        _range(from, to),
+        for (final f in fys)
+          '${tr('fy')} ${fyLabel(f)}: ${tr('purchase')} ₹${Money.fmt(fyValue[f] ?? 0)} · ${tr('discount')} ₹${Money.fmt(fyDisc[f] ?? 0)}'
+              '${(fyValue[f] ?? 0) > 0 ? ' (${((fyDisc[f] ?? 0) * 1000 / fyValue[f]!).round() / 10}%)' : ''}',
+        tr('real_cost_note'),
+      ].join(' · '),
       columns: [
         ReportColumn(tr('month'), flex: 2),
         ReportColumn(tr('item'), flex: 4),
         ReportColumn.num(tr('qty'), flex: 2),
         ReportColumn.num(tr('bill_rate'), flex: 2),
-        ReportColumn.num(tr('discount'), flex: 3),
-        ReportColumn.num(tr('net_rate'), flex: 2),
+        ReportColumn.num(tr('net_rate_month'), flex: 2),
+        ReportColumn.num(tr('net_rate_fy'), flex: 2),
       ],
       rows: rows,
-      totals: ['', '', fmtQty(tq), rate(ta, tq), Money.fmt(td), rate(ta - td, tq)],
+      totals: ['', '', fmtQty(tq), rate(ta, tq), '', rate(tn, tq)],
     );
   }
 

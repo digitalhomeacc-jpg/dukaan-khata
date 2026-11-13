@@ -122,6 +122,9 @@ class EditSelfTest {
     // purchases: credit with वराई, part paid with GST + round off, cash
     await vs.save(VoucherInput(type: VoucherType.purchase, date: today, partyId: s, items: [ItemLine(x, 100, 25000)], varhai: 84000), a);
     await vs.save(
+        VoucherInput(type: VoucherType.purchase, date: today, partyId: s, payLedgerId: cash, paid: 50000, items: [ItemLine(y, 20, 6000)], varhai: 30000, varhaiLedgerId: upi),
+        a); // वराई by PhonePe, part paid in cash
+    await vs.save(
         VoucherInput(type: VoucherType.purchase, date: today, partyId: s, payLedgerId: bank, paid: 1000000, items: [ItemLine(y, 50.5, 6000)], gstRate: 1800, roundOff: 200),
         a);
     await vs.save(VoucherInput(type: VoucherType.purchase, date: today, payLedgerId: cash, paid: 60000, items: [ItemLine(y, 10, 6000)]), a);

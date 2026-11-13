@@ -176,6 +176,7 @@ class _VoucherScreenState extends State<VoucherScreen> {
   // bill charges (sale only)
   final hamaliCtl = TextEditingController();
   final varhaiCtl = TextEditingController(); // वराई with a purchase
+  String? varhaiId; // where it came in: null = cash
   final transportCtl = TextEditingController();
   final fareCtl = TextEditingController();
   String? transporterId; // null = own vehicle
@@ -364,6 +365,7 @@ class _VoucherScreenState extends State<VoucherScreen> {
       if (ro != 0) roundCtl.text = Money.fmt(ro).replaceAll(',', '');
       final vr = await app.vouchers.varhaiOf(v);
       if (vr != 0) varhaiCtl.text = _plain(vr);
+      varhaiId = await app.vouchers.varhaiAccountOf(v);
       if (v.transporterFare != null && v.transporterFare != v.transport) {
         fareCtl.text = _plain(v.transporterFare!);
         fareTouched = true;
@@ -686,6 +688,7 @@ class _VoucherScreenState extends State<VoucherScreen> {
       roundOff: roundOff,
       haste: hasteCtl.text,
       varhai: type == VoucherType.purchase ? (Money.parse(varhaiCtl.text) ?? 0) : 0,
+      varhaiLedgerId: type == VoucherType.purchase && (Money.parse(varhaiCtl.text) ?? 0) > 0 ? varhaiId : null,
     );
     // credit limit warning
     if (party != null && party!.creditLimit > 0 && type == VoucherType.sale) {
@@ -726,6 +729,7 @@ class _VoucherScreenState extends State<VoucherScreen> {
           gstBill = false;
           hamaliCtl.clear();
           varhaiCtl.clear();
+          varhaiId = null;
           quick.clear();
           transportCtl.clear();
           fareCtl.clear();
@@ -1425,6 +1429,16 @@ class _VoucherScreenState extends State<VoucherScreen> {
             ),
             onChanged: (_) => setState(() {}),
           ),
+          // how the driver gave it: cash, PhonePe or bank
+          if ((Money.parse(varhaiCtl.text) ?? 0) > 0) ...[
+            const SizedBox(height: 8),
+            PayModeChips(
+              accounts: moneyAccounts,
+              selected: varhaiId ?? app.vouchers.sys('cash'),
+              allowCredit: false,
+              onSelected: (id) => setState(() => varhaiId = id == app.vouchers.sys('cash') ? null : id),
+            ),
+          ],
           const SizedBox(height: 6),
           Text(t('varhai_help'), style: Theme.of(context).textTheme.bodySmall),
         ]),

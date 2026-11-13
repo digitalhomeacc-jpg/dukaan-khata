@@ -132,6 +132,7 @@ void main() {
               gstRate: gstRate,
               roundOff: roundOff,
               varhai: type == VoucherType.purchase && chance(30) ? rupees(8) * 10 : 0,
+              varhaiLedgerId: chance(50) ? pick(money) : null,
               haste: chance(20) ? 'Ramu' : null,
               narration: chance(30) ? 'note ${rnd.nextInt(99)}' : null,
             );
@@ -180,7 +181,7 @@ void main() {
               e.l(v.partyId, -(total - v.paid));
               e.l(pay, -v.paid);
             }
-            e.l(cash, v.varhai);
+            e.l(v.varhaiLedgerId ?? cash, v.varhai);
           case VoucherType.salesReturn:
             if (v.partyId == null) {
               e.l(pay, -goodsValue);

@@ -70,7 +70,11 @@ class VoucherInput {
     this.roundOff = 0,
     this.haste,
     this.varhai = 0,
+    this.varhaiLedgerId,
   });
+
+  /// Where the वराई came in: cash (default), PhonePe or bank.
+  final String? varhaiLedgerId;
 
   /// वराई on a purchase: cash the company's driver gave for the labourers.
   /// Goes into cash and the वराई ledger; never part of the supplier's bill.
@@ -220,7 +224,7 @@ class VoucherService {
           cr(pay, v.paid);
         }
         if (v.varhai > 0) {
-          dr(sys('cash'), v.varhai); // handed over by the driver
+          dr(v.varhaiLedgerId ?? sys('cash'), v.varhai); // handed over by the driver – cash or PhonePe
           cr(sys('varhai'), v.varhai);
         }
       case VoucherType.purchaseReturn:
@@ -682,6 +686,17 @@ class VoucherService {
     return (r['n'] as num).toInt();
   }
 
+  /// Where a purchase's वराई came in (the money line just before its वराई line).
+  Future<String?> varhaiAccountOf(Voucher v) async {
+    if (v.type != VoucherType.purchase) return null;
+    final ls = await db.getAll(
+        'SELECT ledger_id, debit, credit FROM voucher_lines WHERE voucher_id = ? AND deleted = 0 ORDER BY LENGTH(id), id', [v.id]);
+    for (var i = 1; i < ls.length; i++) {
+      if (ls[i]['ledger_id'] == sys('varhai') && ((ls[i]['credit'] as int?) ?? 0) > 0) return ls[i - 1]['ledger_id'] as String;
+    }
+    return null;
+  }
+
   /// Round off stored on a bill (read back from its round-off line).
   /// The सूट (settlement discount) on a saved जमा / payment.
   Future<int> discountOf(Voucher v) async {
@@ -886,6 +901,7 @@ class VoucherService {
       roundOff: ro,
       haste: v.haste,
       varhai: await varhaiOf(v),
+      varhaiLedgerId: await varhaiAccountOf(v),
     );
   }
 

@@ -977,7 +977,8 @@ void main() {
     expect(await vs.deepCheck(), isEmpty);
     final rep = await Reports(db, biz, (k) => k).supplierCost(sup, today.substring(0, 8) + '01', today);
     // 90 bags, ₹28,800 billed, ₹2,700 discount → 320 billed, 290 net per bag
-    expect(rep.totals, ['', '', '90', '320', Money.fmt(rs(2700)), '290']);
+    expect(rep.totals, ['', '', '90', '320', '', '290']); // year's discounts spread: 320 billed, 290 net
+    expect(rep.rows.first[4], '290'); // this month's discount alone gives the same here
   });
 
   test('days since a balance was last paid', () async {
@@ -1003,7 +1004,7 @@ void main() {
       OldLine('2026-04-09', 'purchase', rs(133489), 'PPC 21', items: [ItemLine.fromTotal(w.id, 420, rs(133489))]),
       OldLine('2026-04-10', 'paid', rs(500000), 'Fund Received RTGS', stmtKind: 'payment'),
       OldLine('2026-04-11', 'purchase', rs(34549), 'PLUS 5', items: [ItemLine.fromTotal(x.id, 100, rs(34549))]),
-      OldLine('2026-04-30', 'paid', rs(183772), 'Trade Discount for Apr 26', stmtKind: 'discount'),
+      OldLine('2026-04-30', 'paid', rs(16803.80), 'Trade Discount for Apr 26', stmtKind: 'discount'), // 10 % of April's goods
       OldLine('2026-04-30', 'purchase', rs(13140), 'Trf to Security Ledger', stmtKind: 'charge'),
       OldLine('2026-04-30', 'purchase', rs(13140), 'same amount, same day – a second line', stmtKind: 'charge'),
       OldLine('2026-11-09', 'purchase', rs(1000), 'after the books start – never an old entry'),
@@ -1016,18 +1017,19 @@ void main() {
     expect(await vs.importOldEntries(sup, lines, owner), 0); // again: nothing new
     final st = await lr.statement(sup);
     expect(st.references.length, 6);
-    // old ledger runs like the company's: −(1,33,489) +5,00,000 −34,549 +1,83,772 −13,140 −13,140
-    expect(st.references.last.balance, -rs(133489) + rs(500000) - rs(34549) + rs(183772) - rs(13140) * 2);
+    // old ledger runs like the company's: −(1,33,489) +5,00,000 −34,549 +16,803.80 −13,140 −13,140
+    expect(st.references.last.balance, -rs(133489) + rs(500000) - rs(34549) + rs(16803.80) - rs(13140) * 2);
     expect(await lr.unbalanced(), isEmpty);
     expect(await vs.deepCheck(), isEmpty);
-    // real cost per bag: April – ₹1,68,038 of goods, ₹1,83,772 discount shared by value
+    // real cost per bag: April – ₹1,68,038 of goods, ₹16,803.80 (10 %) discount
     final rep = await Reports(db, biz, (k) => k).supplierCost(sup, '2026-04-01', '2026-04-30');
     final ppc = rep.rows.firstWhere((r) => r[0] == '04/26' && r[1] == w.name);
     expect(ppc[2], '420');
     expect(ppc[3], Money.fmt(rs(318))); // 1,33,489 / 420 bags
-    expect(ppc[4], Money.fmt((rs(183772) * rs(133489) / (rs(133489) + rs(34549))).round()));
-    // payments and the security transfer are not costs
-    expect(rep.totals![4], Money.fmt(rs(183772)));
+    expect(ppc[4], Money.fmt(rs(286))); // less 10 %: 1,20,140 / 420
+    expect(ppc[5], Money.fmt(rs(286))); // the whole year so far: also 10 %
+    // payments and the security transfer are not costs: the year shows 10 %
+    expect(rep.subtitle, contains('(10.0%)'));
     // undo the whole import in one go: nothing changes, entries gone
     final batches = await vs.oldBatches(sup);
     expect(batches.length, 1);
@@ -1036,6 +1038,25 @@ void main() {
     expect((await lr.statement(sup)).references, isEmpty);
     expect(await lr.balanceAt(sup), before);
     expect(await sr.stockAt(w.id, '2026-12-31'), stock0);
+  });
+
+  test('वराई by PhonePe: goes into PhonePe, not cash; kept on re-save', () async {
+    final sup = await lr.create(name: 'Cement Co 2', group: LedgerGroup.supplier);
+    final pe = vs.sys('upi_h'), cash = vs.sys('cash');
+    final c0 = await lr.balanceAt(cash), p0 = await lr.balanceAt(pe);
+    final id = await vs.save(
+        VoucherInput(type: VoucherType.purchase, date: todayIso(), partyId: sup, payLedgerId: cash, paid: rs(1000),
+            items: [ItemLine(items['W']!.id, 10, rs(250))], varhai: rs(300), varhaiLedgerId: pe),
+        owner);
+    expect(await lr.balanceAt(pe), p0 + rs(300));
+    expect(await lr.balanceAt(cash), c0 - rs(1000));
+    expect(await lr.balanceAt(sup), -rs(1500));
+    expect((await lr.dayCharges(todayIso())).varhai, greaterThanOrEqualTo(rs(300)));
+    final again = await vs.inputOf(id);
+    expect(again.varhaiLedgerId, pe);
+    await vs.save(again, owner, existingId: id);
+    expect(await lr.balanceAt(pe), p0 + rs(300));
+    expect(await vs.deepCheck(), isEmpty);
   });
 
   test('search: words in any order, page no., phone, amount, bill no.', () async {
