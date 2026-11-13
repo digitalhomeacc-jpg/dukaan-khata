@@ -194,6 +194,7 @@ class _AccountFormState extends State<_AccountForm> {
   late final _name = TextEditingController(text: widget.existing?.name ?? '');
   late AccountKind _kind = widget.existing?.kind ?? AccountKind.bank;
   late final _opening = TextEditingController(text: _openingText());
+  final _now = TextEditingController();
   late bool _archived = widget.existing?.archived ?? false;
   String? _error;
 
@@ -208,6 +209,7 @@ class _AccountFormState extends State<_AccountForm> {
   void dispose() {
     _name.dispose();
     _opening.dispose();
+    _now.dispose();
     super.dispose();
   }
 
@@ -215,8 +217,20 @@ class _AccountFormState extends State<_AccountForm> {
     final name = _name.text.trim();
     if (name.isEmpty) return setState(() => _error = 'Enter a name');
     final raw = _opening.text.trim().replaceAll(',', '');
-    final entered = raw.isEmpty ? 0.0 : double.tryParse(raw);
+    var entered = raw.isEmpty ? 0.0 : double.tryParse(raw);
     if (entered == null) return setState(() => _error = 'Opening balance is not a number');
+    final nowRaw = _now.text.trim().replaceAll(',', '');
+    final e = widget.existing;
+    if (nowRaw.isNotEmpty && e != null) {
+      final now = double.tryParse(nowRaw);
+      if (now == null) return setState(() => _error = 'Balance now is not a number');
+      // Opening = what it must have been for the app to show this balance today.
+      final current = accountBalances(widget.data.transactions, [e])[e.id] ?? e.openingBalance;
+      final movement = current - e.openingBalance;
+      final wanted = _kind == AccountKind.card ? -now : now;
+      final opening = wanted - movement;
+      entered = _kind == AccountKind.card ? -opening : opening;
+    }
     try {
       await widget.data.saveAccount(
         id: widget.existing?.id,
@@ -290,6 +304,19 @@ class _AccountFormState extends State<_AccountForm> {
               helperText: 'Before your first transaction in the app',
             ),
           ),
+          if (widget.existing != null) ...[
+            const SizedBox(height: 12),
+            TextField(
+              controller: _now,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
+              inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,\-]'))],
+              decoration: InputDecoration(
+                labelText: _kind == AccountKind.card ? 'Or: amount owed now' : 'Or: balance now',
+                prefixText: '₹ ',
+                helperText: 'Easier: type what your bank or wallet app shows today',
+              ),
+            ),
+          ],
           if (widget.existing != null)
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
