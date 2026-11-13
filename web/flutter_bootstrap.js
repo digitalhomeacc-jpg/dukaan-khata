@@ -11,5 +11,6 @@ _flutter.loader.load({
       s.style.opacity = '0';
       setTimeout(function () { s.remove(); }, 300);
     }
+    if (window.dkRegisterSw) setTimeout(window.dkRegisterSw, 3000);
   },
 });

@@ -25,6 +25,8 @@
     #splash img { width: 96px; height: 96px; border-radius: 22px; box-shadow: 0 6px 24px rgba(31,78,121,.18); }
     #splash .name { font-size: 22px; font-weight: 700; }
     #splash .wait { font-size: 14px; color: #5B6B7F; }
+    #splash .slow { font-size: 13px; color: #5B6B7F; text-align: center; max-width: 300px; line-height: 1.5; }
+    #splash .retry { font: 600 14px sans-serif; color: #fff; background: #1F4E79; border: 0; border-radius: 20px; padding: 10px 18px; }
     #splash .bar { width: 140px; height: 4px; border-radius: 2px; background: #DDE5EE; overflow: hidden; }
     #splash .bar::after {
       content: ""; display: block; width: 40%; height: 100%; background: #D9822B; border-radius: 2px;
@@ -45,12 +47,46 @@
     <div class="name">दुकान खाता</div>
     <div class="bar"></div>
     <div class="wait">उघडत आहे… · Opening…</div>
+    <div class="slow" id="splash-slow" hidden>नवीन आवृत्ती डाउनलोड होत आहे – इंटरनेट हळू असल्यास थोडा वेळ लागतो.<br>A new version is downloading – this takes longer on slow internet.</div>
+    <button class="retry" id="splash-retry" hidden>अडकले? पुन्हा उघडा · Stuck? Open again</button>
   </div>
+  <script>
+    // A slow first open after an update: say what is happening, and after a
+    // while offer a clean restart (clears only the saved app files – all
+    // entries live in the app's database and are not touched).
+    setTimeout(function () { var e = document.getElementById('splash-slow'); if (e && document.getElementById('splash')) e.hidden = false; }, 12000);
+    setTimeout(function () {
+      var b = document.getElementById('splash-retry');
+      if (!b || !document.getElementById('splash')) return;
+      b.hidden = false;
+      b.onclick = async function () {
+        b.disabled = true;
+        try {
+          if ('serviceWorker' in navigator) {
+            var regs = await navigator.serviceWorker.getRegistrations();
+            await Promise.all(regs.map(function (r) { return r.unregister(); }));
+          }
+          if (window.caches) {
+            var keys = await caches.keys();
+            await Promise.all(keys.filter(function (k) { return k.indexOf('dk-') === 0 || k.indexOf('flutter') >= 0; }).map(function (k) { return caches.delete(k); }));
+          }
+        } catch (e) {}
+        location.reload();
+      };
+    }, 40000);
+  </script>
   <script>
     // Keep the app on the phone so it opens without internet.
     if ('serviceWorker' in navigator) {
-      window.addEventListener('load', function () {
+      // save the offline copy only once the app is open: then it reuses what
+      // the screen just downloaded instead of fetching it again at the same time
+      window.dkRegisterSw = function () {
+        if (window.dkSwDone) return;
+        window.dkSwDone = true;
         navigator.serviceWorker.register('app_sw.js?v=__BUILD__').catch(function () {});
+      };
+      setTimeout(window.dkRegisterSw, 60000); // in case the app never says it opened
+      window.addEventListener('load', function () {
         // A new version took over: reload once so every file (icons too) comes
         // from the new version. Right after opening this is automatic; later,
         // a small bar asks first so nothing being typed is lost.
@@ -58,7 +94,9 @@
         var reloading = false;
         navigator.serviceWorker.addEventListener('controllerchange', function () {
           if (!hadController || reloading) return;
-          if (performance.now() < 30000) { reloading = true; location.reload(); return; }
+          // still opening: never restart it – this opening already uses the new
+          // version from the internet; the offline copy is ready for next time
+          if (document.getElementById('splash')) return;
           if (document.getElementById('dk-update')) return;
           var b = document.createElement('button');
           b.id = 'dk-update';

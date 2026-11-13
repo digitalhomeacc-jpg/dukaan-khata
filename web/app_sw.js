@@ -28,6 +28,10 @@ self.addEventListener('install', (e) => {
       const same = HASHES[f] && oldHashes[f] === HASHES[f];
       const old = same ? await caches.match(f) : null;
       if (old) return cache.put(f, old);
+      // a name with ?v=<this build> is unique to this version: if the page
+      // already downloaded it (main.dart.js – 6 MB), reuse that copy
+      const pageCopy = f.includes('v=__BUILD__') ? await caches.match(f) : null;
+      if (pageCopy) return cache.put(f, pageCopy);
       try {
         const res = await fetch(f, { cache: 'reload' });
         if (res.ok) await cache.put(f, res);
