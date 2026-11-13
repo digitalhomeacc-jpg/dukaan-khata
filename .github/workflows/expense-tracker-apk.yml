@@ -1,0 +1,85 @@
+# Builds the Expense Tracker Android app (expense_tracker/ only).
+# It never builds or deploys the Dukaan Khata shop app.
+#
+# Download: GitHub → Actions → "Expense Tracker APK" → latest run → Artifacts.
+name: Expense Tracker APK
+
+on:
+  push:
+    paths:
+      - 'expense_tracker/**'
+      - '.github/workflows/expense-tracker-apk.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: expense-tracker-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Publishable key: designed to be public (the database is protected by Row Level Security).
+  SUPABASE_URL: https://zisjaiknzbrfecjqbubu.supabase.co
+  SUPABASE_PUBLISHABLE_KEY: sb_publishable_DOqtZ88ydsGRZOxuw75oUw_xYlfqEyw
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: expense_tracker
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.50.0'
+          channel: stable
+          cache: true
+
+      - name: Parser tests
+        run: node --test supabase/functions/ingest-email/parsers.test.ts
+
+      - name: App tests
+        run: |
+          flutter pub get
+          flutter analyze
+          flutter test
+
+      - name: Signing key (optional repository secrets)
+        env:
+          KEYSTORE_BASE64: ${{ secrets.EXPENSE_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.EXPENSE_KEYSTORE_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::warning::No EXPENSE_KEYSTORE_BASE64 secret: using a throw-away key. New versions will not install over old ones."
+            exit 0
+          fi
+          echo "$KEYSTORE_BASE64" | base64 -d > android/app/release.jks
+          printf 'storeFile=app/release.jks\nstorePassword=%s\nkeyAlias=expense\nkeyPassword=%s\n' \
+            "$KEYSTORE_PASSWORD" "$KEYSTORE_PASSWORD" > android/key.properties
+
+      - name: Build APK
+        run: |
+          flutter build apk --release \
+            --build-number=${{ github.run_number }} \
+            --dart-define=SUPABASE_URL=$SUPABASE_URL \
+            --dart-define=SUPABASE_PUBLISHABLE_KEY=$SUPABASE_PUBLISHABLE_KEY
+          mv build/app/outputs/flutter-apk/app-release.apk build/expense-tracker-${{ github.run_number }}.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: expense-tracker-apk-${{ github.run_number }}
+          path: expense_tracker/build/expense-tracker-${{ github.run_number }}.apk
+          retention-days: 30

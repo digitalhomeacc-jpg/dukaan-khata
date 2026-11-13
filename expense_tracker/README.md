@@ -73,6 +73,18 @@ secret key (`x-ingest-token`), not with a Supabase login.
 
 ### 3. Build the app
 
+**Easiest: GitHub builds it.** Every push that changes `expense_tracker/` runs the workflow
+`.github/workflows/expense-tracker-apk.yml` (tests, then a release APK). Download the APK from
+GitHub → **Actions** → *Expense Tracker APK* → latest run → **Artifacts**. The workflow only touches
+`expense_tracker/`; it never builds or deploys the shop app.
+
+Add two repository secrets (Settings → Secrets and variables → Actions) so every build is signed with
+the same key; otherwise each build uses a throw-away key and a new version won't install over an old one:
+`EXPENSE_KEYSTORE_BASE64` (the keystore, base64) and `EXPENSE_KEYSTORE_PASSWORD`.
+Keep a copy of the keystore somewhere safe: without it, future updates can't install over the app.
+
+**On your own computer:**
+
 ```bash
 flutter pub get
 flutter run --dart-define=SUPABASE_URL=https://<ref>.supabase.co \
