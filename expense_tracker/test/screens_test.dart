@@ -25,12 +25,41 @@ AppData sample() {
       Account(id: 'card', name: 'ICICI Card ••5678', kind: AccountKind.card),
     ],
     profile: {'display_name': 'Asha', 'ingest_token': 'ab' * 24, 'last_sync_at': now.toUtc().toIso8601String()},
-    unread: [UnreadEmail(id: 'u', from: 'alerts@hdfcbank.net', subject: 'Alert', body: 'Rs 99 something', receivedAt: now)],
+    unread: [
+      UnreadEmail(id: 'u', from: 'alerts@hdfcbank.net', subject: 'Alert', body: 'Rs 99 something', receivedAt: now),
+    ],
     transactions: [
-      Txn(id: '1', amount: 250, isDebit: true, txnAt: now, merchant: 'SWIGGY LIMITED', categoryId: 'f', bank: 'HDFC', accountLast4: '4321', source: 'email', accountId: 'hdfc'),
+      Txn(
+        id: '1',
+        amount: 250,
+        isDebit: true,
+        txnAt: now,
+        merchant: 'SWIGGY LIMITED',
+        categoryId: 'f',
+        bank: 'HDFC',
+        accountLast4: '4321',
+        source: 'email',
+        accountId: 'hdfc',
+      ),
       Txn(id: '6', amount: 5000, isDebit: false, txnAt: now, merchant: 'Rahul', categoryId: 'l', accountId: 'cash'),
-      Txn(id: '7', amount: 2000, isDebit: true, txnAt: now, merchant: 'ATM', accountId: 'hdfc', counterAccountId: 'cash', excluded: true),
-      Txn(id: '2', amount: 1249, isDebit: true, txnAt: now.subtract(const Duration(minutes: 5)), merchant: 'A VERY LONG MERCHANT NAME THAT DOES NOT FIT ON ONE LINE PVT LTD', categoryId: 's'),
+      Txn(
+        id: '7',
+        amount: 2000,
+        isDebit: true,
+        txnAt: now,
+        merchant: 'ATM',
+        accountId: 'hdfc',
+        counterAccountId: 'cash',
+        excluded: true,
+      ),
+      Txn(
+        id: '2',
+        amount: 1249,
+        isDebit: true,
+        txnAt: now.subtract(const Duration(minutes: 5)),
+        merchant: 'A VERY LONG MERCHANT NAME THAT DOES NOT FIT ON ONE LINE PVT LTD',
+        categoryId: 's',
+      ),
       Txn(id: '3', amount: 85000, isDebit: false, txnAt: now, merchant: 'ACME TECHNOLOGIES'),
       Txn(id: '4', amount: 80, isDebit: true, txnAt: now, merchant: 'CHAI POINT'),
       Txn(id: '5', amount: 15430, isDebit: false, txnAt: now, excluded: true, merchant: 'Card bill'),
@@ -114,18 +143,30 @@ void main() {
     await pump(tester, Scaffold(body: UnreadEmailsListOnly(data: data)));
   });
 
+  testWidgets('a day of an account opens as a passbook page', (tester) async {
+    final data = sample();
+    final t = data.transactions.firstWhere((t) => t.accountId != null);
+    final account = data.account(t.accountId)!;
+    await pump(tester, DayLedgerScreen(data: data, account: account, day: t.txnAt, bankBalance: 1000000));
+    expect(find.text('Start of day'), findsOneWidget);
+    expect(find.textContaining('Bank says'), findsOneWidget);
+    expect(find.text('Add missing entry'), findsOneWidget);
+  });
+
   testWidgets('editor for an email transaction', (tester) async {
     final data = sample();
     await pump(tester, TxnEditor(data: data, existing: data.transactions.first));
-    await tester.ensureVisible(find.text('Shopping'));
+    expect(find.text('Bank email'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('Shopping'), 200, scrollable: find.byType(Scrollable).first);
     await tester.pumpAndSettle();
     await tester.tap(find.text('Shopping'));
     await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(find.textContaining('Always use this category'), 100,
-        scrollable: find.byType(Scrollable).first);
+    await tester.scrollUntilVisible(
+      find.textContaining('Always use this category'),
+      100,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.textContaining('Always use this category'), findsOneWidget);
-    await tester.scrollUntilVisible(find.text('Added from a bank email'), 200, scrollable: find.byType(Scrollable).first);
-    expect(find.text('Added from a bank email'), findsOneWidget);
   });
 
   testWidgets('editor validates a new entry', (tester) async {
@@ -141,5 +182,6 @@ class UnreadEmailsListOnly extends StatelessWidget {
   const UnreadEmailsListOnly({super.key, required this.data});
   final AppData data;
   @override
-  Widget build(BuildContext context) => Text('${data.unread.length} unread · ${UnreadEmailsScreen(data: data).runtimeType}');
+  Widget build(BuildContext context) =>
+      Text('${data.unread.length} unread · ${UnreadEmailsScreen(data: data).runtimeType}');
 }

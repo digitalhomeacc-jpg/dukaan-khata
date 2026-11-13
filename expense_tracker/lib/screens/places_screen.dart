@@ -37,12 +37,23 @@ class _PlacesViewState extends State<PlacesView> {
   @override
   Widget build(BuildContext context) {
     final data = widget.data;
-    var groups = payeeGroups(data.transactions,
-        from: _from, loanCategoryIds: data.loanCategoryIds, shares: data.shareTotalsNow, aliases: data.aliases);
+    var groups = payeeGroups(
+      data.transactions,
+      from: _from,
+      loanCategoryIds: data.loanCategoryIds,
+      shares: data.shareTotalsNow,
+      aliases: data.aliases,
+    );
     if (_byAmount) groups.sort((a, b) => b.total.compareTo(a.total));
     if (_query.isNotEmpty) {
       final q = _query.toLowerCase();
-      groups = groups.where((g) => g.name.toLowerCase().contains(q) || (data.category(g.categoryId)?.name.toLowerCase().contains(q) ?? false)).toList();
+      groups = groups
+          .where(
+            (g) =>
+                g.name.toLowerCase().contains(q) ||
+                (data.category(g.categoryId)?.name.toLowerCase().contains(q) ?? false),
+          )
+          .toList();
     }
     final scheme = Theme.of(context).colorScheme;
     final nameCount = <String, int>{};
@@ -80,7 +91,11 @@ class _PlacesViewState extends State<PlacesView> {
             children: [
               Expanded(
                 child: TextField(
-                  decoration: const InputDecoration(prefixIcon: Icon(Icons.search), hintText: 'Search places', isDense: true),
+                  decoration: const InputDecoration(
+                    prefixIcon: Icon(Icons.search),
+                    hintText: 'Search places',
+                    isDense: true,
+                  ),
                   onChanged: (v) => setState(() => _query = v.trim()),
                 ),
               ),
@@ -94,7 +109,10 @@ class _PlacesViewState extends State<PlacesView> {
           ),
         ),
         if (groups.isEmpty)
-          const Padding(padding: EdgeInsets.all(32), child: Text('No spending in this period.', textAlign: TextAlign.center)),
+          const Padding(
+            padding: EdgeInsets.all(32),
+            child: Text('No spending in this period.', textAlign: TextAlign.center),
+          ),
         for (final (i, g) in groups.take(150).indexed)
           ListTile(
             leading: CategoryAvatar(data.category(g.categoryId)),
@@ -118,10 +136,14 @@ class _PlacesViewState extends State<PlacesView> {
                   Text(['Most frequent', '2nd', '3rd'][i], style: TextStyle(fontSize: 11, color: scheme.primary)),
               ],
             ),
-            onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
-              builder: (_) => ListenableBuilder(
-                  listenable: data, builder: (_, _) => PlaceDetailScreen(data: data, keys: g.keys, vpas: g.vpas)),
-            )),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => ListenableBuilder(
+                  listenable: data,
+                  builder: (_, _) => PlaceDetailScreen(data: data, keys: g.keys, vpas: g.vpas),
+                ),
+              ),
+            ),
           ),
       ],
     );
@@ -147,11 +169,19 @@ class PlaceDetailScreen extends StatelessWidget {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            TextField(controller: ctl, autofocus: true, textCapitalization: TextCapitalization.sentences,
-                decoration: const InputDecoration(hintText: 'e.g. Hotel Vijay (nashta)')),
+            TextField(
+              controller: ctl,
+              autofocus: true,
+              textCapitalization: TextCapitalization.sentences,
+              decoration: const InputDecoration(hintText: 'e.g. Hotel Vijay (nashta)'),
+            ),
             const SizedBox(height: 8),
-            Text(g.vpas.isEmpty ? 'Used for all its payments, now and later.' : 'Used for payments to UPI ••${g.vpas.join(', ••')}, now and later.',
-                style: Theme.of(c).textTheme.bodySmall),
+            Text(
+              g.vpas.isEmpty
+                  ? 'Used for all its payments, now and later.'
+                  : 'Used for payments to UPI ••${g.vpas.join(', ••')}, now and later.',
+              style: Theme.of(c).textTheme.bodySmall,
+            ),
           ],
         ),
         actions: [
@@ -186,186 +216,229 @@ class PlaceDetailScreen extends StatelessWidget {
     final maxMonth = months.fold(0.0, (m, e) => e.value > m ? e.value : m);
 
     Widget stat(String label, String value, {Color? color}) => Expanded(
-          child: Column(children: [
-            FittedBox(child: Text(value, style: text.titleMedium?.copyWith(fontWeight: FontWeight.w700, color: color))),
-            const SizedBox(height: 2),
-            Text(label, style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
-          ]),
-        );
+      child: Column(
+        children: [
+          FittedBox(
+            child: Text(
+              value,
+              style: text.titleMedium?.copyWith(fontWeight: FontWeight.w700, color: color),
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(label, style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
+        ],
+      ),
+    );
 
     return Scaffold(
       appBar: AppBar(
         title: Text(g.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-        actions: [IconButton(tooltip: 'Rename', icon: const Icon(Icons.edit_outlined), onPressed: () => _rename(context, g))],
+        actions: [
+          IconButton(tooltip: 'Rename', icon: const Icon(Icons.edit_outlined), onPressed: () => _rename(context, g)),
+        ],
       ),
       body: CustomScrollView(
         slivers: [
           SliverPadding(
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
-            sliver: SliverList.list(children: [
-              // Summary card
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(colors: [scheme.primaryContainer, scheme.secondaryContainer]),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(children: [
-                      CategoryAvatar(data.category(g.categoryId), size: 44),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          Text(g.name, style: text.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
-                          Text(
-                            [
-                              if (g.vpas.isNotEmpty) 'UPI ••${g.vpas.join(', ••')}',
-                              'since ${DateFormat('MMM yyyy').format(g.first)}',
-                            ].join(' · '),
-                            style: text.bodySmall,
-                          ),
-                        ]),
-                      ),
-                    ]),
-                    const SizedBox(height: 16),
-                    Row(children: [
-                      stat('money out', money(g.total), color: scheme.error),
-                      stat('money in', money(g.received), color: Colors.green.shade700),
-                      stat(g.net >= 0 ? 'net in' : 'net out', money(g.net.abs())),
-                    ]),
-                    const SizedBox(height: 12),
-                    Text(
-                      '${g.count} payments · avg ${money(g.average)} · about '
-                      '${g.perMonth >= 1 ? g.perMonth.toStringAsFixed(g.perMonth >= 10 ? 0 : 1) : '<1'}× a month · last ${dayLabel(g.lastPaid)}',
-                      style: text.bodySmall,
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-              // Who is this?
-              Text('Who is this?', style: text.titleSmall),
-              const SizedBox(height: 8),
-              SegmentedButton<String>(
-                showSelectedIcon: false,
-                segments: const [
-                  ButtonSegment(value: 'shop', label: Text('Shop')),
-                  ButtonSegment(value: 'friend', label: Text('Friend')),
-                  ButtonSegment(value: 'family', label: Text('Family')),
-                  ButtonSegment(value: 'me', label: Text('Me')),
-                ],
-                emptySelectionAllowed: true,
-                selected: {?role},
-                onSelectionChanged: (s) async {
-                  if (s.isEmpty) return;
-                  final r = s.first;
-                  await data.setPersonRole(g.name, r);
-                  if (r == 'me') await data.markOwnAccount(g.keys);
-                },
-              ),
-              const SizedBox(height: 6),
-              Text(
-                switch (role) {
-                  'shop' => 'A shop, restaurant or service (delivery, driver…): payments are your spending.',
-                  'friend' => 'A friend. Choose below whether their payments are your spends or go to your balance with them.',
-                  'family' => 'Family: money from them is income (Money from home), money to them is Family spending.',
-                  'me' => 'Your own account: money to and from it is a move, not spending or income.',
-                  _ => 'Tell the app who this is: it then counts their money the right way.',
-                },
-                style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
-              ),
-              if (role == 'friend' && friendsCat != null) ...[
-                const SizedBox(height: 12),
-                SegmentedButton<bool>(
-                  showSelectedIcon: false,
-                  segments: const [
-                    ButtonSegment(value: false, label: Text('My spends'), icon: Icon(Icons.shopping_bag_outlined, size: 18)),
-                    ButtonSegment(value: true, label: Text('Friends ledger'), icon: Icon(Icons.handshake_outlined, size: 18)),
-                  ],
-                  selected: {inLedger},
-                  onSelectionChanged: (s) => data.categorizePlace(g.keys, s.first ? friendsCat.id : null),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  inLedger
-                      ? 'All payments with them count as owed (lent / borrowed). You can still change single ones.'
-                      : 'Payments to them are things they bought for you: give each a category (Quick sort helps).',
-                  style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
-                ),
-              ],
-              if (role != 'me' && !inLedger) ...[
-                const SizedBox(height: 16),
-                Text(role == 'friend' ? 'Category for all their payments (optional)' : 'Category for all its payments',
-                    style: text.titleSmall),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    for (final (:cat, inGroup: _) in groupedCategories(data.categories.where((c) => !c.isLoan)))
-                      ChoiceChip(
-                        avatar: Icon(iconFor(cat), size: 18, color: colorFor(cat)),
-                        label: Text(cat.name),
-                        selected: g.categoryId == cat.id,
-                        onSelected: (_) => data.categorizePlace(g.keys, cat.id),
-                      ),
-                  ],
-                ),
-              ],
-              if (months.length > 1) ...[
-                const SizedBox(height: 20),
-                Text('Money out by month', style: text.titleSmall),
-                const SizedBox(height: 8),
-                SizedBox(
-                  height: 90,
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.end,
+            sliver: SliverList.list(
+              children: [
+                // Summary card
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(colors: [scheme.primaryContainer, scheme.secondaryContainer]),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      for (final m in months.reversed)
-                        Expanded(
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 2),
+                      Row(
+                        children: [
+                          CategoryAvatar(data.category(g.categoryId), size: 44),
+                          const SizedBox(width: 12),
+                          Expanded(
                             child: Column(
-                              mainAxisAlignment: MainAxisAlignment.end,
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Expanded(
-                                  child: Align(
-                                    alignment: Alignment.bottomCenter,
-                                    child: FractionallySizedBox(
-                                      heightFactor: maxMonth == 0 ? 0.02 : (m.value / maxMonth).clamp(0.02, 1.0),
-                                      child: Container(
-                                        decoration: BoxDecoration(color: scheme.primary, borderRadius: BorderRadius.circular(4)),
-                                      ),
-                                    ),
-                                  ),
+                                Text(g.name, style: text.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+                                Text(
+                                  [
+                                    if (g.vpas.isNotEmpty) 'UPI ••${g.vpas.join(', ••')}',
+                                    'since ${DateFormat('MMM yyyy').format(g.first)}',
+                                  ].join(' · '),
+                                  style: text.bodySmall,
                                 ),
-                                const SizedBox(height: 4),
-                                Text(DateFormat('MMM').format(m.key), style: const TextStyle(fontSize: 10)),
                               ],
                             ),
                           ),
-                        ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          stat('money out', money(g.total), color: scheme.error),
+                          stat('money in', money(g.received), color: Colors.green.shade700),
+                          stat(g.net >= 0 ? 'net in' : 'net out', money(g.net.abs())),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        '${g.count} payments · avg ${money(g.average)} · about '
+                        '${g.perMonth >= 1 ? g.perMonth.toStringAsFixed(g.perMonth >= 10 ? 0 : 1) : '<1'}× a month · last ${dayLabel(g.lastPaid)}',
+                        style: text.bodySmall,
+                      ),
                     ],
                   ),
                 ),
+                const SizedBox(height: 16),
+                // Who is this?
+                Text('Who is this?', style: text.titleSmall),
+                const SizedBox(height: 8),
+                SegmentedButton<String>(
+                  showSelectedIcon: false,
+                  segments: const [
+                    ButtonSegment(value: 'shop', label: Text('Shop')),
+                    ButtonSegment(value: 'friend', label: Text('Friend')),
+                    ButtonSegment(value: 'family', label: Text('Family')),
+                    ButtonSegment(value: 'me', label: Text('Me')),
+                  ],
+                  emptySelectionAllowed: true,
+                  selected: {?role},
+                  onSelectionChanged: (s) async {
+                    if (s.isEmpty) return;
+                    final r = s.first;
+                    await data.setPersonRole(g.name, r);
+                    if (r == 'me') await data.markOwnAccount(g.keys);
+                  },
+                ),
+                const SizedBox(height: 6),
+                Text(switch (role) {
+                  'shop' => 'A shop, restaurant or service (delivery, driver…): payments are your spending.',
+                  'friend' =>
+                    'A friend. Choose below whether their payments are your spends or go to your balance with them.',
+                  'family' => 'Family: money from them is income (Money from home), money to them is Family spending.',
+                  'me' => 'Your own account: money to and from it is a move, not spending or income.',
+                  _ => 'Tell the app who this is: it then counts their money the right way.',
+                }, style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
+                if (role == 'friend' && friendsCat != null) ...[
+                  const SizedBox(height: 12),
+                  SegmentedButton<bool>(
+                    showSelectedIcon: false,
+                    segments: const [
+                      ButtonSegment(
+                        value: false,
+                        label: Text('My spends'),
+                        icon: Icon(Icons.shopping_bag_outlined, size: 18),
+                      ),
+                      ButtonSegment(
+                        value: true,
+                        label: Text('Friends ledger'),
+                        icon: Icon(Icons.handshake_outlined, size: 18),
+                      ),
+                    ],
+                    selected: {inLedger},
+                    onSelectionChanged: (s) => data.categorizePlace(g.keys, s.first ? friendsCat.id : null),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    inLedger
+                        ? 'All payments with them count as owed (lent / borrowed). You can still change single ones.'
+                        : 'Payments to them are things they bought for you: give each a category (Quick sort helps).',
+                    style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+                  ),
+                ],
+                if (role != 'me' && !inLedger) ...[
+                  const SizedBox(height: 16),
+                  Text(
+                    role == 'friend' ? 'Category for all their payments (optional)' : 'Category for all its payments',
+                    style: text.titleSmall,
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final (:cat, inGroup: _) in groupedCategories(data.categories.where((c) => !c.isLoan)))
+                        ChoiceChip(
+                          avatar: Icon(iconFor(cat), size: 18, color: colorFor(cat)),
+                          label: Text(cat.name),
+                          selected: g.categoryId == cat.id,
+                          onSelected: (_) => data.categorizePlace(g.keys, cat.id),
+                        ),
+                    ],
+                  ),
+                ],
+                if (months.length > 1) ...[
+                  const SizedBox(height: 20),
+                  Text('Money out by month', style: text.titleSmall),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    height: 90,
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        for (final m in months.reversed)
+                          Expanded(
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 2),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.end,
+                                children: [
+                                  Expanded(
+                                    child: Align(
+                                      alignment: Alignment.bottomCenter,
+                                      child: FractionallySizedBox(
+                                        heightFactor: maxMonth == 0 ? 0.02 : (m.value / maxMonth).clamp(0.02, 1.0),
+                                        child: Container(
+                                          decoration: BoxDecoration(
+                                            color: scheme.primary,
+                                            borderRadius: BorderRadius.circular(4),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(DateFormat('MMM').format(m.key), style: const TextStyle(fontSize: 10)),
+                                ],
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 20),
+                Row(
+                  children: [
+                    Expanded(child: Text('Ledger', style: text.titleSmall)),
+                    SizedBox(
+                      width: 74,
+                      child: Text('Out', textAlign: TextAlign.end, style: text.labelSmall),
+                    ),
+                    SizedBox(
+                      width: 74,
+                      child: Text('In', textAlign: TextAlign.end, style: text.labelSmall),
+                    ),
+                    SizedBox(
+                      width: 86,
+                      child: Text('Net', textAlign: TextAlign.end, style: text.labelSmall),
+                    ),
+                  ],
+                ),
+                const Divider(),
               ],
-              const SizedBox(height: 20),
-              Row(children: [
-                Expanded(child: Text('Ledger', style: text.titleSmall)),
-                SizedBox(width: 74, child: Text('Out', textAlign: TextAlign.end, style: text.labelSmall)),
-                SizedBox(width: 74, child: Text('In', textAlign: TextAlign.end, style: text.labelSmall)),
-                SizedBox(width: 86, child: Text('Net', textAlign: TextAlign.end, style: text.labelSmall)),
-              ]),
-              const Divider(),
-            ]),
+            ),
           ),
           SliverList.builder(
             itemCount: ledger.length,
             itemBuilder: (context, i) {
               final l = ledger[i];
-              final newMonth = i == 0 || ledger[i - 1].txn.txnAt.month != l.txn.txnAt.month || ledger[i - 1].txn.txnAt.year != l.txn.txnAt.year;
+              final newMonth =
+                  i == 0 ||
+                  ledger[i - 1].txn.txnAt.month != l.txn.txnAt.month ||
+                  ledger[i - 1].txn.txnAt.year != l.txn.txnAt.year;
               final cat = data.category(l.txn.categoryId);
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -381,30 +454,48 @@ class PlaceDetailScreen extends StatelessWidget {
                     onTap: () => openTxnEditor(context, data, existing: l.txn),
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      child: Row(children: [
-                        Expanded(
-                          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                            Text(DateFormat('d MMM, h:mm a').format(l.txn.txnAt), style: text.bodyMedium),
-                            Text(cat?.isLoan == true ? 'Friends ledger' : (cat?.name ?? 'No category'),
-                                style: text.bodySmall?.copyWith(color: cat == null ? scheme.error : scheme.onSurfaceVariant)),
-                          ]),
-                        ),
-                        SizedBox(
-                          width: 74,
-                          child: Text(l.out > 0 ? money(l.out) : '', textAlign: TextAlign.end,
-                              style: TextStyle(color: scheme.error, fontWeight: FontWeight.w600)),
-                        ),
-                        SizedBox(
-                          width: 74,
-                          child: Text(l.into > 0 ? money(l.into) : '', textAlign: TextAlign.end,
-                              style: TextStyle(color: Colors.green.shade700, fontWeight: FontWeight.w600)),
-                        ),
-                        SizedBox(
-                          width: 86,
-                          child: Text('${l.net < 0 ? '−' : ''}${money(l.net.abs())}', textAlign: TextAlign.end,
-                              style: text.bodySmall?.copyWith(fontFeatures: const [FontFeature.tabularFigures()])),
-                        ),
-                      ]),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(DateFormat('d MMM, h:mm a').format(l.txn.txnAt), style: text.bodyMedium),
+                                Text(
+                                  cat?.isLoan == true ? 'Friends ledger' : (cat?.name ?? 'No category'),
+                                  style: text.bodySmall?.copyWith(
+                                    color: cat == null ? scheme.error : scheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          SizedBox(
+                            width: 74,
+                            child: Text(
+                              l.out > 0 ? money(l.out) : '',
+                              textAlign: TextAlign.end,
+                              style: TextStyle(color: scheme.error, fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                          SizedBox(
+                            width: 74,
+                            child: Text(
+                              l.into > 0 ? money(l.into) : '',
+                              textAlign: TextAlign.end,
+                              style: TextStyle(color: Colors.green.shade700, fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                          SizedBox(
+                            width: 86,
+                            child: Text(
+                              '${l.net < 0 ? '−' : ''}${money(l.net.abs())}',
+                              textAlign: TextAlign.end,
+                              style: text.bodySmall?.copyWith(fontFeatures: const [FontFeature.tabularFigures()]),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ],

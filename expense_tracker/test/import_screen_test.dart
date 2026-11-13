@@ -9,7 +9,13 @@ void main() {
     tester.view.physicalSize = const Size(360, 780) * 3;
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.reset);
-    await tester.pumpWidget(MaterialApp(home: ImportStatementScreen(data: AppData.preview(transactions: const [], categories: const []))));
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ImportStatementScreen(
+          data: AppData.preview(transactions: const [], categories: const []),
+        ),
+      ),
+    );
     expect(find.textContaining('XLS (Excel) or Delimited'), findsOneWidget);
     expect(find.text('Choose statement file'), findsOneWidget);
   });

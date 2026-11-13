@@ -24,9 +24,9 @@ class ExpenseApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     ThemeData theme(Brightness b) => ThemeData(
-          colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF00897B), brightness: b),
-          inputDecorationTheme: const InputDecorationTheme(border: OutlineInputBorder()),
-        );
+      colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF00897B), brightness: b),
+      inputDecorationTheme: const InputDecorationTheme(border: OutlineInputBorder()),
+    );
     return MaterialApp(
       title: 'Expense Tracker',
       debugShowCheckedModeBanner: false,
@@ -63,14 +63,14 @@ class _NotConfigured extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => const Scaffold(
-        body: Center(
-          child: Padding(
-            padding: EdgeInsets.all(24),
-            child: Text(
-              'Supabase is not configured.\n\nBuild with\n--dart-define=SUPABASE_URL=…\n--dart-define=SUPABASE_PUBLISHABLE_KEY=…',
-              textAlign: TextAlign.center,
-            ),
-          ),
+    body: Center(
+      child: Padding(
+        padding: EdgeInsets.all(24),
+        child: Text(
+          'Supabase is not configured.\n\nBuild with\n--dart-define=SUPABASE_URL=…\n--dart-define=SUPABASE_PUBLISHABLE_KEY=…',
+          textAlign: TextAlign.center,
         ),
-      );
+      ),
+    ),
+  );
 }

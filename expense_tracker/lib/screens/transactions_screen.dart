@@ -45,6 +45,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
     final q = _query.toLowerCase();
     return t.title.toLowerCase().contains(q) ||
         (t.note ?? '').toLowerCase().contains(q) ||
+        (t.details ?? '').toLowerCase().contains(q) ||
         (widget.data.category(t.categoryId)?.name.toLowerCase().contains(q) ?? false);
   }
 
@@ -114,7 +115,9 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                     ),
                   ),
                 if (account != null && check != null)
-                  SliverToBoxAdapter(child: BalanceCheckCard(data: data, account: account, check: check)),
+                  SliverToBoxAdapter(
+                    child: BalanceCheckCard(data: data, account: account, check: check),
+                  ),
                 SliverToBoxAdapter(child: _SummaryCard(summary: summary)),
                 if (_accountId == null)
                   for (final p in budgetProgress(data.budgets.where((b) => b.categoryId == null), summary))
@@ -131,7 +134,9 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                       child: Card.filled(
                         child: ListTile(
                           leading: const Icon(Icons.auto_awesome_motion_outlined),
-                          title: Text('$uncategorised ${uncategorised == 1 ? 'payment needs' : 'payments need'} a category'),
+                          title: Text(
+                            '$uncategorised ${uncategorised == 1 ? 'payment needs' : 'payments need'} a category',
+                          ),
                           subtitle: Text('Quick sort · ${unsorted.length} payees, biggest first'),
                           trailing: const Icon(Icons.chevron_right),
                           onTap: () => openQuickSort(context, data),
@@ -177,15 +182,20 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                   ),
                 ),
                 if (days.isEmpty)
-                  SliverFillRemaining(
-                    hasScrollBody: false,
-                    child: _EmptyState(hasAny: data.transactions.isNotEmpty),
-                  ),
+                  SliverFillRemaining(hasScrollBody: false, child: _EmptyState(hasAny: data.transactions.isNotEmpty)),
                 for (final day in days) ...[
-                  SliverToBoxAdapter(child: _DayHeader(day: day.key, txns: day.value, loanCategoryIds: loans, shares: data.shareTotalsNow)),
+                  SliverToBoxAdapter(
+                    child: _DayHeader(
+                      day: day.key,
+                      txns: day.value,
+                      loanCategoryIds: loans,
+                      shares: data.shareTotalsNow,
+                    ),
+                  ),
                   SliverList.builder(
                     itemCount: day.value.length,
-                    itemBuilder: (context, i) => TxnTile(txn: day.value[i], data: data, balanceAfter: running[day.value[i].id]),
+                    itemBuilder: (context, i) =>
+                        TxnTile(txn: day.value[i], data: data, balanceAfter: running[day.value[i].id]),
                   ),
                 ],
                 const SliverToBoxAdapter(child: SizedBox(height: 96)),
@@ -204,16 +214,19 @@ class _SummaryCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     Widget cell(String label, String value, Color color) => Expanded(
-          child: Column(
-            children: [
-              Text(label, style: TextStyle(color: scheme.onPrimaryContainer.withValues(alpha: 0.8))),
-              const SizedBox(height: 4),
-              FittedBox(
-                child: Text(value, style: Theme.of(context).textTheme.titleLarge?.copyWith(color: color, fontWeight: FontWeight.w600)),
-              ),
-            ],
+      child: Column(
+        children: [
+          Text(label, style: TextStyle(color: scheme.onPrimaryContainer.withValues(alpha: 0.8))),
+          const SizedBox(height: 4),
+          FittedBox(
+            child: Text(
+              value,
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(color: color, fontWeight: FontWeight.w600),
+            ),
           ),
-        );
+        ],
+      ),
+    );
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Card(
@@ -244,7 +257,8 @@ class _DayHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final spent = txns.where((t) => t.isDebit && counts(t, loanCategoryIds)).fold(0.0, (s, t) => s + shares.own(t));
-    final style = Theme.of(context).textTheme.labelLarge?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant);
+    final style = Theme.of(context).textTheme.labelLarge
+        ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant);
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
       child: Row(
@@ -268,10 +282,11 @@ class TxnTile extends StatelessWidget {
 
   String? _accountText() {
     final a = data.account(txn.accountId);
-    final from = a?.name ??
-        (txn.bank == null ? null : '${txn.bank}${txn.accountLast4 != null ? ' ••${txn.accountLast4}' : ''}');
+    final from =
+        a?.name ?? (txn.bank == null ? null : '${txn.bank}${txn.accountLast4 != null ? ' ••${txn.accountLast4}' : ''}');
     final other = data.account(txn.counterAccountId);
-    if (txn.excluded && other != null) return txn.isDebit ? '${from ?? '?'} → ${other.name}' : '${other.name} → ${from ?? '?'}';
+    if (txn.excluded && other != null)
+      return txn.isDebit ? '${from ?? '?'} → ${other.name}' : '${other.name} → ${from ?? '?'}';
     return from;
   }
 
@@ -287,7 +302,8 @@ class TxnTile extends StatelessWidget {
     final lenderLoan = data.loan(txn.loanId);
     final isLoan = (cat?.isLoan ?? false) || txn.isLoanTransfer;
     if (txn.isLoanTransfer) {
-      details = '${txn.loanRole == 'borrow' ? 'Borrowed' : 'Loan payment'}${lenderLoan != null ? ' · ${lenderLoan.name}' : ''} · $details';
+      details =
+          '${txn.loanRole == 'borrow' ? 'Borrowed' : 'Loan payment'}${lenderLoan != null ? ' · ${lenderLoan.name}' : ''} · $details';
     } else if (txn.loanRole == 'spend' && lenderLoan != null) {
       details = 'Paid with ${lenderLoan.name} · $details';
     } else if (isLoan) {
@@ -303,15 +319,13 @@ class TxnTile extends StatelessWidget {
       details = 'Paid back: ${paidBack.map((s) => s.person).toSet().join(', ')}\'s share · $details';
     }
     final notMine = paidBack.isNotEmpty && data.shareTotalsNow.own(txn) == 0;
-    final amountColor = txn.excluded || isLoan || notMine ? scheme.outline : (txn.isDebit ? scheme.onSurface : Colors.green.shade700);
+    final amountColor = txn.excluded || isLoan || notMine
+        ? scheme.outline
+        : (txn.isDebit ? scheme.onSurface : Colors.green.shade700);
     return ListTile(
       leading: CategoryAvatar(cat),
       title: Text(txn.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-      subtitle: Text(
-        txn.excluded ? 'Not counted · $details' : details,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
+      subtitle: Text(txn.excluded ? 'Not counted · $details' : details, maxLines: 1, overflow: TextOverflow.ellipsis),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -330,8 +344,10 @@ class TxnTile extends StatelessWidget {
                 ),
               ),
               if (balanceAfter != null)
-                Text('Bal ${balanceAfter! < 0 ? '−' : ''}${money(balanceAfter!.abs())}',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(color: scheme.outline)),
+                Text(
+                  'Bal ${balanceAfter! < 0 ? '−' : ''}${money(balanceAfter!.abs())}',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(color: scheme.outline),
+                ),
             ],
           ),
         ],
@@ -348,21 +364,21 @@ class _EmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.inbox_outlined, size: 56, color: Theme.of(context).colorScheme.outline),
-            const SizedBox(height: 12),
-            Text(
-              hasAny
-                  ? 'Nothing here for this month.'
-                  : 'No transactions yet.\nTap Add, or connect Gmail in Settings so bank alerts arrive here automatically.',
-              textAlign: TextAlign.center,
-            ),
-          ],
+    padding: const EdgeInsets.all(32),
+    child: Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(Icons.inbox_outlined, size: 56, color: Theme.of(context).colorScheme.outline),
+        const SizedBox(height: 12),
+        Text(
+          hasAny
+              ? 'Nothing here for this month.'
+              : 'No transactions yet.\nTap Add, or connect Gmail in Settings so bank alerts arrive here automatically.',
+          textAlign: TextAlign.center,
         ),
-      );
+      ],
+    ),
+  );
 }
 
 /// Bank's balance (from its email) next to the app's, with the difference.
@@ -406,26 +422,38 @@ class BalanceCheckCard extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  Icon(ok ? Icons.verified_outlined : Icons.warning_amber_rounded,
-                      color: ok ? Colors.green.shade700 : scheme.error, size: 20),
+                  Icon(
+                    ok ? Icons.verified_outlined : Icons.warning_amber_rounded,
+                    color: ok ? Colors.green.shade700 : scheme.error,
+                    size: 20,
+                  ),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: Text(ok ? 'Matches the bank' : 'Differs from the bank by ${money(check.difference.abs())}',
-                        style: const TextStyle(fontWeight: FontWeight.w600)),
+                    child: Text(
+                      ok ? 'Matches the bank' : 'Differs from the bank by ${money(check.difference.abs())}',
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
                   ),
                 ],
               ),
               const SizedBox(height: 6),
-              Text('Bank: ${money(check.bank)} · App: ${check.app < 0 ? '−' : ''}${money(check.app.abs())} · ${dayLabel(check.asOf)}, ${timeLabel(check.asOf)}',
-                  style: Theme.of(context).textTheme.bodySmall),
+              Text(
+                'Bank: ${money(check.bank)} · App: ${check.app < 0 ? '−' : ''}${money(check.app.abs())} · ${dayLabel(check.asOf)}, ${timeLabel(check.asOf)}',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
               Align(
                 alignment: Alignment.centerLeft,
                 child: TextButton.icon(
                   icon: const Icon(Icons.calendar_month, size: 18),
                   label: const Text('Day by day'),
-                  onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
-                    builder: (_) => ListenableBuilder(listenable: data, builder: (_, _) => DayByDayScreen(data: data, account: account)),
-                  )),
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => ListenableBuilder(
+                        listenable: data,
+                        builder: (_, _) => DayByDayScreen(data: data, account: account),
+                      ),
+                    ),
+                  ),
                 ),
               ),
               if (!ok) ...[
@@ -473,8 +501,13 @@ class DayByDayScreen extends StatelessWidget {
           r: lastOfDay[d]!,
           // End-of-day balances (statements, daily emails: 23:59) against the whole day; a balance from a
           // payment alert against the moment it was sent.
-          app: balanceAt(data.transactions, account,
-              lastOfDay[d]!.asOf.hour == 23 && lastOfDay[d]!.asOf.minute == 59 ? DateTime(d.year, d.month, d.day, 23, 59, 59) : lastOfDay[d]!.asOf),
+          app: balanceAt(
+            data.transactions,
+            account,
+            lastOfDay[d]!.asOf.hour == 23 && lastOfDay[d]!.asOf.minute == 59
+                ? DateTime(d.year, d.month, d.day, 23, 59, 59)
+                : lastOfDay[d]!.asOf,
+          ),
         ),
     ];
     final bad = rows.where((x) => (x.r.balance - x.app).abs() >= 1).toList();
@@ -490,9 +523,9 @@ class DayByDayScreen extends StatelessWidget {
               rows.isEmpty
                   ? 'No bank balances yet. Import a statement or wait for a balance email.'
                   : bad.isEmpty
-                      ? 'Matches the bank on all ${rows.length} days.'
-                      : 'Differs on ${bad.length} of ${rows.length} days. It starts on ${dayLabel(firstBad!.r.asOf)}: '
-                          'look for a missing or extra transaction that day.',
+                  ? 'Matches the bank on all ${rows.length} days.'
+                  : 'Differs on ${bad.length} of ${rows.length} days. It starts on ${dayLabel(firstBad!.r.asOf)}: '
+                        'look for a missing or extra transaction that day.',
               style: TextStyle(color: bad.isEmpty ? Colors.green.shade700 : scheme.error, fontWeight: FontWeight.w600),
             ),
           ),
@@ -503,12 +536,137 @@ class DayByDayScreen extends StatelessWidget {
               subtitle: Text('Bank ${money(x.r.balance)} · App ${x.app < 0 ? '−' : ''}${money(x.app.abs())}'),
               trailing: (x.r.balance - x.app).abs() < 1
                   ? Icon(Icons.check, color: Colors.green.shade700)
-                  : Text('${x.r.balance - x.app > 0 ? '+' : '−'}${money((x.r.balance - x.app).abs())}',
-                      style: TextStyle(color: scheme.error, fontWeight: FontWeight.w600)),
-              onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
-                builder: (_) => ListenableBuilder(listenable: data, builder: (_, _) => TransactionsScreen(data: data, accountId: account.id)),
-              )),
+                  : Text(
+                      '${x.r.balance - x.app > 0 ? '+' : '−'}${money((x.r.balance - x.app).abs())}',
+                      style: TextStyle(color: scheme.error, fontWeight: FontWeight.w600),
+                    ),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => ListenableBuilder(
+                    listenable: data,
+                    builder: (_, _) =>
+                        DayLedgerScreen(data: data, account: account, day: x.r.asOf, bankBalance: x.r.balance),
+                  ),
+                ),
+              ),
             ),
+        ],
+      ),
+    );
+  }
+}
+
+/// One day of an account, like a page of a passbook: start balance, each payment with the balance after it,
+/// end balance against the bank's. Tap a payment for its details.
+class DayLedgerScreen extends StatelessWidget {
+  const DayLedgerScreen({super.key, required this.data, required this.account, required this.day, this.bankBalance});
+
+  final AppData data;
+  final Account account;
+  final DateTime day;
+  final double? bankBalance;
+
+  @override
+  Widget build(BuildContext context) {
+    final start = DateTime(day.year, day.month, day.day);
+    final end = start.add(const Duration(days: 1));
+    final txns =
+        data.transactions
+            .where((t) => !t.txnAt.isBefore(start) && t.txnAt.isBefore(end) && effectOn(t, account) != 0)
+            .toList()
+          ..sort((a, b) => a.txnAt.compareTo(b.txnAt));
+    final opening = balanceAt(data.transactions, account, start.subtract(const Duration(microseconds: 1)));
+    final running = runningBalances(data.transactions, account);
+    final out = txns.fold(0.0, (s, t) => effectOn(t, account) < 0 ? s - effectOn(t, account) : s);
+    final inn = txns.fold(0.0, (s, t) => effectOn(t, account) > 0 ? s + effectOn(t, account) : s);
+    final closing = opening + inn - out;
+    final diff = bankBalance == null ? 0.0 : bankBalance! - closing;
+    final text = Theme.of(context).textTheme;
+    final scheme = Theme.of(context).colorScheme;
+    String signed(double v) => '${v < 0 ? '−' : ''}${money(v.abs())}';
+
+    Widget cell(String label, String value, {Color? color}) => Expanded(
+      child: Column(
+        children: [
+          Text(label, style: text.bodySmall?.copyWith(color: scheme.onPrimaryContainer.withValues(alpha: 0.8))),
+          const SizedBox(height: 2),
+          FittedBox(
+            child: Text(
+              value,
+              style: text.titleMedium?.copyWith(fontWeight: FontWeight.w700, color: color),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    return Scaffold(
+      appBar: AppBar(title: Text(dayLabel(start))),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => openTxnEditor(
+          context,
+          data,
+          prefill: Txn(
+            id: '',
+            amount: diff.abs() >= 1 ? double.parse(diff.abs().toStringAsFixed(2)) : 0,
+            isDebit: diff < 0,
+            txnAt: DateTime(start.year, start.month, start.day, 12),
+            accountId: account.id,
+            method: 'upi',
+          ),
+        ),
+        icon: const Icon(Icons.add),
+        label: const Text('Add missing entry'),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.only(bottom: 96),
+        children: [
+          Container(
+            margin: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(color: scheme.primaryContainer, borderRadius: BorderRadius.circular(20)),
+            child: Column(
+              children: [
+                Text(account.name, style: text.labelLarge),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    cell('Start of day', signed(opening)),
+                    cell('Out', money(out), color: scheme.error),
+                    cell('In', money(inn), color: Colors.green.shade700),
+                    cell('End of day', signed(closing)),
+                  ],
+                ),
+                if (bankBalance != null) ...[
+                  const Divider(height: 24),
+                  Row(
+                    children: [
+                      Icon(
+                        diff.abs() < 1 ? Icons.verified_outlined : Icons.warning_amber_rounded,
+                        size: 18,
+                        color: diff.abs() < 1 ? Colors.green.shade700 : scheme.error,
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          diff.abs() < 1
+                              ? 'Bank says ${signed(bankBalance!)}: matches'
+                              : 'Bank says ${signed(bankBalance!)}: the bank has ${diff > 0 ? 'more' : 'less'} by ${money(diff.abs())}',
+                          style: text.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+          if (txns.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(24),
+              child: Text('No payments in the app on this day.', textAlign: TextAlign.center),
+            ),
+          for (final t in txns) TxnTile(txn: t, data: data, balanceAfter: running[t.id]),
         ],
       ),
     );

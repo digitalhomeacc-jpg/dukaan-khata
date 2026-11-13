@@ -50,8 +50,8 @@ class CategoriesScreen extends StatelessWidget {
                 subtitle: cat.isLoan
                     ? const Text('Friends ledger: lent, borrowed, settle-ups')
                     : cat.isInvestment
-                        ? const Text('Not counted as spending or income')
-                        : null,
+                    ? const Text('Not counted as spending or income')
+                    : null,
                 onTap: () => _edit(context, cat),
                 trailing: IconButton(icon: const Icon(Icons.delete_outline), onPressed: () => _delete(context, cat)),
               ),
@@ -101,7 +101,13 @@ class _CategoryFormState extends State<_CategoryForm> {
     if (name.isEmpty) return setState(() => _error = 'Enter a name');
     try {
       final id = await widget.data.saveCategory(
-          id: widget.existing?.id, name: name, icon: _icon, color: _color, isLoan: _isLoan, parentId: _parentId);
+        id: widget.existing?.id,
+        name: name,
+        icon: _icon,
+        color: _color,
+        isLoan: _isLoan,
+        parentId: _parentId,
+      );
       if (mounted) Navigator.pop(context, id);
     } catch (e) {
       setState(() => _error = e.toString().contains('duplicate') ? 'You already have “$name”' : 'Could not save: $e');
@@ -116,7 +122,10 @@ class _CategoryFormState extends State<_CategoryForm> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(widget.existing == null ? 'New category' : 'Edit category', style: Theme.of(context).textTheme.titleLarge),
+          Text(
+            widget.existing == null ? 'New category' : 'Edit category',
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
           const SizedBox(height: 16),
           TextField(
             controller: _name,
@@ -156,39 +165,54 @@ class _CategoryFormState extends State<_CategoryForm> {
                 ),
             ],
           ),
-          Builder(builder: (context) {
-            final groups = widget.data.categories
-                .where((c) => c.parentId == null && !c.isLoan && !c.isInvestment && c.id != widget.existing?.id)
-                .toList();
-            final isGroupItself = widget.existing != null && widget.data.categories.any((c) => c.parentId == widget.existing!.id);
-            if (isGroupItself) {
-              return Padding(
-                padding: const EdgeInsets.only(top: 12),
-                child: Text('This is a group: ${widget.data.categories.where((c) => c.parentId == widget.existing!.id).map((c) => c.name).join(', ')}',
-                    style: Theme.of(context).textTheme.bodySmall),
+          Builder(
+            builder: (context) {
+              final groups = widget.data.categories
+                  .where((c) => c.parentId == null && !c.isLoan && !c.isInvestment && c.id != widget.existing?.id)
+                  .toList();
+              final isGroupItself =
+                  widget.existing != null && widget.data.categories.any((c) => c.parentId == widget.existing!.id);
+              if (isGroupItself) {
+                return Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: Text(
+                    'This is a group: ${widget.data.categories.where((c) => c.parentId == widget.existing!.id).map((c) => c.name).join(', ')}',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                );
+              }
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(height: 12),
+                  Text('Part of a group? (optional)', style: Theme.of(context).textTheme.titleSmall),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      ChoiceChip(
+                        label: const Text('No group'),
+                        selected: _parentId == null,
+                        onSelected: (_) => setState(() => _parentId = null),
+                      ),
+                      for (final g in groups)
+                        ChoiceChip(
+                          label: Text(g.name),
+                          selected: _parentId == g.id,
+                          onSelected: (_) => setState(() => _parentId = g.id),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'e.g. Cigarettes and Alcohol in “Smoking & alcohol”, Chai and Nashta in “Chai & nashta”.',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
               );
-            }
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const SizedBox(height: 12),
-                Text('Part of a group? (optional)', style: Theme.of(context).textTheme.titleSmall),
-                const SizedBox(height: 6),
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: [
-                    ChoiceChip(label: const Text('No group'), selected: _parentId == null, onSelected: (_) => setState(() => _parentId = null)),
-                    for (final g in groups)
-                      ChoiceChip(label: Text(g.name), selected: _parentId == g.id, onSelected: (_) => setState(() => _parentId = g.id)),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Text('e.g. Cigarettes and Alcohol in “Smoking & alcohol”, Chai and Nashta in “Chai & nashta”.',
-                    style: Theme.of(context).textTheme.bodySmall),
-              ],
-            );
-          }),
+            },
+          ),
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
             value: _isLoan,

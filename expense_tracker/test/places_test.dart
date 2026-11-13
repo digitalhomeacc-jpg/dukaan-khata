@@ -41,8 +41,9 @@ void main() {
   });
 
   test('your share only for split payments', () {
-    final g = payeeGroups([t('p', 900, DateTime(2026, 3, 1), 'Pizza Hut')],
-        shares: shareTotals(const [TxnShare(id: 's', txnId: 'p', person: 'Rahul', amount: 600)]));
+    final g = payeeGroups([
+      t('p', 900, DateTime(2026, 3, 1), 'Pizza Hut'),
+    ], shares: shareTotals(const [TxnShare(id: 's', txnId: 'p', person: 'Rahul', amount: 600)]));
     expect(g.single.total, 300);
   });
 
@@ -60,19 +61,28 @@ void main() {
   });
 
   test('investments are not spending or income', () {
-    final s = summarize([
-      t('a', 10000, DateTime(2026, 1, 1), 'Zerodha Broking', cat: 'inv'),
-      t('b', 50, DateTime(2026, 1, 2), 'Chai'),
-      t('c', 12000, DateTime(2026, 1, 3), 'Zerodha Broking', debit: false, cat: 'inv'),
-    ], DateTime(2026, 1), loanCategoryIds: {'inv'});
+    final s = summarize(
+      [
+        t('a', 10000, DateTime(2026, 1, 1), 'Zerodha Broking', cat: 'inv'),
+        t('b', 50, DateTime(2026, 1, 2), 'Chai'),
+        t('c', 12000, DateTime(2026, 1, 3), 'Zerodha Broking', debit: false, cat: 'inv'),
+      ],
+      DateTime(2026, 1),
+      loanCategoryIds: {'inv'},
+    );
     expect(s.spent, 50);
     expect(s.received, 0);
   });
 
   test('same name, different UPI ID: two places', () {
-    Txn v(String id, String vpa) => Txn(id: id, amount: 100, isDebit: true, txnAt: DateTime(2026, 3, 1), merchant: 'Hotel Vijay', payeeVpa: vpa);
-    final g = payeeGroups([v('1', '7243@y'), v('2', '7243@y'), v('3', '9495@y'),
-      Txn(id: '4', amount: 50, isDebit: true, txnAt: DateTime(2026, 3, 2), merchant: 'HOTEL VIJAY')]);
+    Txn v(String id, String vpa) =>
+        Txn(id: id, amount: 100, isDebit: true, txnAt: DateTime(2026, 3, 1), merchant: 'Hotel Vijay', payeeVpa: vpa);
+    final g = payeeGroups([
+      v('1', '7243@y'),
+      v('2', '7243@y'),
+      v('3', '9495@y'),
+      Txn(id: '4', amount: 50, isDebit: true, txnAt: DateTime(2026, 3, 2), merchant: 'HOTEL VIJAY'),
+    ]);
     expect(g.length, 2);
     expect(g.first.vpas, {'7243@y'});
     expect(g.first.count, 3); // the payment without a UPI ID joins the busiest one
@@ -90,9 +100,12 @@ void main() {
     expect(r.first.id, 'smoke');
     expect(r.first.total, 500);
     expect(r.first.children.map((e) => e.key).toList(), ['alc', 'cig']);
-    final p = budgetProgress(const [Budget(id: 'b', categoryId: 'smoke', amount: 400)], month, parentOf: parents);
+    final p = budgetProgress(
+      const [Budget(id: 'b', categoryId: 'smoke', amount: 400)],
+      month,
+      parentOf: parents,
+    );
     expect(p.single.spent, 500);
     expect(p.single.over, true);
   });
 }
-

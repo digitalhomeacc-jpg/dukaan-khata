@@ -6,9 +6,9 @@ import '../logic/summary.dart';
 import '../ui/category_style.dart';
 import '../ui/format.dart';
 
-Future<void> openSharedExpense(BuildContext context, AppData data) => Navigator.of(context).push(
-      MaterialPageRoute<void>(fullscreenDialog: true, builder: (_) => SharedExpenseScreen(data: data)),
-    );
+Future<void> openSharedExpense(BuildContext context, AppData data) =>
+    Navigator.of(context)
+        .push(MaterialPageRoute<void>(fullscreenDialog: true, builder: (_) => SharedExpenseScreen(data: data)));
 
 /// "Dinner ₹900, paid by me / by Rahul, split equally with Rahul and Priya."
 class SharedExpenseScreen extends StatefulWidget {
@@ -34,9 +34,9 @@ class _SharedExpenseScreenState extends State<SharedExpenseScreen> {
   String? _error;
 
   late final List<String> _friends = {
-    for (final l in loanBalances(widget.data.transactions, widget.data.loanCategoryIds, shares: widget.data.shares)) l.person,
-  }.toList()
-    ..sort();
+    for (final l in loanBalances(widget.data.transactions, widget.data.loanCategoryIds, shares: widget.data.shares))
+      l.person,
+  }.toList()..sort();
 
   @override
   void dispose() {
@@ -54,7 +54,8 @@ class _SharedExpenseScreenState extends State<SharedExpenseScreen> {
     if (_equal) {
       final each = (_totalValue / people.length * 100).floorToDouble() / 100;
       final parts = {for (final p in people) p: each};
-      parts['me'] = ((_totalValue - each * (people.length - 1)) * 100).roundToDouble() / 100; // you take the paise left over
+      parts['me'] =
+          ((_totalValue - each * (people.length - 1)) * 100).roundToDouble() / 100; // you take the paise left over
       return parts;
     }
     return {for (final p in people) p: double.tryParse(_custom[p]?.text.replaceAll(',', '') ?? '') ?? 0};
@@ -178,8 +179,13 @@ class _SharedExpenseScreenState extends State<SharedExpenseScreen> {
             spacing: 8,
             runSpacing: 8,
             children: [
-              ChoiceChip(label: const Text('Me'), selected: _paidBy == null, onSelected: (_) => setState(() => _paidBy = null)),
-              for (final f in _with) ChoiceChip(label: Text(f), selected: _paidBy == f, onSelected: (_) => setState(() => _paidBy = f)),
+              ChoiceChip(
+                label: const Text('Me'),
+                selected: _paidBy == null,
+                onSelected: (_) => setState(() => _paidBy = null),
+              ),
+              for (final f in _with)
+                ChoiceChip(label: Text(f), selected: _paidBy == f, onSelected: (_) => setState(() => _paidBy = f)),
             ],
           ),
           if (_paidBy == null) ...[
@@ -200,15 +206,20 @@ class _SharedExpenseScreenState extends State<SharedExpenseScreen> {
               ],
             ),
             const SizedBox(height: 4),
-            Text('Paid by UPI or card? Better: open that payment from its bank email and use “Split with friends” there.',
-                style: text.bodySmall),
+            Text(
+              'Paid by UPI or card? Better: open that payment from its bank email and use “Split with friends” there.',
+              style: text.bodySmall,
+            ),
           ],
           const SizedBox(height: 20),
           Row(
             children: [
               Expanded(child: Text('Parts', style: text.titleSmall)),
               SegmentedButton<bool>(
-                segments: const [ButtonSegment(value: true, label: Text('Equal')), ButtonSegment(value: false, label: Text('Amounts'))],
+                segments: const [
+                  ButtonSegment(value: true, label: Text('Equal')),
+                  ButtonSegment(value: false, label: Text('Amounts')),
+                ],
                 selected: {_equal},
                 onSelectionChanged: (s) => setState(() => _equal = s.first),
               ),
@@ -253,10 +264,12 @@ class _SharedExpenseScreenState extends State<SharedExpenseScreen> {
             Card.filled(
               child: Padding(
                 padding: const EdgeInsets.all(12),
-                child: Text(_paidBy == null
-                    ? 'You paid ${money(_totalValue)}. Your spending: ${money(parts['me'] ?? 0)}. '
-                        '${_with.map((f) => '$f owes you ${money(parts[f] ?? 0)}').join(', ')}.'
-                    : '$_paidBy paid ${money(_totalValue)}. Your spending: ${money(parts['me'] ?? 0)}, which you owe $_paidBy.'),
+                child: Text(
+                  _paidBy == null
+                      ? 'You paid ${money(_totalValue)}. Your spending: ${money(parts['me'] ?? 0)}. '
+                            '${_with.map((f) => '$f owes you ${money(parts[f] ?? 0)}').join(', ')}.'
+                      : '$_paidBy paid ${money(_totalValue)}. Your spending: ${money(parts['me'] ?? 0)}, which you owe $_paidBy.',
+                ),
               ),
             ),
           if (_error != null) ...[

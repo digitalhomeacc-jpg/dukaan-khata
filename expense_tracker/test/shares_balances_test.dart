@@ -7,7 +7,14 @@ void main() {
 
   group('group food order: you pay 600, two friends send 200 each', () {
     final txns = [
-      Txn(id: 'pay', amount: 600, isDebit: true, txnAt: DateTime(2026, 11, 10, 20), merchant: 'Zomato', categoryId: 'food'),
+      Txn(
+        id: 'pay',
+        amount: 600,
+        isDebit: true,
+        txnAt: DateTime(2026, 11, 10, 20),
+        merchant: 'Zomato',
+        categoryId: 'food',
+      ),
       Txn(id: 'r1', amount: 200, isDebit: false, txnAt: DateTime(2026, 11, 10, 20, 5), merchant: 'Rahul'),
       Txn(id: 'r2', amount: 200, isDebit: false, txnAt: DateTime(2026, 11, 10, 21), merchant: 'Priya'),
       Txn(id: 'salary', amount: 1000, isDebit: false, txnAt: DateTime(2026, 11, 1), merchant: 'Acme'),
@@ -26,10 +33,7 @@ void main() {
     });
 
     test('a friend who has not paid yet owes you', () {
-      final unpaid = [
-        shares[0],
-        const TxnShare(id: 'b', txnId: 'pay', person: 'Priya', amount: 200),
-      ];
+      final unpaid = [shares[0], const TxnShare(id: 'b', txnId: 'pay', person: 'Priya', amount: 200)];
       final l = loanBalances(txns.take(2), const {}, shares: unpaid);
       expect(l.single.person, 'Priya');
       expect(l.single.balance, -200);
@@ -43,7 +47,15 @@ void main() {
     final txns = [
       Txn(id: '1', amount: 300, isDebit: true, txnAt: DateTime(2026, 11, 2), accountId: 'h'),
       Txn(id: '2', amount: 500, isDebit: false, txnAt: DateTime(2026, 11, 3), accountId: 'h'),
-      Txn(id: '3', amount: 200, isDebit: true, txnAt: DateTime(2026, 11, 3, 12), accountId: 'h', counterAccountId: 'c', excluded: true),
+      Txn(
+        id: '3',
+        amount: 200,
+        isDebit: true,
+        txnAt: DateTime(2026, 11, 3, 12),
+        accountId: 'h',
+        counterAccountId: 'c',
+        excluded: true,
+      ),
       Txn(id: '4', amount: 50, isDebit: true, txnAt: DateTime(2026, 11, 5), accountId: 'h'),
       Txn(id: 'x', amount: 999, isDebit: true, txnAt: DateTime(2026, 11, 4), accountId: 'other'),
     ];
@@ -66,7 +78,9 @@ void main() {
     });
 
     test('a missing transaction shows as a difference', () {
-      final c = checkBalance(txns, hdfc, [BalanceReading(id: 'a', accountId: 'h', balance: 900, asOf: DateTime(2026, 11, 6))])!;
+      final c = checkBalance(txns, hdfc, [
+        BalanceReading(id: 'a', accountId: 'h', balance: 900, asOf: DateTime(2026, 11, 6)),
+      ])!;
       expect(c.app, 950);
       expect(c.difference, -50);
       expect(c.matches, false);

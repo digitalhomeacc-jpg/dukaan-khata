@@ -9,7 +9,14 @@ import 'package:material_ui/material_ui.dart';
 void main() {
   final now = DateTime.now();
   final txns = [
-    for (var i = 0; i < 3; i++) Txn(id: 's$i', amount: 100.0 + i, isDebit: true, txnAt: now.subtract(Duration(days: i)), merchant: 'Siddhant Joshi'),
+    for (var i = 0; i < 3; i++)
+      Txn(
+        id: 's$i',
+        amount: 100.0 + i,
+        isDebit: true,
+        txnAt: now.subtract(Duration(days: i)),
+        merchant: 'Siddhant Joshi',
+      ),
     Txn(id: 'd', amount: 700, isDebit: true, txnAt: now, merchant: 'Dadasaheb Khad'),
     Txn(id: 'f', amount: 50, isDebit: true, txnAt: now, merchant: 'Chai', categoryId: 'food'),
   ];

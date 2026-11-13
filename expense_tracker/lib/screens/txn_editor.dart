@@ -2,6 +2,7 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../data/app_data.dart';
+import '../logic/summary.dart';
 import '../models.dart';
 import '../ui/category_style.dart';
 import '../ui/format.dart';
@@ -9,10 +10,12 @@ import 'categories_screen.dart';
 import 'split_section.dart';
 
 Future<void> openTxnEditor(BuildContext context, AppData data, {Txn? existing, Txn? prefill}) {
-  return Navigator.of(context).push(MaterialPageRoute<void>(
-    fullscreenDialog: true,
-    builder: (_) => TxnEditor(data: data, existing: existing, prefill: prefill),
-  ));
+  return Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      fullscreenDialog: true,
+      builder: (_) => TxnEditor(data: data, existing: existing, prefill: prefill),
+    ),
+  );
 }
 
 const _methods = {
@@ -112,9 +115,11 @@ class _TxnEditorState extends State<TxnEditor> {
       context: context,
       builder: (c) => AlertDialog(
         title: const Text('Delete this transaction?'),
-        content: Text(widget.existing!.fromEmail
-            ? 'It came from a bank email. It will not be added again unless you re-sync.'
-            : 'This cannot be undone.'),
+        content: Text(
+          widget.existing!.fromEmail
+              ? 'It came from a bank email. It will not be added again unless you re-sync.'
+              : 'This cannot be undone.',
+        ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancel')),
           FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Delete')),
@@ -132,7 +137,7 @@ class _TxnEditorState extends State<TxnEditor> {
     final categoryChanged = !_isNew && _categoryId != existing?.categoryId && _categoryId != null;
     return Scaffold(
       appBar: AppBar(
-        title: Text(_isNew ? 'Add transaction' : 'Edit transaction'),
+        title: Text(_isNew ? 'Add transaction' : 'Payment details'),
         actions: [
           if (!_isNew) IconButton(tooltip: 'Delete', icon: const Icon(Icons.delete_outline), onPressed: _delete),
           Padding(
@@ -146,6 +151,7 @@ class _TxnEditorState extends State<TxnEditor> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
+            if (existing != null) ...[BankRecordCard(data: widget.data, txn: existing), const SizedBox(height: 16)],
             SegmentedButton<bool>(
               segments: const [
                 ButtonSegment(value: true, label: Text('Spent'), icon: Icon(Icons.arrow_upward)),
@@ -174,7 +180,9 @@ class _TxnEditorState extends State<TxnEditor> {
               decoration: InputDecoration(
                 labelText: _isLoan ? "Friend's name" : (_isDebit ? 'Paid to' : 'Received from'),
                 helperText: _isLoan
-                    ? (_isDebit ? 'Spent = you lent money or paid them back' : 'Received = you borrowed or they paid you back')
+                    ? (_isDebit
+                          ? 'Spent = you lent money or paid them back'
+                          : 'Received = you borrowed or they paid you back')
                     : null,
               ),
               validator: (v) => _isLoan && (v ?? '').trim().isEmpty ? 'Whose loan is it?' : null,
@@ -221,8 +229,10 @@ class _TxnEditorState extends State<TxnEditor> {
                 for (final (:cat, :inGroup) in groupedCategories(widget.data.categories))
                   ChoiceChip(
                     avatar: Icon(iconFor(cat), size: inGroup ? 16 : 18, color: colorFor(cat)),
-                    label: Text(cat.isLoan ? 'Friends ledger (lent / borrowed / settle)' : cat.name,
-                        style: inGroup ? const TextStyle(fontSize: 13) : null),
+                    label: Text(
+                      cat.isLoan ? 'Friends ledger (lent / borrowed / settle)' : cat.name,
+                      style: inGroup ? const TextStyle(fontSize: 13) : null,
+                    ),
                     selected: _categoryId == cat.id,
                     onSelected: (sel) => setState(() => _categoryId = sel ? cat.id : null),
                   ),
@@ -257,7 +267,10 @@ class _TxnEditorState extends State<TxnEditor> {
               controller: _note,
               maxLines: 2,
               textCapitalization: TextCapitalization.sentences,
-              decoration: const InputDecoration(labelText: 'Note (optional)'),
+              decoration: const InputDecoration(
+                labelText: 'Your note',
+                hintText: 'What was it for? Who was with you? Bill no.…',
+              ),
             ),
             if (existing != null && !existing.isLoanTransfer && !_isLoan) ...[
               const SizedBox(height: 16),
@@ -280,7 +293,10 @@ class _TxnEditorState extends State<TxnEditor> {
               subtitle: const Text('ATM cash, card bill payments, savings. Not counted as spending or income'),
             ),
             if (_excluded) ...[
-              Text(_isDebit ? 'Moved to (optional)' : 'Moved from (optional)', style: Theme.of(context).textTheme.titleSmall),
+              Text(
+                _isDebit ? 'Moved to (optional)' : 'Moved from (optional)',
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
               const SizedBox(height: 8),
               _AccountChips(
                 data: widget.data,
@@ -289,20 +305,135 @@ class _TxnEditorState extends State<TxnEditor> {
                 onSelected: (id) => setState(() => _counterId = id),
               ),
             ],
-            if (existing != null && existing.fromEmail) ...[
-              const Divider(height: 32),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.mail_outline),
-                title: const Text('Added from a bank email'),
-                subtitle: Text([
-                  if (existing.bank != null) '${existing.bank}${existing.accountLast4 != null ? ' ••${existing.accountLast4}' : ''}',
-                  if (existing.emailSubject != null) '“${existing.emailSubject}”',
-                ].join('\n')),
-              ),
-            ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// What the bank said about a payment: the voucher's printed part, read-only.
+class BankRecordCard extends StatefulWidget {
+  const BankRecordCard({super.key, required this.data, required this.txn});
+
+  final AppData data;
+  final Txn txn;
+
+  @override
+  State<BankRecordCard> createState() => _BankRecordCardState();
+}
+
+class _BankRecordCardState extends State<BankRecordCard> {
+  var _showEmail = false;
+
+  /// The readable part of a bank email: its body without links and the long footer.
+  static String _emailText(String body) {
+    var t = body.replaceAll(RegExp(r'https?://\S+'), '').replaceAll(RegExp(r'[ \t]+'), ' ');
+    final end = RegExp(r'(?i)(warm regards|regards,|this is a system.generated|do not reply|please do not|disclaimer)')
+        .firstMatch(t);
+    if (end != null) t = t.substring(0, end.start);
+    return t.split('\n').map((l) => l.trim()).where((l) => l.isNotEmpty).join('\n').trim();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = widget.data.txn(widget.txn.id) ?? widget.txn;
+    final data = widget.data;
+    final text = Theme.of(context).textTheme;
+    final scheme = Theme.of(context).colorScheme;
+    final account = data.account(t.accountId);
+    final balance = account == null ? null : runningBalances(data.transactions, account)[t.id];
+    final raw = [t.details, t.emailBody].whereType<String>().join(' ');
+    final ref = RegExp(r'(?<![\d])(\d{12})(?![\d])').firstMatch(raw)?.group(1);
+    final email = t.emailBody == null ? null : _emailText(t.emailBody!);
+    final (IconData icon, String from) = switch (t.source) {
+      'statement' => (Icons.description_outlined, 'Bank statement'),
+      'email' => (Icons.mail_outline, 'Bank email'),
+      _ => (Icons.edit_note, 'Added by you'),
+    };
+
+    Widget row(String label, String value, {bool copy = false}) => Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 92,
+            child: Text(label, style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
+          ),
+          Expanded(child: SelectableText(value, style: text.bodyMedium)),
+          if (copy)
+            InkWell(
+              onTap: () {
+                Clipboard.setData(ClipboardData(text: value));
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Copied $label')));
+              },
+              child: Padding(
+                padding: const EdgeInsets.only(left: 6),
+                child: Icon(Icons.copy, size: 16, color: scheme.primary),
+              ),
+            ),
+        ],
+      ),
+    );
+
+    return Container(
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: scheme.outlineVariant),
+      ),
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 18, color: scheme.primary),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  from,
+                  style: text.labelLarge?.copyWith(color: scheme.primary),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Text(
+                '${t.isDebit ? '−' : '+'}${money(t.amount)}',
+                style: text.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: t.isDebit ? null : Colors.green.shade700,
+                ),
+              ),
+            ],
+          ),
+          const Divider(height: 18),
+          row('Date', '${dayLabel(t.txnAt)}${t.source == 'statement' ? '' : ', ${timeLabel(t.txnAt)}'}'),
+          if (account != null) row('Account', account.name),
+          if ((t.details ?? '').isNotEmpty) row('Bank wrote', t.details!, copy: true),
+          if (t.payeeVpa != null) row('UPI ID', '••${t.payeeVpa}'),
+          if (ref != null) row('Reference', ref, copy: true),
+          if (balance != null) row('Balance after', '${balance < 0 ? '−' : ''}${money(balance.abs())}'),
+          if (t.emailSubject != null) row('Email', t.emailSubject!),
+          if (email != null && email.isNotEmpty) ...[
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                style: TextButton.styleFrom(padding: EdgeInsets.zero, visualDensity: VisualDensity.compact),
+                onPressed: () => setState(() => _showEmail = !_showEmail),
+                icon: Icon(_showEmail ? Icons.expand_less : Icons.expand_more, size: 18),
+                label: Text(_showEmail ? 'Hide the email' : 'Show the bank email'),
+              ),
+            ),
+            if (_showEmail)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(color: scheme.surface, borderRadius: BorderRadius.circular(10)),
+                child: SelectableText(email, style: text.bodySmall),
+              ),
+          ],
+        ],
       ),
     );
   }

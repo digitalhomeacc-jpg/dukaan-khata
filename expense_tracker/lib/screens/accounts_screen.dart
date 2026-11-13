@@ -42,8 +42,11 @@ class AccountsScreen extends StatelessWidget {
             if (check != null)
               Row(
                 children: [
-                  Icon(check.matches ? Icons.verified_outlined : Icons.warning_amber_rounded,
-                      size: 14, color: check.matches ? Colors.green.shade700 : scheme.error),
+                  Icon(
+                    check.matches ? Icons.verified_outlined : Icons.warning_amber_rounded,
+                    size: 14,
+                    color: check.matches ? Colors.green.shade700 : scheme.error,
+                  ),
                   const SizedBox(width: 4),
                   Flexible(
                     child: Text(
@@ -64,20 +67,19 @@ class AccountsScreen extends StatelessWidget {
           children: [
             Text(
               isCard ? money(-bal < 0 ? 0 : -bal) : '${bal < 0 ? '−' : ''}${money(bal.abs())}',
-              style: TextStyle(
-                fontWeight: FontWeight.w600,
-                color: bal < 0 && !isCard ? scheme.error : null,
-              ),
+              style: TextStyle(fontWeight: FontWeight.w600, color: bal < 0 && !isCard ? scheme.error : null),
             ),
             if (isCard) Text('due', style: Theme.of(context).textTheme.bodySmall),
           ],
         ),
-        onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
-          builder: (_) => ListenableBuilder(
-            listenable: data,
-            builder: (_, _) => TransactionsScreen(data: data, accountId: a.id),
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => ListenableBuilder(
+              listenable: data,
+              builder: (_, _) => TransactionsScreen(data: data, accountId: a.id),
+            ),
           ),
-        )),
+        ),
         onLongPress: () => editAccount(context, data, a),
       );
     }
@@ -105,9 +107,13 @@ class AccountsScreen extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
                 child: Row(
                   children: [
-                    Expanded(child: _Stat(label: 'You have', value: '${have < 0 ? '−' : ''}${money(have.abs())}')),
+                    Expanded(
+                      child: _Stat(label: 'You have', value: '${have < 0 ? '−' : ''}${money(have.abs())}'),
+                    ),
                     if (active.any((a) => a.kind == AccountKind.card))
-                      Expanded(child: _Stat(label: 'Card dues', value: money(owed < 0 ? -owed : 0))),
+                      Expanded(
+                        child: _Stat(label: 'Card dues', value: money(owed < 0 ? -owed : 0)),
+                      ),
                   ],
                 ),
               ),
@@ -119,8 +125,10 @@ class AccountsScreen extends StatelessWidget {
             child: Row(
               children: [
                 Expanded(
-                  child: Text('Loans & credit',
-                      style: TextStyle(color: scheme.primary, fontWeight: FontWeight.w600)),
+                  child: Text(
+                    'Loans & credit',
+                    style: TextStyle(color: scheme.primary, fontWeight: FontWeight.w600),
+                  ),
                 ),
                 TextButton.icon(
                   onPressed: () => openLoanForm(context, data),
@@ -133,8 +141,10 @@ class AccountsScreen extends StatelessWidget {
           if (data.loans.where((l) => !l.closed).isEmpty)
             const Padding(
               padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
-              child: Text('Loans from banks or loan apps: see what you owe, EMIs left and the next due date. '
-                  'Loans from apps that send emails (such as Slice) appear here by themselves.'),
+              child: Text(
+                'Loans from banks or loan apps: see what you owe, EMIs left and the next due date. '
+                'Loans from apps that send emails (such as Slice) appear here by themselves.',
+              ),
             ),
           for (final l in data.loans.where((l) => !l.closed)) LenderLoanCard(data: data, loan: l),
           if (archived.isNotEmpty)
@@ -171,8 +181,10 @@ class _Stat extends StatelessWidget {
         Text(label, style: TextStyle(color: color.withValues(alpha: 0.8))),
         const SizedBox(height: 4),
         FittedBox(
-          child: Text(value,
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(color: color, fontWeight: FontWeight.w600)),
+          child: Text(
+            value,
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(color: color, fontWeight: FontWeight.w600),
+          ),
         ),
       ],
     );
@@ -180,11 +192,11 @@ class _Stat extends StatelessWidget {
 }
 
 Future<void> editAccount(BuildContext context, AppData data, [Account? a]) => showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (_) => _AccountForm(data: data, existing: a),
-    );
+  context: context,
+  isScrollControlled: true,
+  showDragHandle: true,
+  builder: (_) => _AccountForm(data: data, existing: a),
+);
 
 class _AccountForm extends StatefulWidget {
   const _AccountForm({required this.data, this.existing});
@@ -232,7 +244,13 @@ class _AccountFormState extends State<_AccountForm> {
       final now = double.tryParse(nowRaw);
       if (now == null) return setState(() => _error = 'Balance now is not a number');
       // Opening = what it must have been for the app to show this balance today.
-      final asSaved = Account(id: e.id, name: e.name, kind: _kind, openingBalance: e.openingBalance, openingDate: _openingDate);
+      final asSaved = Account(
+        id: e.id,
+        name: e.name,
+        kind: _kind,
+        openingBalance: e.openingBalance,
+        openingDate: _openingDate,
+      );
       final current = accountBalances(widget.data.transactions, [asSaved])[e.id] ?? e.openingBalance;
       final movement = current - e.openingBalance;
       final wanted = _kind == AccountKind.card ? -now : now;
@@ -316,9 +334,11 @@ class _AccountFormState extends State<_AccountForm> {
           const SizedBox(height: 8),
           OutlinedButton.icon(
             icon: const Icon(Icons.event),
-            label: Text(_openingDate == null
-                ? 'On which date? (optional)'
-                : 'Opening balance on ${_openingDate!.day}/${_openingDate!.month}/${_openingDate!.year}'),
+            label: Text(
+              _openingDate == null
+                  ? 'On which date? (optional)'
+                  : 'Opening balance on ${_openingDate!.day}/${_openingDate!.month}/${_openingDate!.year}',
+            ),
             onPressed: () async {
               final d = await showDatePicker(
                 context: context,
@@ -330,8 +350,10 @@ class _AccountFormState extends State<_AccountForm> {
             },
           ),
           if (_openingDate != null)
-            Text('Transactions before this date stay as history but do not change the balance.',
-                style: Theme.of(context).textTheme.bodySmall),
+            Text(
+              'Transactions before this date stay as history but do not change the balance.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
           if (widget.existing != null) ...[
             const SizedBox(height: 12),
             TextField(

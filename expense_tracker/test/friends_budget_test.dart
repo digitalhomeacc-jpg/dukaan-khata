@@ -7,8 +7,19 @@ void main() {
     for (final n in ['Sanket Pramod Patil', 'Hiteshasva Gupta', 'Yash Bhagwant Gawali', 'Shresth Sharma']) {
       expect(looksLikePerson(n), true, reason: n);
     }
-    for (final n in ['Hotel Vijay', 'HP Petrol Pump Loni Bk Vivid K', 'Bhai Pan Stall', 'Atharva Foods', 'Swiggy Limited',
-      'Apple Media Services', 'snkt.patil7200-1@okicici', 'slice', 'Zomato', 'Om book', 'Aayush medical and general store']) {
+    for (final n in [
+      'Hotel Vijay',
+      'HP Petrol Pump Loni Bk Vivid K',
+      'Bhai Pan Stall',
+      'Atharva Foods',
+      'Swiggy Limited',
+      'Apple Media Services',
+      'snkt.patil7200-1@okicici',
+      'slice',
+      'Zomato',
+      'Om book',
+      'Aayush medical and general store',
+    ]) {
       expect(looksLikePerson(n), false, reason: n);
     }
   });
@@ -16,14 +27,31 @@ void main() {
   test('friends: money sent and received is not spending or income; balance per friend', () {
     final txns = [
       Txn(id: '1', amount: 500, isDebit: true, txnAt: DateTime(2026, 11, 2), merchant: 'Rahul Kumar', categoryId: 'fr'),
-      Txn(id: '2', amount: 200, isDebit: false, txnAt: DateTime(2026, 11, 3), merchant: 'Rahul Kumar', categoryId: 'fr'),
-      Txn(id: '3', amount: 300, isDebit: true, txnAt: DateTime(2026, 11, 4), merchant: 'Dinner', categoryId: 'food', paidBy: 'Priya'),
+      Txn(
+        id: '2',
+        amount: 200,
+        isDebit: false,
+        txnAt: DateTime(2026, 11, 3),
+        merchant: 'Rahul Kumar',
+        categoryId: 'fr',
+      ),
+      Txn(
+        id: '3',
+        amount: 300,
+        isDebit: true,
+        txnAt: DateTime(2026, 11, 4),
+        merchant: 'Dinner',
+        categoryId: 'food',
+        paidBy: 'Priya',
+      ),
       Txn(id: '4', amount: 100, isDebit: true, txnAt: DateTime(2026, 11, 5), merchant: 'Chai', categoryId: 'food'),
     ];
     final s = summarize(txns, DateTime(2026, 11), loanCategoryIds: {'fr'});
     expect(s.spent, 400); // chai + your share of dinner
     expect(s.received, 0);
-    final b = {for (final l in loanBalances(txns, {'fr'})) l.person: l.balance};
+    final b = {
+      for (final l in loanBalances(txns, {'fr'})) l.person: l.balance,
+    };
     expect(b['Rahul Kumar'], -300); // Rahul owes you 300
     expect(b['Priya'], 300); // you owe Priya 300
   });
@@ -49,8 +77,22 @@ void main() {
 
   test('people to review skips shops, decided names and friends-of-record', () {
     final txns = [
-      Txn(id: '1', amount: 50, isDebit: true, txnAt: DateTime(2026, 11, 2), merchant: 'Shresth Sharma', source: 'email'),
-      Txn(id: '2', amount: 70, isDebit: false, txnAt: DateTime(2026, 11, 3), merchant: 'Shresth  Sharma', source: 'email'),
+      Txn(
+        id: '1',
+        amount: 50,
+        isDebit: true,
+        txnAt: DateTime(2026, 11, 2),
+        merchant: 'Shresth Sharma',
+        source: 'email',
+      ),
+      Txn(
+        id: '2',
+        amount: 70,
+        isDebit: false,
+        txnAt: DateTime(2026, 11, 3),
+        merchant: 'Shresth  Sharma',
+        source: 'email',
+      ),
       Txn(id: '3', amount: 90, isDebit: true, txnAt: DateTime(2026, 11, 3), merchant: 'Hotel Vijay', source: 'email'),
       Txn(id: '4', amount: 90, isDebit: true, txnAt: DateTime(2026, 11, 3), merchant: 'Rahul Kumar', source: 'email'),
     ];

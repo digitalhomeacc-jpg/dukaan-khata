@@ -75,11 +75,11 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   void _switch(_Mode m) => setState(() {
-        _mode = m;
-        _codeSent = false;
-        _error = null;
-        _info = null;
-      });
+    _mode = m;
+    _codeSent = false;
+    _error = null;
+    _info = null;
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -99,8 +99,11 @@ class _LoginScreenState extends State<LoginScreen> {
                   children: [
                     Icon(Icons.account_balance_wallet_rounded, size: 64, color: scheme.primary),
                     const SizedBox(height: 12),
-                    Text('Expense Tracker',
-                        textAlign: TextAlign.center, style: Theme.of(context).textTheme.headlineMedium),
+                    Text(
+                      'Expense Tracker',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.headlineMedium,
+                    ),
                     const SizedBox(height: 4),
                     Text(
                       switch (_mode) {
@@ -127,14 +130,18 @@ class _LoginScreenState extends State<LoginScreen> {
                       keyboardType: TextInputType.emailAddress,
                       autofillHints: const [AutofillHints.email],
                       decoration: const InputDecoration(labelText: 'Email', prefixIcon: Icon(Icons.email)),
-                      validator: (v) => RegExp(r'^\S+@\S+\.\S+$').hasMatch((v ?? '').trim()) ? null : 'Enter a valid email',
+                      validator: (v) =>
+                          RegExp(r'^\S+@\S+\.\S+$').hasMatch((v ?? '').trim()) ? null : 'Enter a valid email',
                     ),
                     if (_mode == _Mode.forgot && _codeSent) ...[
                       const SizedBox(height: 12),
                       TextFormField(
                         controller: _code,
                         keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(labelText: 'Code from the email', prefixIcon: Icon(Icons.pin)),
+                        decoration: const InputDecoration(
+                          labelText: 'Code from the email',
+                          prefixIcon: Icon(Icons.pin),
+                        ),
                         validator: (v) => (v ?? '').trim().length < 6 ? 'Enter the code' : null,
                       ),
                     ],
@@ -178,7 +185,10 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     const SizedBox(height: 8),
                     if (_mode == _Mode.signIn) ...[
-                      TextButton(onPressed: () => _switch(_Mode.signUp), child: const Text('New here? Create an account')),
+                      TextButton(
+                        onPressed: () => _switch(_Mode.signUp),
+                        child: const Text('New here? Create an account'),
+                      ),
                       TextButton(onPressed: () => _switch(_Mode.forgot), child: const Text('Forgot password?')),
                     ] else
                       TextButton(onPressed: () => _switch(_Mode.signIn), child: const Text('Back to sign in')),

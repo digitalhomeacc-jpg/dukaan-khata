@@ -13,18 +13,51 @@ AppData sample() {
     categories: const [],
     loans: [
       Loan(
-        id: 's', lender: 'slice', name: 'Slice borrow', kind: LoanKind.creditLine,
-        nextDueAmount: 506.54, nextDueDate: DateTime(now.year, now.month, 5),
+        id: 's',
+        lender: 'slice',
+        name: 'Slice borrow',
+        kind: LoanKind.creditLine,
+        nextDueAmount: 506.54,
+        nextDueDate: DateTime(now.year, now.month, 5),
       ),
       const Loan(
-        id: 'k', lender: 'kreditbee', name: 'KreditBee', principal: 20000, emiAmount: 2100,
-        tenureMonths: 12, emisPaidBefore: 3, dueDay: 5, interestRate: 24,
+        id: 'k',
+        lender: 'kreditbee',
+        name: 'KreditBee',
+        principal: 20000,
+        emiAmount: 2100,
+        tenureMonths: 12,
+        emisPaidBefore: 3,
+        dueDay: 5,
+        interestRate: 24,
       ),
     ],
     loanEvents: [
-      LoanEvent(id: '1', loanId: 's', kind: LoanEventKind.borrow, amount: 1500, at: now.subtract(const Duration(days: 20)), fromEmail: true),
-      LoanEvent(id: '2', loanId: 's', kind: LoanEventKind.spend, amount: 136, at: now.subtract(const Duration(days: 6)), note: 'Aayush medical and general store', fromEmail: true),
-      LoanEvent(id: '3', loanId: 'k', kind: LoanEventKind.repay, amount: 2100, at: now.subtract(const Duration(days: 8)), note: 'Added by hand'),
+      LoanEvent(
+        id: '1',
+        loanId: 's',
+        kind: LoanEventKind.borrow,
+        amount: 1500,
+        at: now.subtract(const Duration(days: 20)),
+        fromEmail: true,
+      ),
+      LoanEvent(
+        id: '2',
+        loanId: 's',
+        kind: LoanEventKind.spend,
+        amount: 136,
+        at: now.subtract(const Duration(days: 6)),
+        note: 'Aayush medical and general store',
+        fromEmail: true,
+      ),
+      LoanEvent(
+        id: '3',
+        loanId: 'k',
+        kind: LoanEventKind.repay,
+        amount: 2100,
+        at: now.subtract(const Duration(days: 8)),
+        note: 'Added by hand',
+      ),
     ],
   );
 }
@@ -62,7 +95,12 @@ void main() {
 
   testWidgets('add-a-loan form', (tester) async {
     final data = sample();
-    await pump(tester, Builder(builder: (c) => TextButton(onPressed: () => openLoanForm(c, data), child: const Text('go'))));
+    await pump(
+      tester,
+      Builder(
+        builder: (c) => TextButton(onPressed: () => openLoanForm(c, data), child: const Text('go')),
+      ),
+    );
     await tester.tap(find.text('go'));
     await tester.pumpAndSettle();
     expect(find.text('Add a loan'), findsOneWidget);

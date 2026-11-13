@@ -54,8 +54,12 @@ ShareTotals shareTotals(Iterable<TxnShare> shares) {
 }
 
 /// Totals for one month, without transfers and loans so money is not counted twice.
-MonthSummary summarize(Iterable<Txn> txns, DateTime month,
-    {Set<String> loanCategoryIds = const {}, ShareTotals shares = ShareTotals.none}) {
+MonthSummary summarize(
+  Iterable<Txn> txns,
+  DateTime month, {
+  Set<String> loanCategoryIds = const {},
+  ShareTotals shares = ShareTotals.none,
+}) {
   var spent = 0.0, received = 0.0;
   final cat = <String?, double>{};
   final merch = <String, double>{};
@@ -81,8 +85,13 @@ MonthSummary summarize(Iterable<Txn> txns, DateTime month,
 }
 
 /// Spending for the [count] months ending with [lastMonth], oldest first.
-List<MapEntry<DateTime, double>> monthlySpend(Iterable<Txn> txns, DateTime lastMonth, int count,
-    {Set<String> loanCategoryIds = const {}, ShareTotals shares = ShareTotals.none}) {
+List<MapEntry<DateTime, double>> monthlySpend(
+  Iterable<Txn> txns,
+  DateTime lastMonth,
+  int count, {
+  Set<String> loanCategoryIds = const {},
+  ShareTotals shares = ShareTotals.none,
+}) {
   final first = addMonths(monthStart(lastMonth), -(count - 1));
   final totals = {for (var i = 0; i < count; i++) addMonths(first, i): 0.0};
   for (final t in txns) {
@@ -131,10 +140,12 @@ double _effect(Txn t, Account account) {
   return e;
 }
 
+/// How a transaction moves [account]'s balance: negative for money out.
+double effectOn(Txn t, Account account) => _effect(t, account);
+
 /// Balance of [account] after each of its transactions, by transaction id.
 Map<String, double> runningBalances(Iterable<Txn> txns, Account account) {
-  final mine = txns.where((t) => _effect(t, account) != 0).toList()
-    ..sort((a, b) => a.txnAt.compareTo(b.txnAt));
+  final mine = txns.where((t) => _effect(t, account) != 0).toList()..sort((a, b) => a.txnAt.compareTo(b.txnAt));
   var bal = account.openingBalance;
   final out = <String, double>{};
   for (final t in mine) {
@@ -208,8 +219,12 @@ class LoanBalance {
 /// Running balance per friend over all loan transactions. Received money is
 /// borrowing (or being repaid); spent money is lending (or repaying).
 /// Unpaid shares of group payments count as money the friend owes you.
-List<LoanBalance> loanBalances(Iterable<Txn> txns, Set<String> loanCategoryIds,
-    {Iterable<TxnShare> shares = const [], Map<String, String> aliases = const {}}) {
+List<LoanBalance> loanBalances(
+  Iterable<Txn> txns,
+  Set<String> loanCategoryIds, {
+  Iterable<TxnShare> shares = const [],
+  Map<String, String> aliases = const {},
+}) {
   // "Also known as": a payee name (e.g. a parent's account) counts as that friend.
   String canon(String name) => aliases[name.toLowerCase().replaceAll(RegExp(r'\s+'), ' ').trim()] ?? name.trim();
   final byPerson = <String, List<Txn>>{};
@@ -244,7 +259,11 @@ List<LoanBalance> loanBalances(Iterable<Txn> txns, Set<String> loanCategoryIds,
     for (final e in byPerson.entries)
       LoanBalance(
         names[e.key]!,
-        _round(e.value.fold(0.0, (s, t) => s + (t.isDebit ? -t.amount : t.amount)) - (owesYou[e.key] ?? 0) + (owedToThem[e.key] ?? 0)),
+        _round(
+          e.value.fold(0.0, (s, t) => s + (t.isDebit ? -t.amount : t.amount)) -
+              (owesYou[e.key] ?? 0) +
+              (owedToThem[e.key] ?? 0),
+        ),
         e.value..sort((a, b) => b.txnAt.compareTo(a.txnAt)),
       ),
   ];
@@ -345,13 +364,16 @@ LoanStatus loanStatus(Loan loan, Iterable<LoanEvent> allEvents, {DateTime? now})
   var duePaid = false;
   if (dueDate != null) {
     final windowStart = dueDate.subtract(const Duration(days: 7));
-    duePaid = events.any((e) =>
-        e.kind == LoanEventKind.repay && !e.at.isBefore(windowStart) && e.amount >= (dueAmount ?? 0) * 0.95);
+    duePaid = events.any(
+      (e) => e.kind == LoanEventKind.repay && !e.at.isBefore(windowStart) && e.amount >= (dueAmount ?? 0) * 0.95,
+    );
   }
   if ((dueDate == null || duePaid) && loan.dueDay != null && loan.emiAmount != null && (emisLeft ?? 1) > 0) {
     // Already paid this month's EMI? Then the next one is next month.
-    final lastRepay = events.lastWhere((e) => e.kind == LoanEventKind.repay,
-        orElse: () => LoanEvent(id: '', loanId: '', kind: LoanEventKind.borrow, amount: 0, at: DateTime(2000)));
+    final lastRepay = events.lastWhere(
+      (e) => e.kind == LoanEventKind.repay,
+      orElse: () => LoanEvent(id: '', loanId: '', kind: LoanEventKind.borrow, amount: 0, at: DateTime(2000)),
+    );
     var from = today;
     if (lastRepay.kind == LoanEventKind.repay && lastRepay.at.year == today.year && lastRepay.at.month == today.month) {
       from = DateTime(today.year, today.month + 1, 1);
@@ -396,32 +418,150 @@ class BudgetProgress {
 
 /// How much of each budget the month's spending (your share only) has used.
 /// A group's budget covers the categories in it ([parentOf]: category → its group).
-List<BudgetProgress> budgetProgress(Iterable<Budget> budgets, MonthSummary month, {Map<String, String?> parentOf = const {}}) {
+List<BudgetProgress> budgetProgress(
+  Iterable<Budget> budgets,
+  MonthSummary month, {
+  Map<String, String?> parentOf = const {},
+}) {
   final byCat = {for (final e in month.byCategory) e.key: e.value};
   double spentIn(String id) =>
-      (byCat[id] ?? 0) + byCat.entries.where((e) => e.key != null && parentOf[e.key] == id).fold(0.0, (s, e) => s + e.value);
+      (byCat[id] ?? 0) +
+      byCat.entries.where((e) => e.key != null && parentOf[e.key] == id).fold(0.0, (s, e) => s + e.value);
   return [
     for (final b in budgets) BudgetProgress(b, _round(b.categoryId == null ? month.spent : spentIn(b.categoryId!))),
   ]..sort((a, b) {
-      if ((a.budget.categoryId == null) != (b.budget.categoryId == null)) return a.budget.categoryId == null ? -1 : 1;
-      return b.share.compareTo(a.share);
-    });
+    if ((a.budget.categoryId == null) != (b.budget.categoryId == null)) return a.budget.categoryId == null ? -1 : 1;
+    return b.share.compareTo(a.share);
+  });
 }
 
 // -------------------------------------------------------------------- friends
 
 const _businessWords = {
-  'store', 'stores', 'shop', 'shoppe', 'hotel', 'restaurant', 'cafe', 'caf', 'food', 'foods', 'mart', 'medical',
-  'medicals', 'pharmacy', 'chemist', 'pump', 'petrol', 'fuel', 'service', 'services', 'pvt', 'private', 'ltd', 'limited',
-  'llp', 'india', 'enterprise', 'enterprises', 'traders', 'trading', 'agency', 'agencies', 'center', 'centre', 'bank',
-  'general', 'kirana', 'bakery', 'bakers', 'sweets', 'sweet', 'dairy', 'stall', 'hospital', 'clinic', 'garage', 'motors',
-  'auto', 'electricals', 'electronics', 'pay', 'payment', 'payments', 'technologies', 'tech', 'solutions', 'mall',
-  'salon', 'studio', 'book', 'books', 'stationery', 'transport', 'travels', 'tours', 'school', 'college', 'academy',
-  'gym', 'fitness', 'online', 'retail', 'wholesale', 'industries', 'corporation', 'company', 'co', 'and', '&', 'the',
-  'pan', 'tea', 'juice', 'bar', 'dhaba', 'canteen', 'mess', 'kitchen', 'market', 'bazaar', 'super', 'supermarket',
-  'hardware', 'textiles', 'fashion', 'collection', 'jewellers', 'opticals', 'diagnostics', 'labs', 'lab', 'insurance',
-  'finance', 'capital', 'loan', 'recharge', 'broadband', 'digital', 'media', 'apple', 'google', 'amazon', 'slice',
-  'swiggy', 'zomato', 'uber', 'ola', 'rapido', 'blinkit', 'zepto', 'flipkart', 'myntra', 'paytm', 'phonepe',
+  'store',
+  'stores',
+  'shop',
+  'shoppe',
+  'hotel',
+  'restaurant',
+  'cafe',
+  'caf',
+  'food',
+  'foods',
+  'mart',
+  'medical',
+  'medicals',
+  'pharmacy',
+  'chemist',
+  'pump',
+  'petrol',
+  'fuel',
+  'service',
+  'services',
+  'pvt',
+  'private',
+  'ltd',
+  'limited',
+  'llp',
+  'india',
+  'enterprise',
+  'enterprises',
+  'traders',
+  'trading',
+  'agency',
+  'agencies',
+  'center',
+  'centre',
+  'bank',
+  'general',
+  'kirana',
+  'bakery',
+  'bakers',
+  'sweets',
+  'sweet',
+  'dairy',
+  'stall',
+  'hospital',
+  'clinic',
+  'garage',
+  'motors',
+  'auto',
+  'electricals',
+  'electronics',
+  'pay',
+  'payment',
+  'payments',
+  'technologies',
+  'tech',
+  'solutions',
+  'mall',
+  'salon',
+  'studio',
+  'book',
+  'books',
+  'stationery',
+  'transport',
+  'travels',
+  'tours',
+  'school',
+  'college',
+  'academy',
+  'gym',
+  'fitness',
+  'online',
+  'retail',
+  'wholesale',
+  'industries',
+  'corporation',
+  'company',
+  'co',
+  'and',
+  '&',
+  'the',
+  'pan',
+  'tea',
+  'juice',
+  'bar',
+  'dhaba',
+  'canteen',
+  'mess',
+  'kitchen',
+  'market',
+  'bazaar',
+  'super',
+  'supermarket',
+  'hardware',
+  'textiles',
+  'fashion',
+  'collection',
+  'jewellers',
+  'opticals',
+  'diagnostics',
+  'labs',
+  'lab',
+  'insurance',
+  'finance',
+  'capital',
+  'loan',
+  'recharge',
+  'broadband',
+  'digital',
+  'media',
+  'apple',
+  'google',
+  'amazon',
+  'slice',
+  'swiggy',
+  'zomato',
+  'uber',
+  'ola',
+  'rapido',
+  'blinkit',
+  'zepto',
+  'flipkart',
+  'myntra',
+  'paytm',
+  'phonepe',
 };
 
 /// "Sanket Pramod Patil" → true; "Hotel Vijay", "HP Petrol Pump", "abc@ybl" → false.
@@ -459,16 +599,23 @@ List<PayeeSummary> peopleToReview(Iterable<Txn> txns, {Set<String> decided = con
     final key = m!.toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
     if (decided.contains(key)) continue;
     final p = map[key];
-    map[key] = PayeeSummary(key, p?.name ?? m, (p?.count ?? 0) + 1,
-        (p?.sent ?? 0) + (t.isDebit ? t.amount : 0), (p?.received ?? 0) + (t.isDebit ? 0 : t.amount));
+    map[key] = PayeeSummary(
+      key,
+      p?.name ?? m,
+      (p?.count ?? 0) + 1,
+      (p?.sent ?? 0) + (t.isDebit ? t.amount : 0),
+      (p?.received ?? 0) + (t.isDebit ? 0 : t.amount),
+    );
   }
   return map.values.toList()..sort((a, b) => b.count.compareTo(a.count));
 }
 
 /// Balance with a connected friend from the shared record: positive = you owe them.
-double sharedBalance(Iterable<SharedEntry> entries, String linkId, String me) => _round(entries
-    .where((e) => e.linkId == linkId && !e.deleted)
-    .fold(0.0, (s, e) => s + (e.debtor == me ? e.amount : (e.creditor == me ? -e.amount : 0))));
+double sharedBalance(Iterable<SharedEntry> entries, String linkId, String me) => _round(
+  entries
+      .where((e) => e.linkId == linkId && !e.deleted)
+      .fold(0.0, (s, e) => s + (e.debtor == me ? e.amount : (e.creditor == me ? -e.amount : 0))),
+);
 
 // --------------------------------------------------------------------- places
 
@@ -508,12 +655,11 @@ class PayeeGroup {
   /// (statements write names in capitals and cut them short).
   String get name {
     int caps(String s) => s == s.toUpperCase() ? 1 : 0;
-    return (_names.entries.toList()
-          ..sort((a, b) {
-            if (a.value != b.value) return b.value.compareTo(a.value);
-            if (caps(a.key) != caps(b.key)) return caps(a.key).compareTo(caps(b.key));
-            return b.key.length.compareTo(a.key.length);
-          }))
+    return (_names.entries.toList()..sort((a, b) {
+          if (a.value != b.value) return b.value.compareTo(a.value);
+          if (caps(a.key) != caps(b.key)) return caps(a.key).compareTo(caps(b.key));
+          return b.key.length.compareTo(a.key.length);
+        }))
         .first
         .key;
   }
@@ -540,13 +686,19 @@ class PayeeGroup {
   }
 }
 
-String _payeeKey(String s) => s.toLowerCase().replaceAll(RegExp(r'[^a-z0-9 ]'), ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
+String _payeeKey(String s) =>
+    s.toLowerCase().replaceAll(RegExp(r'[^a-z0-9 ]'), ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
 
 /// Money grouped by where it went (and what came back from there): same payee under
 /// different spellings, a name a statement cut short, or another name for a friend all
 /// count as one place. Only places you paid are listed.
-List<PayeeGroup> payeeGroups(Iterable<Txn> txns,
-    {DateTime? from, Set<String> loanCategoryIds = const {}, ShareTotals shares = ShareTotals.none, Map<String, String> aliases = const {}}) {
+List<PayeeGroup> payeeGroups(
+  Iterable<Txn> txns, {
+  DateTime? from,
+  Set<String> loanCategoryIds = const {},
+  ShareTotals shares = ShareTotals.none,
+  Map<String, String> aliases = const {},
+}) {
   final rows = <(Txn, String, double)>[];
   for (final t in txns) {
     if (!counts(t, loanCategoryIds) || (from != null && t.txnAt.isBefore(from))) continue;
@@ -607,14 +759,17 @@ List<PayeeGroup> payeeGroups(Iterable<Txn> txns,
     g.received = _round(g.received);
     g.txns.sort((a, b) => b.txnAt.compareTo(a.txnAt));
   }
-  return groups.values.where((g) => g.count > 0).toList()..sort((a, b) => b.count != a.count ? b.count.compareTo(a.count) : b.total.compareTo(a.total));
+  return groups.values.where((g) => g.count > 0).toList()
+    ..sort((a, b) => b.count != a.count ? b.count.compareTo(a.count) : b.total.compareTo(a.total));
 }
 
 // ------------------------------------------------------------ category groups
 
 /// Spending per category rolled up into its group: group id → (total, children with their totals).
 List<({String? id, double total, List<MapEntry<String?, double>> children})> rollUp(
-    List<MapEntry<String?, double>> byCategory, Map<String, String?> parentOf) {
+  List<MapEntry<String?, double>> byCategory,
+  Map<String, String?> parentOf,
+) {
   final groups = <String?, ({double total, Map<String?, double> kids})>{};
   for (final e in byCategory) {
     final parent = e.key == null ? null : parentOf[e.key];
@@ -626,7 +781,11 @@ List<({String? id, double total, List<MapEntry<String?, double>> children})> rol
   }
   final out = [
     for (final e in groups.entries)
-      (id: e.key, total: _round(e.value.total), children: e.value.kids.entries.toList()..sort((a, b) => b.value.compareTo(a.value))),
+      (
+        id: e.key,
+        total: _round(e.value.total),
+        children: e.value.kids.entries.toList()..sort((a, b) => b.value.compareTo(a.value)),
+      ),
   ]..sort((a, b) => b.total.compareTo(a.total));
   return out;
 }
@@ -662,9 +821,16 @@ List<({String name, List<Txn> txns, double total})> unsortedByPayee(Iterable<Txn
     names.putIfAbsent(key, () => name == null || name.isEmpty ? 'No name' : name);
     (groups[key] ??= []).add(t);
   }
-  final out = [
-    for (final e in groups.entries)
-      (name: names[e.key]!, txns: e.value..sort((a, b) => b.txnAt.compareTo(a.txnAt)), total: _round(e.value.fold(0.0, (s, t) => s + t.amount))),
-  ]..sort((a, b) => b.txns.length != a.txns.length ? b.txns.length.compareTo(a.txns.length) : b.total.compareTo(a.total));
+  final out =
+      [
+        for (final e in groups.entries)
+          (
+            name: names[e.key]!,
+            txns: e.value..sort((a, b) => b.txnAt.compareTo(a.txnAt)),
+            total: _round(e.value.fold(0.0, (s, t) => s + t.amount)),
+          ),
+      ]..sort(
+        (a, b) => b.txns.length != a.txns.length ? b.txns.length.compareTo(a.txns.length) : b.total.compareTo(a.total),
+      );
   return out;
 }

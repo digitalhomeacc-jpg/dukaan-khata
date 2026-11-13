@@ -13,9 +13,17 @@ String _short(DateTime d) => DateFormat(d.year == DateTime.now().year ? 'd MMM' 
 
 /// Known lenders: what the card is called and which payee names mean them.
 const lenderPresets = <String, ({String name, LoanKind kind, List<String> aliases})>{
-  'kreditbee': (name: 'KreditBee', kind: LoanKind.emi, aliases: ['kreditbee', 'krazybee', 'krazybee services', 'kbmas']),
+  'kreditbee': (
+    name: 'KreditBee',
+    kind: LoanKind.emi,
+    aliases: ['kreditbee', 'krazybee', 'krazybee services', 'kbmas'],
+  ),
   'fibe': (name: 'Fibe', kind: LoanKind.emi, aliases: ['fibe', 'earlysalary', 'social worth technologies', 'fibe.cf.']),
-  'slice': (name: 'Slice borrow', kind: LoanKind.creditLine, aliases: ['slice', 'slice borrow', 'slice small finance bank']),
+  'slice': (
+    name: 'Slice borrow',
+    kind: LoanKind.creditLine,
+    aliases: ['slice', 'slice borrow', 'slice small finance bank'],
+  ),
 };
 
 /// One lender loan on the Loans tab.
@@ -36,9 +44,14 @@ class LenderLoanCard extends StatelessWidget {
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
-          builder: (_) => ListenableBuilder(listenable: data, builder: (_, _) => LoanDetailScreen(data: data, loanId: loan.id)),
-        )),
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => ListenableBuilder(
+              listenable: data,
+              builder: (_, _) => LoanDetailScreen(data: data, loanId: loan.id),
+            ),
+          ),
+        ),
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(
@@ -53,8 +66,10 @@ class LenderLoanCard extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(loan.name, style: text.titleMedium),
-                        Text(loan.kind == LoanKind.creditLine ? 'Credit line' : 'EMI loan',
-                            style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
+                        Text(
+                          loan.kind == LoanKind.creditLine ? 'Credit line' : 'EMI loan',
+                          style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+                        ),
                       ],
                     ),
                   ),
@@ -80,8 +95,11 @@ class LenderLoanCard extends StatelessWidget {
                 const SizedBox(height: 10),
                 Row(
                   children: [
-                    Icon(s.nextDuePaid ? Icons.check_circle : Icons.event,
-                        size: 18, color: s.nextDuePaid ? Colors.green.shade700 : (overdue ? scheme.error : scheme.primary)),
+                    Icon(
+                      s.nextDuePaid ? Icons.check_circle : Icons.event,
+                      size: 18,
+                      color: s.nextDuePaid ? Colors.green.shade700 : (overdue ? scheme.error : scheme.primary),
+                    ),
                     const SizedBox(width: 6),
                     Expanded(
                       child: Text(
@@ -111,7 +129,10 @@ class LoanDetailScreen extends StatelessWidget {
   Future<void> _record(BuildContext context, Loan loan, LoanEventKind kind) async {
     final s = loanStatus(loan, data.loanEvents);
     final amount = TextEditingController(
-        text: kind == LoanEventKind.repay ? _plain(s.nextDuePaid ? loan.emiAmount : (s.nextDueAmount ?? loan.emiAmount)) : '');
+      text: kind == LoanEventKind.repay
+          ? _plain(s.nextDuePaid ? loan.emiAmount : (s.nextDueAmount ?? loan.emiAmount))
+          : '',
+    );
     var when = DateTime.now();
     final result = await showDialog<bool>(
       context: context,
@@ -134,7 +155,11 @@ class LoanDetailScreen extends StatelessWidget {
                 label: Text(_date.format(when)),
                 onPressed: () async {
                   final d = await showDatePicker(
-                      context: c, initialDate: when, firstDate: DateTime(2015), lastDate: DateTime.now().add(const Duration(days: 1)));
+                    context: c,
+                    initialDate: when,
+                    firstDate: DateTime(2015),
+                    lastDate: DateTime.now().add(const Duration(days: 1)),
+                  );
                   if (d != null) set(() => when = DateTime(d.year, d.month, d.day, 12));
                 },
               ),
@@ -170,8 +195,10 @@ class LoanDetailScreen extends StatelessWidget {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text('Check the ${loan.name} app and type the total amount owed. New borrowing and payments are counted from today.',
-                style: Theme.of(ctx).textTheme.bodySmall),
+            Text(
+              'Check the ${loan.name} app and type the total amount owed. New borrowing and payments are counted from today.',
+              style: Theme.of(ctx).textTheme.bodySmall,
+            ),
             const SizedBox(height: 12),
             TextField(
               controller: c,
@@ -201,14 +228,16 @@ class LoanDetailScreen extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
 
     Widget fact(String label, String value) => Padding(
-          padding: const EdgeInsets.symmetric(vertical: 6),
-          child: Row(
-            children: [
-              Expanded(child: Text(label, style: TextStyle(color: scheme.onSurfaceVariant))),
-              Text(value, style: const TextStyle(fontWeight: FontWeight.w500)),
-            ],
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(label, style: TextStyle(color: scheme.onSurfaceVariant)),
           ),
-        );
+          Text(value, style: const TextStyle(fontWeight: FontWeight.w500)),
+        ],
+      ),
+    );
 
     return Scaffold(
       appBar: AppBar(
@@ -225,9 +254,10 @@ class LoanDetailScreen extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
         children: [
           Center(child: Text(s.owedIsEmiBased ? 'Left to pay' : 'You owe', style: text.titleMedium)),
-          Center(child: Text(money(s.owed), style: text.displaySmall?.copyWith(fontWeight: FontWeight.w600))),
-          if (s.owedIsEmiBased)
-            Center(child: Text('EMIs left × EMI, interest included', style: text.bodySmall)),
+          Center(
+            child: Text(money(s.owed), style: text.displaySmall?.copyWith(fontWeight: FontWeight.w600)),
+          ),
+          if (s.owedIsEmiBased) Center(child: Text('EMIs left × EMI, interest included', style: text.bodySmall)),
           if (s.emisPaid != null && loan.tenureMonths != null) ...[
             const SizedBox(height: 16),
             ClipRRect(
@@ -249,10 +279,7 @@ class LoanDetailScreen extends StatelessWidget {
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: OutlinedButton(
-                  onPressed: () => _setOwed(context, loan),
-                  child: const Text('Set amount owed'),
-                ),
+                child: OutlinedButton(onPressed: () => _setOwed(context, loan), child: const Text('Set amount owed')),
               ),
             ],
           ),
@@ -263,14 +290,18 @@ class LoanDetailScreen extends StatelessWidget {
               child: Column(
                 children: [
                   if (s.nextDueDate != null)
-                    fact(s.nextDuePaid ? 'Last due (paid)' : 'Next due',
-                        '${money(s.nextDueAmount ?? 0)} · ${_date.format(s.nextDueDate!)}'),
+                    fact(
+                      s.nextDuePaid ? 'Last due (paid)' : 'Next due',
+                      '${money(s.nextDueAmount ?? 0)} · ${_date.format(s.nextDueDate!)}',
+                    ),
                   if (loan.emiAmount != null) fact('EMI', money(loan.emiAmount!)),
                   if (loan.dueDay != null) fact('EMI date', '${loan.dueDay} of every month'),
                   if (loan.interestRate != null) fact('Interest', '${_plain(loan.interestRate)}% a year'),
                   if (loan.principal != null) fact('Amount borrowed', money(loan.principal!)),
-                  fact(loan.kind == LoanKind.creditLine ? 'Borrowed & spent (tracked)' : 'Borrowed more (tracked)',
-                      money(s.borrowed - (loan.principal ?? 0))),
+                  fact(
+                    loan.kind == LoanKind.creditLine ? 'Borrowed & spent (tracked)' : 'Borrowed more (tracked)',
+                    money(s.borrowed - (loan.principal ?? 0)),
+                  ),
                   fact('Paid back (tracked)', money(s.repaid)),
                   if (loan.outstanding != null && loan.outstandingAt != null)
                     fact('Owed set by you', '${money(loan.outstanding!)} on ${_short(loan.outstandingAt!)}'),
@@ -297,20 +328,19 @@ class LoanDetailScreen extends StatelessWidget {
           for (final e in events)
             ListTile(
               contentPadding: EdgeInsets.zero,
-              leading: Icon(
-                switch (e.kind) {
-                  LoanEventKind.borrow => Icons.call_received,
-                  LoanEventKind.spend => Icons.shopping_bag_outlined,
-                  LoanEventKind.repay => Icons.call_made,
-                },
-                color: e.kind == LoanEventKind.repay ? Colors.green.shade700 : scheme.error,
-              ),
+              leading: Icon(switch (e.kind) {
+                LoanEventKind.borrow => Icons.call_received,
+                LoanEventKind.spend => Icons.shopping_bag_outlined,
+                LoanEventKind.repay => Icons.call_made,
+              }, color: e.kind == LoanEventKind.repay ? Colors.green.shade700 : scheme.error),
               title: Text(switch (e.kind) {
                 LoanEventKind.borrow => 'Borrowed',
                 LoanEventKind.spend => 'Bought: ${e.note ?? ''}',
                 LoanEventKind.repay => 'Paid back',
               }),
-              subtitle: Text('${_short(e.at)}${e.fromEmail ? ' · from email' : (e.note != null ? ' · ${e.note}' : '')}'),
+              subtitle: Text(
+                '${_short(e.at)}${e.fromEmail ? ' · from email' : (e.note != null ? ' · ${e.note}' : '')}',
+              ),
               trailing: Text(money(e.amount), style: const TextStyle(fontWeight: FontWeight.w600)),
               onLongPress: e.fromEmail
                   ? null
@@ -339,11 +369,12 @@ String _plain(double? v) {
   return v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toStringAsFixed(2);
 }
 
-Future<void> openLoanForm(BuildContext context, AppData data, {Loan? existing}) =>
-    Navigator.of(context).push(MaterialPageRoute<void>(
-      fullscreenDialog: true,
-      builder: (_) => _LoanForm(data: data, existing: existing),
-    ));
+Future<void> openLoanForm(BuildContext context, AppData data, {Loan? existing}) => Navigator.of(context).push(
+  MaterialPageRoute<void>(
+    fullscreenDialog: true,
+    builder: (_) => _LoanForm(data: data, existing: existing),
+  ),
+);
 
 class _LoanForm extends StatefulWidget {
   const _LoanForm({required this.data, this.existing});
@@ -380,15 +411,15 @@ class _LoanFormState extends State<_LoanForm> {
   }
 
   void _pickLender(String key) => setState(() {
-        _lender = key;
-        final p = lenderPresets[key];
-        if (p != null) {
-          _name.text = p.name;
-          _kind = p.kind;
-        } else {
-          _name.text = '';
-        }
-      });
+    _lender = key;
+    final p = lenderPresets[key];
+    if (p != null) {
+      _name.text = p.name;
+      _kind = p.kind;
+    } else {
+      _name.text = '';
+    }
+  });
 
   double? _d(TextEditingController c) => c.text.trim().isEmpty ? null : double.tryParse(c.text.replaceAll(',', ''));
   int? _i(TextEditingController c) => c.text.trim().isEmpty ? null : int.tryParse(c.text.trim());
@@ -421,9 +452,13 @@ class _LoanFormState extends State<_LoanForm> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _busy = false);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(e.toString().contains('duplicate') ? 'You already have a loan called “$name”' : 'Could not save: $e'),
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            e.toString().contains('duplicate') ? 'You already have a loan called “$name”' : 'Could not save: $e',
+          ),
+        ),
+      );
     }
   }
 
@@ -441,17 +476,26 @@ class _LoanFormState extends State<_LoanForm> {
     );
     if (yes != true) return;
     await widget.data.deleteLoan(widget.existing!.id);
-    if (mounted) Navigator.of(context)..pop()..pop();
+    if (mounted)
+      Navigator.of(context)
+        ..pop()
+        ..pop();
   }
 
-  Widget _number(TextEditingController c, String label, {String? prefix, String? helper, bool decimal = true, String? Function(String?)? validator}) =>
-      TextFormField(
-        controller: c,
-        keyboardType: TextInputType.numberWithOptions(decimal: decimal),
-        inputFormatters: [FilteringTextInputFormatter.allow(RegExp(decimal ? r'[0-9.,]' : r'[0-9]'))],
-        decoration: InputDecoration(labelText: label, prefixText: prefix, helperText: helper),
-        validator: validator,
-      );
+  Widget _number(
+    TextEditingController c,
+    String label, {
+    String? prefix,
+    String? helper,
+    bool decimal = true,
+    String? Function(String?)? validator,
+  }) => TextFormField(
+    controller: c,
+    keyboardType: TextInputType.numberWithOptions(decimal: decimal),
+    inputFormatters: [FilteringTextInputFormatter.allow(RegExp(decimal ? r'[0-9.,]' : r'[0-9]'))],
+    decoration: InputDecoration(labelText: label, prefixText: prefix, helperText: helper),
+    validator: validator,
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -479,15 +523,26 @@ class _LoanFormState extends State<_LoanForm> {
               runSpacing: 8,
               children: [
                 for (final e in lenderPresets.entries)
-                  ChoiceChip(label: Text(e.value.name), selected: _lender == e.key, onSelected: (_) => _pickLender(e.key)),
-                ChoiceChip(label: const Text('Other'), selected: !lenderPresets.containsKey(_lender), onSelected: (_) => _pickLender('other')),
+                  ChoiceChip(
+                    label: Text(e.value.name),
+                    selected: _lender == e.key,
+                    onSelected: (_) => _pickLender(e.key),
+                  ),
+                ChoiceChip(
+                  label: const Text('Other'),
+                  selected: !lenderPresets.containsKey(_lender),
+                  onSelected: (_) => _pickLender('other'),
+                ),
               ],
             ),
             const SizedBox(height: 16),
             TextFormField(
               controller: _name,
               textCapitalization: TextCapitalization.words,
-              decoration: const InputDecoration(labelText: 'Name on the card', helperText: 'Also how bank payments to them are recognised'),
+              decoration: const InputDecoration(
+                labelText: 'Name on the card',
+                helperText: 'Also how bank payments to them are recognised',
+              ),
               validator: (v) => (v ?? '').trim().isEmpty ? 'Enter a name' : null,
             ),
             const SizedBox(height: 16),
@@ -514,21 +569,27 @@ class _LoanFormState extends State<_LoanForm> {
               Row(
                 children: [
                   Expanded(
-                    child: _number(_paid, 'EMIs already paid',
-                        decimal: false,
-                        validator: (v) {
-                          final p = int.tryParse(v ?? ''), t = _i(_tenure);
-                          return p != null && t != null && p > t ? 'More than the number of EMIs' : null;
-                        }),
+                    child: _number(
+                      _paid,
+                      'EMIs already paid',
+                      decimal: false,
+                      validator: (v) {
+                        final p = int.tryParse(v ?? ''), t = _i(_tenure);
+                        return p != null && t != null && p > t ? 'More than the number of EMIs' : null;
+                      },
+                    ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
-                    child: _number(_dueDay, 'EMI date (day)',
-                        decimal: false,
-                        validator: (v) {
-                          final d = int.tryParse(v ?? '');
-                          return v != null && v.isNotEmpty && (d == null || d < 1 || d > 31) ? '1 to 31' : null;
-                        }),
+                    child: _number(
+                      _dueDay,
+                      'EMI date (day)',
+                      decimal: false,
+                      validator: (v) {
+                        final d = int.tryParse(v ?? '');
+                        return v != null && v.isNotEmpty && (d == null || d < 1 || d > 31) ? '1 to 31' : null;
+                      },
+                    ),
                   ),
                 ],
               ),
@@ -536,9 +597,14 @@ class _LoanFormState extends State<_LoanForm> {
             ],
             _number(_rate, 'Interest rate (optional)', helper: '% a year, as shown in the lender app'),
             const SizedBox(height: 12),
-            _number(_owed, _isNew ? 'Amount owed now (optional)' : 'Update amount owed (optional)',
-                prefix: '₹ ',
-                helper: emi ? 'Leave empty to work it out from EMIs left' : 'From the lender app; payments and borrowing are counted from today'),
+            _number(
+              _owed,
+              _isNew ? 'Amount owed now (optional)' : 'Update amount owed (optional)',
+              prefix: '₹ ',
+              helper: emi
+                  ? 'Leave empty to work it out from EMIs left'
+                  : 'From the lender app; payments and borrowing are counted from today',
+            ),
             const SizedBox(height: 16),
             Row(
               children: [
@@ -556,12 +622,17 @@ class _LoanFormState extends State<_LoanForm> {
               const SizedBox(height: 8),
               Row(
                 children: [
-                  Icon(accountIcon(const Account(id: '', name: '', kind: AccountKind.card)), size: 18,
-                      color: Theme.of(context).colorScheme.outline),
+                  Icon(
+                    accountIcon(const Account(id: '', name: '', kind: AccountKind.card)),
+                    size: 18,
+                    color: Theme.of(context).colorScheme.outline,
+                  ),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: Text('Things you buy with a credit line are counted as spending when you buy them.',
-                        style: Theme.of(context).textTheme.bodySmall),
+                    child: Text(
+                      'Things you buy with a credit line are counted as spending when you buy them.',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
                   ),
                 ],
               ),

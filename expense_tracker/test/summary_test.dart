@@ -2,19 +2,26 @@ import 'package:expense_tracker/logic/summary.dart';
 import 'package:expense_tracker/models.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-Txn t(double amount, DateTime at,
-        {bool debit = true, String? cat, String? merchant, bool excluded = false, String? acc, String? to}) =>
-    Txn(
-      id: '$amount$at',
-      amount: amount,
-      isDebit: debit,
-      txnAt: at,
-      categoryId: cat,
-      merchant: merchant,
-      excluded: excluded,
-      accountId: acc,
-      counterAccountId: to,
-    );
+Txn t(
+  double amount,
+  DateTime at, {
+  bool debit = true,
+  String? cat,
+  String? merchant,
+  bool excluded = false,
+  String? acc,
+  String? to,
+}) => Txn(
+  id: '$amount$at',
+  amount: amount,
+  isDebit: debit,
+  txnAt: at,
+  categoryId: cat,
+  merchant: merchant,
+  excluded: excluded,
+  accountId: acc,
+  counterAccountId: to,
+);
 
 void main() {
   final nov = DateTime(2026, 11);

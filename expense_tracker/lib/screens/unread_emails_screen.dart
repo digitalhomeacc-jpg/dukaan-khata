@@ -44,10 +44,15 @@ class _UnreadEmailsScreenState extends State<UnreadEmailsScreen> {
             Row(
               children: [
                 Expanded(
-                  child: OutlinedButton(onPressed: () => Navigator.pop(c, 'dismiss'), child: const Text('Not a payment')),
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.pop(c, 'dismiss'),
+                    child: const Text('Not a payment'),
+                  ),
                 ),
                 const SizedBox(width: 12),
-                Expanded(child: FilledButton(onPressed: () => Navigator.pop(c, 'add'), child: const Text('Add by hand'))),
+                Expanded(
+                  child: FilledButton(onPressed: () => Navigator.pop(c, 'add'), child: const Text('Add by hand')),
+                ),
               ],
             ),
           ],
@@ -56,8 +61,17 @@ class _UnreadEmailsScreenState extends State<UnreadEmailsScreen> {
     );
     if (!mounted || action == null) return;
     if (action == 'add') {
-      await openTxnEditor(context, data,
-          prefill: Txn(id: '', amount: _guessAmount(e.body) ?? 0, isDebit: true, txnAt: e.receivedAt ?? DateTime.now(), method: 'other'));
+      await openTxnEditor(
+        context,
+        data,
+        prefill: Txn(
+          id: '',
+          amount: _guessAmount(e.body) ?? 0,
+          isDebit: true,
+          txnAt: e.receivedAt ?? DateTime.now(),
+          method: 'other',
+        ),
+      );
     }
     await data.dismissUnread(e.id);
   }
@@ -88,7 +102,11 @@ class _UnreadEmailsScreenState extends State<UnreadEmailsScreen> {
                   itemBuilder: (context, i) {
                     final e = list[i];
                     return ListTile(
-                      title: Text(e.subject.isEmpty ? '(no subject)' : e.subject, maxLines: 1, overflow: TextOverflow.ellipsis),
+                      title: Text(
+                        e.subject.isEmpty ? '(no subject)' : e.subject,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                       subtitle: Text(
                         '${e.receivedAt == null ? '' : '${dayLabel(e.receivedAt!)} · '}${e.body.replaceAll(RegExp(r'\s+'), ' ')}',
                         maxLines: 2,

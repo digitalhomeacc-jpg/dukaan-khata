@@ -29,8 +29,18 @@ const categoryIcons = <String, IconData>{
 };
 
 const categoryColors = <int>[
-  0xFFFF5722, 0xFF4CAF50, 0xFFE91E63, 0xFF2196F3, 0xFFFF9800, 0xFF9C27B0,
-  0xFFF44336, 0xFF00BCD4, 0xFF795548, 0xFF009688, 0xFF607D8B, 0xFF3F51B5,
+  0xFFFF5722,
+  0xFF4CAF50,
+  0xFFE91E63,
+  0xFF2196F3,
+  0xFFFF9800,
+  0xFF9C27B0,
+  0xFFF44336,
+  0xFF00BCD4,
+  0xFF795548,
+  0xFF009688,
+  0xFF607D8B,
+  0xFF3F51B5,
 ];
 
 IconData iconFor(Category? c) => categoryIcons[c?.icon] ?? Icons.help_outline;
@@ -55,19 +65,19 @@ class CategoryAvatar extends StatelessWidget {
 }
 
 IconData accountIcon(Account? a) => switch (a?.kind) {
-      AccountKind.cash => Icons.payments_outlined,
-      AccountKind.card => Icons.credit_card,
-      AccountKind.wallet => Icons.account_balance_wallet_outlined,
-      AccountKind.bank => Icons.account_balance,
-      null => Icons.help_outline,
-    };
+  AccountKind.cash => Icons.payments_outlined,
+  AccountKind.card => Icons.credit_card,
+  AccountKind.wallet => Icons.account_balance_wallet_outlined,
+  AccountKind.bank => Icons.account_balance,
+  null => Icons.help_outline,
+};
 
 String accountKindLabel(AccountKind k) => switch (k) {
-      AccountKind.cash => 'Cash',
-      AccountKind.bank => 'Bank account',
-      AccountKind.card => 'Credit card',
-      AccountKind.wallet => 'Wallet',
-    };
+  AccountKind.cash => 'Cash',
+  AccountKind.bank => 'Bank account',
+  AccountKind.card => 'Credit card',
+  AccountKind.wallet => 'Wallet',
+};
 
 /// Categories in display order: each group followed by the categories in it.
 List<({Category cat, bool inGroup})> groupedCategories(Iterable<Category> all) {
@@ -78,7 +88,9 @@ List<({Category cat, bool inGroup})> groupedCategories(Iterable<Category> all) {
   return [
     for (final t in tops) ...[
       (cat: t, inGroup: false),
-      for (final c in (list.where((c) => c.parentId == t.id).toList()..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()))))
+      for (final c
+          in (list.where((c) => c.parentId == t.id).toList()
+            ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()))))
         (cat: c, inGroup: true),
     ],
   ];

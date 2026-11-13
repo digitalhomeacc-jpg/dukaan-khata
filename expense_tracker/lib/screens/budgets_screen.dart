@@ -16,7 +16,10 @@ class BudgetsScreen extends StatelessWidget {
   Future<void> _edit(BuildContext context, Category? c) async {
     final existing = data.budgets.where((b) => b.categoryId == c?.id).firstOrNull;
     final ctl = TextEditingController(
-        text: existing == null ? '' : existing.amount.toStringAsFixed(existing.amount == existing.amount.roundToDouble() ? 0 : 2));
+      text: existing == null
+          ? ''
+          : existing.amount.toStringAsFixed(existing.amount == existing.amount.roundToDouble() ? 0 : 2),
+    );
     final result = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -42,9 +45,15 @@ class BudgetsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final month = summarize(data.transactions, monthStart(DateTime.now()),
-        loanCategoryIds: data.notSpendingCategoryIds, shares: data.shareTotalsNow);
-    final progress = {for (final p in budgetProgress(data.budgets, month, parentOf: data.parentOf)) p.budget.categoryId: p};
+    final month = summarize(
+      data.transactions,
+      monthStart(DateTime.now()),
+      loanCategoryIds: data.notSpendingCategoryIds,
+      shares: data.shareTotalsNow,
+    );
+    final progress = {
+      for (final p in budgetProgress(data.budgets, month, parentOf: data.parentOf)) p.budget.categoryId: p,
+    };
     Widget row(Category? c) {
       final p = progress[c?.id];
       return ListTile(

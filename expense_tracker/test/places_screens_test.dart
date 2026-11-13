@@ -15,7 +15,14 @@ void main() {
       categories: const [Category(id: 'f', name: 'Food & Dining', icon: 'restaurant', color: 0xFFFF5722)],
       transactions: [
         for (var i = 0; i < 5; i++)
-          Txn(id: 'h$i', amount: 200, isDebit: true, txnAt: now.subtract(Duration(days: i * 6)), merchant: i.isEven ? 'Hotel Vijay' : 'HOTEL VIJAY', categoryId: 'f'),
+          Txn(
+            id: 'h$i',
+            amount: 200,
+            isDebit: true,
+            txnAt: now.subtract(Duration(days: i * 6)),
+            merchant: i.isEven ? 'Hotel Vijay' : 'HOTEL VIJAY',
+            categoryId: 'f',
+          ),
         Txn(id: 'c', amount: 40, isDebit: true, txnAt: now, merchant: 'Bhai Pan Stall'),
       ],
     );

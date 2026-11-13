@@ -20,21 +20,30 @@ Future<PickedFile?> pickFile() {
     input.remove();
   }
 
-  input.addEventListener('change', ((web.Event _) {
-    final file = input.files?.item(0);
-    if (file == null) return finish(null);
-    final reader = web.FileReader();
-    reader.addEventListener('load', ((web.Event _) {
-      final result = reader.result;
-      if (result == null) return finish(null);
-      finish((name: file.name, bytes: (result as JSArrayBuffer).toDart.asUint8List()));
-    }).toJS);
-    reader.addEventListener('error', ((web.Event _) {
-      if (!done.isCompleted) done.completeError(Exception('Could not read ${file.name}'));
-      input.remove();
-    }).toJS);
-    reader.readAsArrayBuffer(file);
-  }).toJS);
+  input.addEventListener(
+    'change',
+    ((web.Event _) {
+      final file = input.files?.item(0);
+      if (file == null) return finish(null);
+      final reader = web.FileReader();
+      reader.addEventListener(
+        'load',
+        ((web.Event _) {
+          final result = reader.result;
+          if (result == null) return finish(null);
+          finish((name: file.name, bytes: (result as JSArrayBuffer).toDart.asUint8List()));
+        }).toJS,
+      );
+      reader.addEventListener(
+        'error',
+        ((web.Event _) {
+          if (!done.isCompleted) done.completeError(Exception('Could not read ${file.name}'));
+          input.remove();
+        }).toJS,
+      );
+      reader.readAsArrayBuffer(file);
+    }).toJS,
+  );
   // Cancel (supported by newer browsers).
   input.addEventListener('cancel', ((web.Event _) => finish(null)).toJS);
   input.click();

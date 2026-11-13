@@ -26,15 +26,20 @@ class PeopleReviewScreen extends StatelessWidget {
             ),
           ),
           if (people.isEmpty)
-            const Padding(padding: EdgeInsets.all(24), child: Text('All done. Nobody left to sort.', textAlign: TextAlign.center)),
+            const Padding(
+              padding: EdgeInsets.all(24),
+              child: Text('All done. Nobody left to sort.', textAlign: TextAlign.center),
+            ),
           for (final p in people)
             ListTile(
               title: Text(p.name),
-              subtitle: Text([
-                '${p.count}×',
-                if (p.sent > 0) 'sent ${money(p.sent)}',
-                if (p.received > 0) 'got ${money(p.received)}',
-              ].join(' · ')),
+              subtitle: Text(
+                [
+                  '${p.count}×',
+                  if (p.sent > 0) 'sent ${money(p.sent)}',
+                  if (p.received > 0) 'got ${money(p.received)}',
+                ].join(' · '),
+              ),
               trailing: PopupMenuButton<String>(
                 tooltip: 'Who is this?',
                 onSelected: (role) => data.setPersonRole(p.name, role),

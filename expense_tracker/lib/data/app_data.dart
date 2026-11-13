@@ -96,8 +96,8 @@ class AppData extends ChangeNotifier {
     this.myId,
     this.unread = const [],
     this.profile = const {},
-  })  : _client = null,
-        loaded = true {
+  }) : _client = null,
+       loaded = true {
     _subs = [];
   }
 
@@ -149,6 +149,7 @@ class AppData extends ChangeNotifier {
     }
     return null;
   }
+
   ShareTotals? _shareTotals;
 
   /// Friends' parts of group payments, for the totals.
@@ -164,6 +165,7 @@ class AppData extends ChangeNotifier {
     }
     return null;
   }
+
   List<UnreadEmail> unread = const [];
   Map<String, dynamic> profile = const {};
 
@@ -181,8 +183,14 @@ class AppData extends ChangeNotifier {
     return null;
   }
 
-  Set<String> get loanCategoryIds => {for (final c in categories) if (c.isLoan) c.id};
-  Set<String> get investmentCategoryIds => {for (final c in categories) if (c.isInvestment) c.id};
+  Set<String> get loanCategoryIds => {
+    for (final c in categories)
+      if (c.isLoan) c.id,
+  };
+  Set<String> get investmentCategoryIds => {
+    for (final c in categories)
+      if (c.isInvestment) c.id,
+  };
 
   /// Categories whose money is neither spending nor income: friends and investments.
   Set<String> get notSpendingCategoryIds => {...loanCategoryIds, ...investmentCategoryIds};
@@ -224,9 +232,21 @@ class AppData extends ChangeNotifier {
   // -------------------------------------------------------------- categories
 
   /// Saves a category; returns its id.
-  Future<String> saveCategory(
-      {String? id, required String name, required String icon, required int color, bool isLoan = false, String? parentId}) async {
-    final row = {'name': name.trim(), 'icon': icon, 'color': color, 'kind': isLoan ? 'loan' : 'normal', 'parent_id': parentId};
+  Future<String> saveCategory({
+    String? id,
+    required String name,
+    required String icon,
+    required int color,
+    bool isLoan = false,
+    String? parentId,
+  }) async {
+    final row = {
+      'name': name.trim(),
+      'icon': icon,
+      'color': color,
+      'kind': isLoan ? 'loan' : 'normal',
+      'parent_id': parentId,
+    };
     if (id == null) {
       final r = await _db.from('categories').insert(row).select().single();
       final c = Category.fromMap(r);
@@ -249,8 +269,12 @@ class AppData extends ChangeNotifier {
     if (existing != null) return existing;
     final row = await _db
         .from('categories')
-        .upsert({'name': 'Personal loans', 'icon': 'handshake', 'color': 0xFF3F51B5, 'kind': 'loan'},
-            onConflict: 'user_id,name')
+        .upsert({
+          'name': 'Personal loans',
+          'icon': 'handshake',
+          'color': 0xFF3F51B5,
+          'kind': 'loan',
+        }, onConflict: 'user_id,name')
         .select()
         .single();
     final c = Category.fromMap(row);
@@ -261,11 +285,22 @@ class AppData extends ChangeNotifier {
 
   // ---------------------------------------------------------------- accounts
 
-  Future<void> saveAccount(
-      {String? id, required String name, required AccountKind kind, required double openingBalance, bool archived = false, DateTime? openingDate}) async {
+  Future<void> saveAccount({
+    String? id,
+    required String name,
+    required AccountKind kind,
+    required double openingBalance,
+    bool archived = false,
+    DateTime? openingDate,
+  }) async {
     final row = {
-      'name': name.trim(), 'kind': kind.name, 'opening_balance': openingBalance, 'archived': archived,
-      'opening_date': openingDate == null ? null : '${openingDate.year.toString().padLeft(4, '0')}-${openingDate.month.toString().padLeft(2, '0')}-${openingDate.day.toString().padLeft(2, '0')}',
+      'name': name.trim(),
+      'kind': kind.name,
+      'opening_balance': openingBalance,
+      'archived': archived,
+      'opening_date': openingDate == null
+          ? null
+          : '${openingDate.year.toString().padLeft(4, '0')}-${openingDate.month.toString().padLeft(2, '0')}-${openingDate.day.toString().padLeft(2, '0')}',
     };
     if (id == null) {
       await _db.from('accounts').insert(row);
@@ -311,10 +346,10 @@ class AppData extends ChangeNotifier {
   Future<void> deleteLoanEvent(String id) => _db.from('loan_events').delete().eq('id', id);
 
   /// "I owe ₹X now": later borrowing and repayments are counted from here.
-  Future<void> setOwed(String loanId, double owed) => _db.from('loans').update({
-        'outstanding': owed,
-        'outstanding_at': DateTime.now().toUtc().toIso8601String(),
-      }).eq('id', loanId);
+  Future<void> setOwed(String loanId, double owed) => _db
+      .from('loans')
+      .update({'outstanding': owed, 'outstanding_at': DateTime.now().toUtc().toIso8601String()})
+      .eq('id', loanId);
 
   // ---------------------------------------------------------------- friends
 
@@ -324,11 +359,11 @@ class AppData extends ChangeNotifier {
 
   /// Payees already decided: a role set, friends (by category) and "not a friend".
   Set<String> get decidedPeople => {
-        ...people.keys,
-        for (final t in transactions)
-          if (t.merchant != null && loanCategoryIds.contains(t.categoryId)) keyOf(t.merchant!),
-        ...((profile['not_friends'] as List?) ?? const []).cast<String>(),
-      };
+    ...people.keys,
+    for (final t in transactions)
+      if (t.merchant != null && loanCategoryIds.contains(t.categoryId)) keyOf(t.merchant!),
+    ...((profile['not_friends'] as List?) ?? const []).cast<String>(),
+  };
 
   /// Friend, family, me (own account) or shop. Family money in is income; "me" is a move.
   Future<void> setPersonRole(String name, String role) async {
@@ -339,8 +374,14 @@ class AppData extends ChangeNotifier {
   }
 
   /// Your own name for a place, by its UPI IDs (or names when it has none), now and later.
-  Future<void> renamePlace({required Iterable<String> vpas, required Iterable<String> names, required String nickname}) =>
-      _db.rpc('rename_place', params: {'p_vpas': vpas.toList(), 'p_names': names.toList(), 'p_nickname': nickname.trim()});
+  Future<void> renamePlace({
+    required Iterable<String> vpas,
+    required Iterable<String> names,
+    required String nickname,
+  }) => _db.rpc(
+    'rename_place',
+    params: {'p_vpas': vpas.toList(), 'p_names': names.toList(), 'p_nickname': nickname.trim()},
+  );
 
   /// Marks a payee as a friend (or not): their money then goes to your balance with them.
   Future<void> markFriend(String name, {bool friend = true}) async {
@@ -367,18 +408,34 @@ class AppData extends ChangeNotifier {
     required Map<String, double> friendShares,
   }) async {
     if (paidBy == null) {
-      final row = await _db.from('transactions').insert({
-        'amount': total, 'direction': 'debit', 'merchant': description, 'method': 'other',
-        'txn_at': at.toUtc().toIso8601String(), 'category_id': categoryId, 'account_id': accountId, 'source': 'manual',
-      }).select('id').single();
+      final row = await _db
+          .from('transactions')
+          .insert({
+            'amount': total,
+            'direction': 'debit',
+            'merchant': description,
+            'method': 'other',
+            'txn_at': at.toUtc().toIso8601String(),
+            'category_id': categoryId,
+            'account_id': accountId,
+            'source': 'manual',
+          })
+          .select('id')
+          .single();
       for (final e in friendShares.entries) {
         if (e.value > 0) await addShare(row['id'] as String, e.key, e.value);
       }
     } else {
       await _db.from('transactions').insert({
-        'amount': myShare, 'direction': 'debit', 'merchant': description, 'method': 'other',
-        'txn_at': at.toUtc().toIso8601String(), 'category_id': categoryId, 'source': 'manual',
-        'paid_by': paidBy.trim(), 'note': '$paidBy paid ₹${total.toStringAsFixed(total == total.roundToDouble() ? 0 : 2)} in total',
+        'amount': myShare,
+        'direction': 'debit',
+        'merchant': description,
+        'method': 'other',
+        'txn_at': at.toUtc().toIso8601String(),
+        'category_id': categoryId,
+        'source': 'manual',
+        'paid_by': paidBy.trim(),
+        'note': '$paidBy paid ₹${total.toStringAsFixed(total == total.roundToDouble() ? 0 : 2)} in total',
       });
     }
   }
@@ -387,24 +444,38 @@ class AppData extends ChangeNotifier {
   Future<void> settleUp(String person, double amount, {required bool iPaid, String? accountId}) async {
     final cat = friendsCategory?.id;
     await _db.from('transactions').insert({
-      'amount': amount, 'direction': iPaid ? 'debit' : 'credit', 'merchant': person, 'method': 'cash',
-      'txn_at': DateTime.now().toUtc().toIso8601String(), 'category_id': cat, 'account_id': accountId ?? cashAccount?.id,
-      'source': 'manual', 'note': 'Settle up',
+      'amount': amount,
+      'direction': iPaid ? 'debit' : 'credit',
+      'merchant': person,
+      'method': 'cash',
+      'txn_at': DateTime.now().toUtc().toIso8601String(),
+      'category_id': cat,
+      'account_id': accountId ?? cashAccount?.id,
+      'source': 'manual',
+      'note': 'Settle up',
     });
   }
 
   // ------------------------------------------------------- bank statements
 
   /// Reads a bank statement on the server. With [dryRun] nothing is saved: it says what would be imported.
-  Future<Map<String, dynamic>> importStatement(Uint8List bytes, String fileName,
-      {String? accountId, required bool dryRun, bool setOpening = false}) async {
-    final res = await _db.functions.invoke('import-statement', body: {
-      'file': base64Encode(bytes),
-      'fileName': fileName,
-      'accountId': accountId,
-      'dryRun': dryRun,
-      'setOpening': setOpening,
-    });
+  Future<Map<String, dynamic>> importStatement(
+    Uint8List bytes,
+    String fileName, {
+    String? accountId,
+    required bool dryRun,
+    bool setOpening = false,
+  }) async {
+    final res = await _db.functions.invoke(
+      'import-statement',
+      body: {
+        'file': base64Encode(bytes),
+        'fileName': fileName,
+        'accountId': accountId,
+        'dryRun': dryRun,
+        'setOpening': setOpening,
+      },
+    );
     final data = res.data;
     if (data is Map<String, dynamic>) {
       if (data['error'] != null) throw Exception(data['error']);
@@ -425,7 +496,10 @@ class AppData extends ChangeNotifier {
 
   /// Accepts a friend's invite; their payments with you then show in both apps.
   Future<void> acceptInvite(String code, String friendName) async {
-    await _db.rpc('accept_friend_invite', params: {'p_code': code.trim().toLowerCase(), 'p_name_for_inviter': friendName.trim()});
+    await _db.rpc(
+      'accept_friend_invite',
+      params: {'p_code': code.trim().toLowerCase(), 'p_name_for_inviter': friendName.trim()},
+    );
     await markFriend(friendName);
   }
 
@@ -435,10 +509,10 @@ class AppData extends ChangeNotifier {
       _db.rpc('answer_match', params: {'p_question': questionId, 'p_yes': yes});
 
   /// Removes a shared entry for both of you (the other person sees who removed it).
-  Future<void> deleteSharedEntry(String id) => _db.from('shared_entries').update({
-        'deleted_at': DateTime.now().toUtc().toIso8601String(),
-        'deleted_by': me,
-      }).eq('id', id);
+  Future<void> deleteSharedEntry(String id) => _db
+      .from('shared_entries')
+      .update({'deleted_at': DateTime.now().toUtc().toIso8601String(), 'deleted_by': me})
+      .eq('id', id);
 
   /// "Also known as": payments from this payee name count as that friend.
   Future<void> addAlias(String payeeName, String friendName) =>
@@ -452,33 +526,62 @@ class AppData extends ChangeNotifier {
     transactions = [
       for (final t in transactions)
         list.contains(t.id)
-            ? Txn(id: t.id, amount: t.amount, isDebit: t.isDebit, txnAt: t.txnAt, merchant: t.merchant, note: t.note, bank: t.bank,
-                accountLast4: t.accountLast4, method: t.method, categoryId: categoryId, accountId: t.accountId,
-                counterAccountId: t.counterAccountId, source: t.source, emailSubject: t.emailSubject, excluded: t.excluded,
-                needsReview: false, loanId: t.loanId, loanRole: t.loanRole, emailBody: t.emailBody, paidBy: t.paidBy, payeeVpa: t.payeeVpa)
+            ? Txn(
+                id: t.id,
+                amount: t.amount,
+                isDebit: t.isDebit,
+                txnAt: t.txnAt,
+                merchant: t.merchant,
+                note: t.note,
+                bank: t.bank,
+                accountLast4: t.accountLast4,
+                method: t.method,
+                categoryId: categoryId,
+                accountId: t.accountId,
+                counterAccountId: t.counterAccountId,
+                source: t.source,
+                emailSubject: t.emailSubject,
+                excluded: t.excluded,
+                needsReview: false,
+                loanId: t.loanId,
+                loanRole: t.loanRole,
+                emailBody: t.emailBody,
+                paidBy: t.paidBy,
+                payeeVpa: t.payeeVpa,
+                details: t.details,
+              )
             : t,
     ];
     notifyListeners(); // the next item shows at once; the server confirms in the background
     for (var i = 0; i < list.length; i += 200) {
-      await _db.from('transactions').update({'category_id': categoryId, 'needs_review': false, 'edited': true})
+      await _db
+          .from('transactions')
+          .update({'category_id': categoryId, 'needs_review': false, 'edited': true})
           .inFilter('id', list.sublist(i, i + 200 > list.length ? list.length : i + 200));
     }
   }
 
   /// "These are my own accounts": every payment with this place is a move, not spending or income.
-  Future<void> markOwnAccount(Iterable<String> merchantKeys) => _db.from('transactions')
-      .update({'excluded': true, 'needs_review': false}).inFilter('merchant_key', merchantKeys.toList()).eq('edited', false);
+  Future<void> markOwnAccount(Iterable<String> merchantKeys) => _db
+      .from('transactions')
+      .update({'excluded': true, 'needs_review': false})
+      .inFilter('merchant_key', merchantKeys.toList())
+      .eq('edited', false);
 
   /// Files every payment to this place (all its spellings) under a category, now and later.
   Future<void> categorizePlace(Iterable<String> merchantKeys, String? categoryId) async {
     final keys = merchantKeys.toList();
-    await _db.from('transactions').update({'category_id': categoryId, 'needs_review': false})
-        .inFilter('merchant_key', keys).eq('edited', false);
+    await _db
+        .from('transactions')
+        .update({'category_id': categoryId, 'needs_review': false})
+        .inFilter('merchant_key', keys)
+        .eq('edited', false);
     if (categoryId == null) {
       await _db.from('merchant_rules').delete().inFilter('merchant_key', keys);
     } else {
-      await _db.from('merchant_rules').upsert([for (final k in keys) {'merchant_key': k, 'category_id': categoryId}],
-          onConflict: 'user_id,merchant_key');
+      await _db.from('merchant_rules').upsert([
+        for (final k in keys) {'merchant_key': k, 'category_id': categoryId},
+      ], onConflict: 'user_id,merchant_key');
     }
   }
 
@@ -509,10 +612,10 @@ class AppData extends ChangeNotifier {
   Future<void> deleteShare(String id) => _db.from('txn_shares').delete().eq('id', id);
 
   /// The friend paid their part, with this money received (or in cash when null).
-  Future<void> markSharePaid(String id, {String? paidTxnId}) => _db.from('txn_shares').update({
-        'paid_txn_id': paidTxnId,
-        'paid_at': DateTime.now().toUtc().toIso8601String(),
-      }).eq('id', id);
+  Future<void> markSharePaid(String id, {String? paidTxnId}) => _db
+      .from('txn_shares')
+      .update({'paid_txn_id': paidTxnId, 'paid_at': DateTime.now().toUtc().toIso8601String()})
+      .eq('id', id);
 
   // ------------------------------------------------------------- bank balance
 
@@ -524,7 +627,12 @@ class AppData extends ChangeNotifier {
 
   Future<void> refreshUnread() async {
     try {
-      final rows = await _db.from('unparsed_emails').select().eq('kind', 'unreadable').order('received_at', ascending: false).limit(200);
+      final rows = await _db
+          .from('unparsed_emails')
+          .select()
+          .eq('kind', 'unreadable')
+          .order('received_at', ascending: false)
+          .limit(200);
       unread = rows.map(UnreadEmail.fromMap).toList();
       notifyListeners();
     } catch (e) {

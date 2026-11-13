@@ -17,8 +17,22 @@ AppData sample({List<TxnShare> shares = const []}) {
     shares: shares,
     transactions: [
       Txn(id: 'pay', amount: 600, isDebit: true, txnAt: at, merchant: 'Zomato', categoryId: 'f', accountId: 'h'),
-      Txn(id: 'r1', amount: 200, isDebit: false, txnAt: at.add(const Duration(minutes: 5)), merchant: 'Rahul Kumar Sharma', accountId: 'h'),
-      Txn(id: 'r2', amount: 200, isDebit: false, txnAt: at.add(const Duration(minutes: 9)), merchant: 'Priya', accountId: 'h'),
+      Txn(
+        id: 'r1',
+        amount: 200,
+        isDebit: false,
+        txnAt: at.add(const Duration(minutes: 5)),
+        merchant: 'Rahul Kumar Sharma',
+        accountId: 'h',
+      ),
+      Txn(
+        id: 'r2',
+        amount: 200,
+        isDebit: false,
+        txnAt: at.add(const Duration(minutes: 9)),
+        merchant: 'Priya',
+        accountId: 'h',
+      ),
     ],
   );
 }
@@ -41,10 +55,12 @@ void main() {
   });
 
   testWidgets('split payment shows your share in the list and totals', (tester) async {
-    final data = sample(shares: const [
-      TxnShare(id: 'a', txnId: 'pay', person: 'Rahul Kumar Sharma', amount: 200, paidTxnId: 'r1'),
-      TxnShare(id: 'b', txnId: 'pay', person: 'Priya', amount: 200),
-    ]);
+    final data = sample(
+      shares: const [
+        TxnShare(id: 'a', txnId: 'pay', person: 'Rahul Kumar Sharma', amount: 200, paidTxnId: 'r1'),
+        TxnShare(id: 'b', txnId: 'pay', person: 'Priya', amount: 200),
+      ],
+    );
     await pump(tester, TransactionsScreen(data: data));
     expect(find.textContaining('Your share ₹200'), findsOneWidget);
     expect(find.text('₹200'), findsWidgets); // Spent card: only your share

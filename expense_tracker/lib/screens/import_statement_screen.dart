@@ -8,11 +8,12 @@ import '../models.dart';
 import '../ui/format.dart';
 import '../ui/pick_file.dart';
 
-Future<void> openImportStatement(BuildContext context, AppData data, {Account? account}) =>
-    Navigator.of(context).push(MaterialPageRoute<void>(
-      fullscreenDialog: true,
-      builder: (_) => ImportStatementScreen(data: data, account: account),
-    ));
+Future<void> openImportStatement(BuildContext context, AppData data, {Account? account}) => Navigator.of(context).push(
+  MaterialPageRoute<void>(
+    fullscreenDialog: true,
+    builder: (_) => ImportStatementScreen(data: data, account: account),
+  ),
+);
 
 /// Pick a bank statement, see what it contains, then import it.
 class ImportStatementScreen extends StatefulWidget {
@@ -80,8 +81,13 @@ class _ImportStatementScreenState extends State<ImportStatementScreen> {
       _error = null;
     });
     try {
-      final r = await widget.data.importStatement(_bytes!, _name!,
-          accountId: widget.account?.id, dryRun: false, setOpening: _setOpening);
+      final r = await widget.data.importStatement(
+        _bytes!,
+        _name!,
+        accountId: widget.account?.id,
+        dryRun: false,
+        setOpening: _setOpening,
+      );
       if (mounted) setState(() => _done = r);
     } catch (e) {
       if (mounted) setState(() => _error = _message(e));
@@ -104,12 +110,16 @@ class _ImportStatementScreenState extends State<ImportStatementScreen> {
     final text = Theme.of(context).textTheme;
     final scheme = Theme.of(context).colorScheme;
     Widget fact(String label, String value) => Padding(
-          padding: const EdgeInsets.symmetric(vertical: 4),
-          child: Row(children: [
-            Expanded(child: Text(label, style: TextStyle(color: scheme.onSurfaceVariant))),
-            Text(value, style: const TextStyle(fontWeight: FontWeight.w600)),
-          ]),
-        );
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(label, style: TextStyle(color: scheme.onSurfaceVariant)),
+          ),
+          Text(value, style: const TextStyle(fontWeight: FontWeight.w600)),
+        ],
+      ),
+    );
 
     return Scaffold(
       appBar: AppBar(title: const Text('Import bank statement')),
@@ -128,8 +138,16 @@ class _ImportStatementScreenState extends State<ImportStatementScreen> {
               label: Text(_name == null ? 'Choose statement file' : 'Choose another file'),
             ),
           ],
-          if (_busy) const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator())),
-          if (_error != null) Padding(padding: const EdgeInsets.only(top: 16), child: Text(_error!, style: TextStyle(color: scheme.error))),
+          if (_busy)
+            const Padding(
+              padding: EdgeInsets.all(24),
+              child: Center(child: CircularProgressIndicator()),
+            ),
+          if (_error != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 16),
+              child: Text(_error!, style: TextStyle(color: scheme.error)),
+            ),
           if (p != null && done == null && !_busy) ...[
             const SizedBox(height: 16),
             Card.outlined(
@@ -162,15 +180,20 @@ class _ImportStatementScreenState extends State<ImportStatementScreen> {
             const SizedBox(height: 8),
             FilledButton(
               onPressed: (p['new'] as num? ?? 0) == 0 && !_setOpening ? null : _import,
-              child: Text((p['new'] as num? ?? 0) == 0 ? 'Nothing new: just set the balance' : 'Import ${p['new']} transactions'),
+              child: Text(
+                (p['new'] as num? ?? 0) == 0 ? 'Nothing new: just set the balance' : 'Import ${p['new']} transactions',
+              ),
             ),
           ],
           if (done != null) ...[
             const SizedBox(height: 8),
             Icon(Icons.check_circle, color: Colors.green.shade700, size: 56),
             const SizedBox(height: 8),
-            Text('${done['added']} transactions added to ${done['account']}',
-                textAlign: TextAlign.center, style: text.titleMedium),
+            Text(
+              '${done['added']} transactions added to ${done['account']}',
+              textAlign: TextAlign.center,
+              style: text.titleMedium,
+            ),
             if (done['balanceCheck'] is Map) _BalanceCheckResult(check: done['balanceCheck'] as Map),
             const SizedBox(height: 8),
             const Text(
@@ -208,17 +231,23 @@ class _BalanceCheckResult extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(children: [
-              Icon(bad == 0 ? Icons.verified_outlined : Icons.warning_amber_rounded,
-                  color: bad == 0 ? Colors.green.shade700 : scheme.error),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  bad == 0 ? 'Balance matches the bank on all $days days' : 'Balance differs from the bank on $bad of $days days',
-                  style: const TextStyle(fontWeight: FontWeight.w600),
+            Row(
+              children: [
+                Icon(
+                  bad == 0 ? Icons.verified_outlined : Icons.warning_amber_rounded,
+                  color: bad == 0 ? Colors.green.shade700 : scheme.error,
                 ),
-              ),
-            ]),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    bad == 0
+                        ? 'Balance matches the bank on all $days days'
+                        : 'Balance differs from the bank on $bad of $days days',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ],
+            ),
             if (bad > 0) ...[
               const SizedBox(height: 6),
               Text(
@@ -231,13 +260,19 @@ class _BalanceCheckResult extends StatelessWidget {
                 if (r is Map)
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 2),
-                    child: Row(children: [
-                      Expanded(child: Text(d(r['date']))),
-                      Text('bank ${money(n(r['bank']))} · app ${money(n(r['app']))} · ',
-                          style: Theme.of(context).textTheme.bodySmall),
-                      Text('${n(r['difference']) > 0 ? '+' : '−'}${money(n(r['difference']).abs())}',
-                          style: TextStyle(color: scheme.error, fontWeight: FontWeight.w600)),
-                    ]),
+                    child: Row(
+                      children: [
+                        Expanded(child: Text(d(r['date']))),
+                        Text(
+                          'bank ${money(n(r['bank']))} · app ${money(n(r['app']))} · ',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                        Text(
+                          '${n(r['difference']) > 0 ? '+' : '−'}${money(n(r['difference']).abs())}',
+                          style: TextStyle(color: scheme.error, fontWeight: FontWeight.w600),
+                        ),
+                      ],
+                    ),
                   ),
             ],
           ],

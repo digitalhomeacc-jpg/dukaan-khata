@@ -16,7 +16,10 @@ AppData sample() {
       Category(id: 'fr', name: 'Friends', icon: 'group', color: 0xFF3F51B5, isLoan: true),
     ],
     accounts: const [Account(id: 'c', name: 'Cash', kind: AccountKind.cash)],
-    budgets: const [Budget(id: 'b1', amount: 5000), Budget(id: 'b2', categoryId: 'f', amount: 1000)],
+    budgets: const [
+      Budget(id: 'b1', amount: 5000),
+      Budget(id: 'b2', categoryId: 'f', amount: 1000),
+    ],
     shares: const [TxnShare(id: 's', txnId: 'pay', person: 'Priya Desai', amount: 300)],
     transactions: [
       Txn(id: 'pay', amount: 900, isDebit: true, txnAt: now, merchant: 'Pizza night', categoryId: 'f'),
@@ -64,7 +67,11 @@ void main() {
     await tester.tap(find.text('Rahul Kumar'));
     await tester.tap(find.text('Priya Desai'));
     await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(find.textContaining('Your spending: ₹300'), 200, scrollable: find.byType(Scrollable).first);
+    await tester.scrollUntilVisible(
+      find.textContaining('Your spending: ₹300'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.textContaining('Rahul Kumar owes you ₹300'), findsOneWidget);
   });
 

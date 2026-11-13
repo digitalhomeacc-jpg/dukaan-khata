@@ -10,8 +10,12 @@ void main() {
 
   test('credit line: borrowed and bought minus repaid; reminder already paid', () {
     const loan = Loan(
-      id: 'L', lender: 'slice', name: 'Slice borrow', kind: LoanKind.creditLine,
-      nextDueAmount: 506.54, nextDueDate: null,
+      id: 'L',
+      lender: 'slice',
+      name: 'Slice borrow',
+      kind: LoanKind.creditLine,
+      nextDueAmount: 506.54,
+      nextDueDate: null,
     );
     final events = [
       ev(LoanEventKind.borrow, 1450, DateTime(2026, 10, 18)),
@@ -31,7 +35,14 @@ void main() {
     expect(s.emisPaid, isNull);
 
     final withDue = loanStatus(
-      Loan(id: 'L', lender: 'slice', name: 'x', kind: LoanKind.creditLine, nextDueAmount: loan.nextDueAmount, nextDueDate: DateTime(2026, 11, 5)),
+      Loan(
+        id: 'L',
+        lender: 'slice',
+        name: 'x',
+        kind: LoanKind.creditLine,
+        nextDueAmount: loan.nextDueAmount,
+        nextDueDate: DateTime(2026, 11, 5),
+      ),
       events,
       now: now,
     );
@@ -40,7 +51,14 @@ void main() {
 
   test('owed set by the user is the starting point', () {
     final s = loanStatus(
-      Loan(id: 'L', lender: 'slice', name: 'x', kind: LoanKind.creditLine, outstanding: 2000, outstandingAt: DateTime(2026, 11, 1)),
+      Loan(
+        id: 'L',
+        lender: 'slice',
+        name: 'x',
+        kind: LoanKind.creditLine,
+        outstanding: 2000,
+        outstandingAt: DateTime(2026, 11, 1),
+      ),
       [
         ev(LoanEventKind.borrow, 1500, DateTime(2026, 10, 18)), // before: already in the 2000
         ev(LoanEventKind.spend, 136, DateTime(2026, 11, 7)),
@@ -53,8 +71,15 @@ void main() {
 
   test('EMI loan: EMIs paid, left, amount to pay and next EMI date', () {
     const loan = Loan(
-      id: 'L', lender: 'kreditbee', name: 'KreditBee', principal: 20000, emiAmount: 2100,
-      tenureMonths: 12, emisPaidBefore: 3, dueDay: 5, interestRate: 24,
+      id: 'L',
+      lender: 'kreditbee',
+      name: 'KreditBee',
+      principal: 20000,
+      emiAmount: 2100,
+      tenureMonths: 12,
+      emisPaidBefore: 3,
+      dueDay: 5,
+      interestRate: 24,
     );
     final s = loanStatus(loan, [
       ev(LoanEventKind.repay, 2100, DateTime(2026, 10, 5)),
@@ -83,7 +108,15 @@ void main() {
   });
 
   test('fully paid loan has nothing due', () {
-    const loan = Loan(id: 'L', lender: 'fibe', name: 'Fibe', emiAmount: 1000, tenureMonths: 2, emisPaidBefore: 2, dueDay: 3);
+    const loan = Loan(
+      id: 'L',
+      lender: 'fibe',
+      name: 'Fibe',
+      emiAmount: 1000,
+      tenureMonths: 2,
+      emisPaidBefore: 2,
+      dueDay: 3,
+    );
     final s = loanStatus(loan, const [], now: now);
     expect(s.owed, 0);
     expect(s.nextDueDate, isNull);
@@ -102,9 +135,18 @@ void main() {
 
   test('payments from before the loan was added are not counted twice', () {
     final loan = Loan(
-      id: 'L', lender: 'kreditbee', name: 'KreditBee', emiAmount: 4161, tenureMonths: 10,
-      emisPaidBefore: 4, dueDay: 10, outstanding: 24477, outstandingAt: DateTime(2026, 11, 13, 16),
-      createdAt: DateTime(2026, 11, 13, 16), nextDueAmount: 4161, nextDueDate: DateTime(2026, 12, 10),
+      id: 'L',
+      lender: 'kreditbee',
+      name: 'KreditBee',
+      emiAmount: 4161,
+      tenureMonths: 10,
+      emisPaidBefore: 4,
+      dueDay: 10,
+      outstanding: 24477,
+      outstandingAt: DateTime(2026, 11, 13, 16),
+      createdAt: DateTime(2026, 11, 13, 16),
+      nextDueAmount: 4161,
+      nextDueDate: DateTime(2026, 12, 10),
     );
     final s = loanStatus(loan, [ev(LoanEventKind.repay, 4161, DateTime(2026, 11, 10))], now: now);
     expect(s.emisPaid, 4);

@@ -105,7 +105,13 @@ class SettingsScreen extends StatelessWidget {
             title: const Text('Budgets'),
             subtitle: Text(data.budgets.isEmpty ? 'Set a monthly limit' : '${data.budgets.length} set'),
             trailing: const Icon(Icons.chevron_right),
-            onTap: () => _push(context, ListenableBuilder(listenable: data, builder: (_, _) => BudgetsScreen(data: data))),
+            onTap: () => _push(
+              context,
+              ListenableBuilder(
+                listenable: data,
+                builder: (_, _) => BudgetsScreen(data: data),
+              ),
+            ),
           ),
           ListTile(
             leading: const Icon(Icons.category_outlined),
@@ -121,11 +127,7 @@ class SettingsScreen extends StatelessWidget {
             title: const Text('Change password'),
             onTap: () => _changePassword(context),
           ),
-          ListTile(
-            leading: const Icon(Icons.logout),
-            title: const Text('Sign out'),
-            onTap: data.signOut,
-          ),
+          ListTile(leading: const Icon(Icons.logout), title: const Text('Sign out'), onTap: data.signOut),
           Padding(
             padding: const EdgeInsets.all(16),
             child: Text(
@@ -147,7 +149,10 @@ class _Section extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-        child: Text(title, style: TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.w600)),
-      );
+    padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+    child: Text(
+      title,
+      style: TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.w600),
+    ),
+  );
 }

@@ -23,115 +23,159 @@ class _InsightsScreenState extends State<InsightsScreen> {
   @override
   Widget build(BuildContext context) {
     final data = widget.data;
-    final s = summarize(data.transactions, _month, loanCategoryIds: data.notSpendingCategoryIds, shares: data.shareTotalsNow);
-    final trend = monthlySpend(data.transactions, _month, 6, loanCategoryIds: data.notSpendingCategoryIds, shares: data.shareTotalsNow);
+    final s = summarize(
+      data.transactions,
+      _month,
+      loanCategoryIds: data.notSpendingCategoryIds,
+      shares: data.shareTotalsNow,
+    );
+    final trend = monthlySpend(
+      data.transactions,
+      _month,
+      6,
+      loanCategoryIds: data.notSpendingCategoryIds,
+      shares: data.shareTotalsNow,
+    );
     final inv = data.investmentCategoryIds;
-    final invested = data.transactions.where((t) => inv.contains(t.categoryId) && !t.excluded && inMonth(t.txnAt, _month))
+    final invested = data.transactions
+        .where((t) => inv.contains(t.categoryId) && !t.excluded && inMonth(t.txnAt, _month))
         .fold(0.0, (v, t) => v + (t.isDebit ? t.amount : -t.amount));
     final text = Theme.of(context).textTheme;
 
     final overview = ListView(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 96),
-        children: [
-          Center(child: MonthBar(month: _month, onChanged: (m) => setState(() => _month = m))),
-          if (data.budgets.isNotEmpty) ...[
-            Row(
-              children: [
-                Expanded(child: Text('Budgets', style: text.titleMedium)),
-                TextButton(
-                  onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
-                    builder: (_) => ListenableBuilder(listenable: data, builder: (_, _) => BudgetsScreen(data: data)),
-                  )),
-                  child: const Text('Edit'),
-                ),
-              ],
-            ),
-            for (final p in budgetProgress(data.budgets, s, parentOf: data.parentOf))
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 6),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(p.budget.categoryId == null ? 'All spending' : (data.category(p.budget.categoryId)?.name ?? 'Category'),
-                        style: const TextStyle(fontWeight: FontWeight.w500)),
-                    BudgetBar(progress: p),
-                  ],
-                ),
-              ),
-            const SizedBox(height: 24),
-          ],
-          if (invested.abs() >= 1) ...[
-            Card.filled(
-              child: ListTile(
-                leading: const Icon(Icons.savings_outlined),
-                title: Text(invested > 0 ? 'Invested ${money(invested)} this month' : 'Took ${money(-invested)} out of investments'),
-                subtitle: const Text('Zerodha, mutual funds… Not counted as spending or income.'),
-              ),
-            ),
-            const SizedBox(height: 16),
-          ],
-          Text('Last 6 months', style: text.titleMedium),
-          const SizedBox(height: 12),
-          _TrendChart(points: trend, selected: _month, onTap: (m) => setState(() => _month = m)),
-          const SizedBox(height: 28),
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 96),
+      children: [
+        Center(
+          child: MonthBar(month: _month, onChanged: (m) => setState(() => _month = m)),
+        ),
+        if (data.budgets.isNotEmpty) ...[
           Row(
             children: [
-              Expanded(child: Text('Where the money went', style: text.titleMedium)),
-              Text(money(s.spent), style: text.titleMedium),
+              Expanded(child: Text('Budgets', style: text.titleMedium)),
+              TextButton(
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => ListenableBuilder(
+                      listenable: data,
+                      builder: (_, _) => BudgetsScreen(data: data),
+                    ),
+                  ),
+                ),
+                child: const Text('Edit'),
+              ),
             ],
           ),
-          const SizedBox(height: 8),
-          if (s.byCategory.isEmpty)
-            const Padding(padding: EdgeInsets.symmetric(vertical: 24), child: Center(child: Text('No spending this month.'))),
-          for (final g in rollUp(s.byCategory, data.parentOf)) ...[
-            _ShareRow(
-              leading: CategoryAvatar(data.category(g.id), size: 32),
-              label: data.category(g.id)?.name ?? 'No category',
-              value: g.total,
-              total: s.spent,
-              color: colorFor(data.category(g.id)),
+          for (final p in budgetProgress(data.budgets, s, parentOf: data.parentOf))
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    p.budget.categoryId == null
+                        ? 'All spending'
+                        : (data.category(p.budget.categoryId)?.name ?? 'Category'),
+                    style: const TextStyle(fontWeight: FontWeight.w500),
+                  ),
+                  BudgetBar(progress: p),
+                ],
+              ),
             ),
-            for (final c in g.children)
-              Padding(
-                padding: const EdgeInsets.only(left: 44, bottom: 2),
-                child: Row(
-                  children: [
-                    Expanded(child: Text(data.category(c.key)?.name ?? '?', style: text.bodySmall)),
-                    Text(money(c.value), style: text.bodySmall),
-                  ],
-                ),
-              ),
-          ],
-          if (s.byMerchant.isNotEmpty) ...[
-            const SizedBox(height: 28),
-            Text('Top places', style: text.titleMedium),
-            const SizedBox(height: 8),
-            for (final e in s.byMerchant.take(8))
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                dense: true,
-                title: Text(e.key, maxLines: 1, overflow: TextOverflow.ellipsis),
-                trailing: Text(money(e.value), style: text.bodyLarge),
-              ),
-          ],
+          const SizedBox(height: 24),
         ],
-      );
+        if (invested.abs() >= 1) ...[
+          Card.filled(
+            child: ListTile(
+              leading: const Icon(Icons.savings_outlined),
+              title: Text(
+                invested > 0 ? 'Invested ${money(invested)} this month' : 'Took ${money(-invested)} out of investments',
+              ),
+              subtitle: const Text('Zerodha, mutual funds… Not counted as spending or income.'),
+            ),
+          ),
+          const SizedBox(height: 16),
+        ],
+        Text('Last 6 months', style: text.titleMedium),
+        const SizedBox(height: 12),
+        _TrendChart(points: trend, selected: _month, onTap: (m) => setState(() => _month = m)),
+        const SizedBox(height: 28),
+        Row(
+          children: [
+            Expanded(child: Text('Where the money went', style: text.titleMedium)),
+            Text(money(s.spent), style: text.titleMedium),
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (s.byCategory.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 24),
+            child: Center(child: Text('No spending this month.')),
+          ),
+        for (final g in rollUp(s.byCategory, data.parentOf)) ...[
+          _ShareRow(
+            leading: CategoryAvatar(data.category(g.id), size: 32),
+            label: data.category(g.id)?.name ?? 'No category',
+            value: g.total,
+            total: s.spent,
+            color: colorFor(data.category(g.id)),
+          ),
+          for (final c in g.children)
+            Padding(
+              padding: const EdgeInsets.only(left: 44, bottom: 2),
+              child: Row(
+                children: [
+                  Expanded(child: Text(data.category(c.key)?.name ?? '?', style: text.bodySmall)),
+                  Text(money(c.value), style: text.bodySmall),
+                ],
+              ),
+            ),
+        ],
+        if (s.byMerchant.isNotEmpty) ...[
+          const SizedBox(height: 28),
+          Text('Top places', style: text.titleMedium),
+          const SizedBox(height: 8),
+          for (final e in s.byMerchant.take(8))
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              title: Text(e.key, maxLines: 1, overflow: TextOverflow.ellipsis),
+              trailing: Text(money(e.value), style: text.bodyLarge),
+            ),
+        ],
+      ],
+    );
 
     return DefaultTabController(
       length: 2,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Insights'),
-          bottom: const TabBar(tabs: [Tab(text: 'Overview'), Tab(text: 'Places')]),
+          bottom: const TabBar(
+            tabs: [
+              Tab(text: 'Overview'),
+              Tab(text: 'Places'),
+            ],
+          ),
         ),
-        body: TabBarView(children: [overview, PlacesView(data: data)]),
+        body: TabBarView(
+          children: [
+            overview,
+            PlacesView(data: data),
+          ],
+        ),
       ),
     );
   }
 }
 
 class _ShareRow extends StatelessWidget {
-  const _ShareRow({required this.leading, required this.label, required this.value, required this.total, required this.color});
+  const _ShareRow({
+    required this.leading,
+    required this.label,
+    required this.value,
+    required this.total,
+    required this.color,
+  });
 
   final Widget leading;
   final String label;
@@ -202,7 +246,9 @@ class _TrendChart extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(horizontal: 6),
                   child: Column(
                     children: [
-                      FittedBox(child: Text(p.value == 0 ? '' : _compact(p.value), style: const TextStyle(fontSize: 11))),
+                      FittedBox(
+                        child: Text(p.value == 0 ? '' : _compact(p.value), style: const TextStyle(fontSize: 11)),
+                      ),
                       const SizedBox(height: 4),
                       Expanded(
                         child: Align(
@@ -219,8 +265,10 @@ class _TrendChart extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 6),
-                      Text(shortMonth(p.key),
-                          style: TextStyle(fontWeight: p.key == selected ? FontWeight.bold : FontWeight.normal)),
+                      Text(
+                        shortMonth(p.key),
+                        style: TextStyle(fontWeight: p.key == selected ? FontWeight.bold : FontWeight.normal),
+                      ),
                     ],
                   ),
                 ),

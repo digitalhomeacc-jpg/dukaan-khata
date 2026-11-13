@@ -183,7 +183,7 @@ Deno.serve(async (req) => {
       amount: t.amount, direction: t.direction, merchant, method: t.method, txn_at: at, payee_vpa: t.vpa,
       bank: st.bank, account_last4: st.accountLast4, category_id: category,
       excluded: t.atm, counter_account_id: t.atm ? (cash?.id ?? null) : null,
-      needs_review: !merchant, note: t.narration.slice(0, 200),
+      needs_review: !merchant, details: t.narration.slice(0, 300),
     };
   });
   let added = 0;

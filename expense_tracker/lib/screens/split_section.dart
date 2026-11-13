@@ -7,15 +7,20 @@ import '../ui/format.dart';
 
 /// Money received a little before/after a payment that could be friends paying their part.
 List<Txn> _creditsNear(AppData data, Txn payment, {Duration window = const Duration(days: 2)}) {
-  final used = {for (final s in data.shares) if (s.paidTxnId != null) s.paidTxnId!};
+  final used = {
+    for (final s in data.shares)
+      if (s.paidTxnId != null) s.paidTxnId!,
+  };
   return data.transactions
-      .where((t) =>
-          !t.isDebit &&
-          !t.excluded &&
-          !t.isLoanTransfer &&
-          !used.contains(t.id) &&
-          t.amount < payment.amount &&
-          t.txnAt.difference(payment.txnAt).abs() <= window)
+      .where(
+        (t) =>
+            !t.isDebit &&
+            !t.excluded &&
+            !t.isLoanTransfer &&
+            !used.contains(t.id) &&
+            t.amount < payment.amount &&
+            t.txnAt.difference(payment.txnAt).abs() <= window,
+      )
       .toList()
     ..sort((a, b) => a.txnAt.difference(payment.txnAt).abs().compareTo(b.txnAt.difference(payment.txnAt).abs()));
 }
@@ -51,8 +56,10 @@ class SplitSection extends StatelessWidget {
               decoration: const InputDecoration(labelText: 'Their part', prefixText: '₹ '),
             ),
             const SizedBox(height: 8),
-            Text('Until they pay you, it shows under Loans → Friends as money they owe you.',
-                style: Theme.of(c).textTheme.bodySmall),
+            Text(
+              'Until they pay you, it shows under Loans → Friends as money they owe you.',
+              style: Theme.of(c).textTheme.bodySmall,
+            ),
           ],
         ),
         actions: [
@@ -75,12 +82,27 @@ class SplitSection extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            ListTile(title: Text('${s.person} · ${money(s.amount)}'), subtitle: Text(s.paid ? 'Paid you back' : 'Owes you')),
+            ListTile(
+              title: Text('${s.person} · ${money(s.amount)}'),
+              subtitle: Text(s.paid ? 'Paid you back' : 'Owes you'),
+            ),
             if (!s.paid) ...[
-              ListTile(leading: const Icon(Icons.account_balance), title: const Text('Paid me back to my bank'), onTap: () => Navigator.pop(c, 'bank')),
-              ListTile(leading: const Icon(Icons.payments_outlined), title: const Text('Paid me back in cash'), onTap: () => Navigator.pop(c, 'cash')),
+              ListTile(
+                leading: const Icon(Icons.account_balance),
+                title: const Text('Paid me back to my bank'),
+                onTap: () => Navigator.pop(c, 'bank'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.payments_outlined),
+                title: const Text('Paid me back in cash'),
+                onTap: () => Navigator.pop(c, 'cash'),
+              ),
             ],
-            ListTile(leading: const Icon(Icons.delete_outline), title: const Text('Remove'), onTap: () => Navigator.pop(c, 'delete')),
+            ListTile(
+              leading: const Icon(Icons.delete_outline),
+              title: const Text('Remove'),
+              onTap: () => Navigator.pop(c, 'delete'),
+            ),
           ],
         ),
       ),
@@ -92,15 +114,20 @@ class SplitSection extends StatelessWidget {
       case 'delete':
         await data.deleteShare(s.id);
       case 'bank':
-        final credits = _creditsNear(data, payment, window: const Duration(days: 45))
-            .where((t) => !t.txnAt.isBefore(payment.txnAt.subtract(const Duration(days: 2))))
-            .toList();
+        final credits = _creditsNear(
+          data,
+          payment,
+          window: const Duration(days: 45),
+        ).where((t) => !t.txnAt.isBefore(payment.txnAt.subtract(const Duration(days: 2)))).toList();
         final picked = await showModalBottomSheet<Txn>(
           context: context,
           showDragHandle: true,
           builder: (c) => SafeArea(
             child: credits.isEmpty
-                ? const Padding(padding: EdgeInsets.all(24), child: Text('No money received after this payment that is not already linked.'))
+                ? const Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Text('No money received after this payment that is not already linked.'),
+                  )
                 : ListView(
                     shrinkWrap: true,
                     children: [
@@ -141,7 +168,10 @@ class SplitSection extends StatelessWidget {
           ListTile(
             contentPadding: EdgeInsets.zero,
             dense: true,
-            leading: CircleAvatar(radius: 14, child: Text(s.person[0].toUpperCase(), style: const TextStyle(fontSize: 12))),
+            leading: CircleAvatar(
+              radius: 14,
+              child: Text(s.person[0].toUpperCase(), style: const TextStyle(fontSize: 12)),
+            ),
             title: Text(s.person),
             subtitle: Text(s.paid ? 'Paid you back' : 'Owes you'),
             trailing: Text(money(s.amount), style: const TextStyle(fontWeight: FontWeight.w600)),
@@ -149,8 +179,10 @@ class SplitSection extends StatelessWidget {
           ),
         if (near.isNotEmpty) ...[
           const SizedBox(height: 6),
-          Text('Money received around then. Tap if it was a friend paying their part:',
-              style: Theme.of(context).textTheme.bodySmall),
+          Text(
+            'Money received around then. Tap if it was a friend paying their part:',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
           const SizedBox(height: 6),
           Wrap(
             spacing: 8,
@@ -196,8 +228,10 @@ class PaidBackSection extends StatelessWidget {
               contentPadding: EdgeInsets.zero,
               dense: true,
               title: Text('${s.person}\'s part (${money(s.amount)})'),
-              subtitle: Text('of ${data.txn(s.txnId)?.title ?? 'a payment'}'
-                  '${data.txn(s.txnId) != null ? ' · ${dayLabel(data.txn(s.txnId)!.txnAt)}' : ''}. Not counted as income.'),
+              subtitle: Text(
+                'of ${data.txn(s.txnId)?.title ?? 'a payment'}'
+                '${data.txn(s.txnId) != null ? ' · ${dayLabel(data.txn(s.txnId)!.txnAt)}' : ''}. Not counted as income.',
+              ),
               trailing: TextButton(onPressed: () => data.deleteShare(s.id), child: const Text('Unlink')),
             ),
         ],
@@ -209,9 +243,14 @@ class PaidBackSection extends StatelessWidget {
         .where((s) => !s.paid && (name.contains(s.person.toLowerCase()) || s.person.toLowerCase().contains(name)))
         .toList();
     final payments = data.transactions
-        .where((t) =>
-            t.isDebit && !t.excluded && !t.isLoanTransfer && t.amount > credit.amount &&
-            t.txnAt.difference(credit.txnAt).abs() <= const Duration(days: 2))
+        .where(
+          (t) =>
+              t.isDebit &&
+              !t.excluded &&
+              !t.isLoanTransfer &&
+              t.amount > credit.amount &&
+              t.txnAt.difference(credit.txnAt).abs() <= const Duration(days: 2),
+        )
         .take(4)
         .toList();
     if (owed.isEmpty && payments.isEmpty) return const SizedBox.shrink();
@@ -220,8 +259,10 @@ class PaidBackSection extends StatelessWidget {
       children: [
         Text('Was this a friend paying their part?', style: Theme.of(context).textTheme.titleSmall),
         const SizedBox(height: 4),
-        Text('Then it is not counted as income, and your spending is only your share.',
-            style: Theme.of(context).textTheme.bodySmall),
+        Text(
+          'Then it is not counted as income, and your spending is only your share.',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
         const SizedBox(height: 8),
         Wrap(
           spacing: 8,
