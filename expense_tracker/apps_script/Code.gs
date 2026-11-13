@@ -134,6 +134,36 @@ function checkSetup() {
   Logger.log('Last sync: ' + (last ? new Date(Number(last) * 1000).toString() : 'never'));
 }
 
+/**
+ * Sends ALL emails from your loan apps (KreditBee, Fibe, Slice), however old, so the
+ * app can fill in your loans. Run it once by hand. Nothing else in your Gmail is sent.
+ */
+function importLoanEmails() {
+  checkConfig_();
+  var cfg = serverConfig_();
+  var query = cfg.loanSearch || 'from:(kreditbee OR krazybee OR fibe OR earlysalary OR slice.bank.in)';
+  var messages = [];
+  for (var start = 0; start < 500; start += 100) {
+    var threads = GmailApp.search(query, start, 100);
+    threads.forEach(function (thread) {
+      thread.getMessages().forEach(function (m) {
+        messages.push({
+          id: m.getId(), from: m.getFrom(), subject: m.getSubject() || '',
+          date: m.getDate().toISOString(), body: (m.getPlainBody() || m.getBody() || '').slice(0, MAX_BODY),
+        });
+      });
+    });
+    if (threads.length < 100) break;
+  }
+  Logger.log('Found ' + messages.length + ' loan emails. Sending…');
+  var totals = {};
+  for (var i = 0; i < messages.length; i += BATCH_SIZE) {
+    var r = post_(messages.slice(i, i + BATCH_SIZE));
+    Object.keys(r).forEach(function (k) { if (typeof r[k] === 'number') totals[k] = (totals[k] || 0) + r[k]; });
+  }
+  Logger.log('Done: ' + JSON.stringify(totals));
+}
+
 /** Stops the automatic sync. */
 function stopSync() {
   ScriptApp.getProjectTriggers().forEach(function (t) { ScriptApp.deleteTrigger(t); });
@@ -149,7 +179,9 @@ function serverConfig_() {
       muteHttpExceptions: true,
     });
     var body = JSON.parse(res.getContentText());
-    if (body.ok && body.senders && body.senders.length) return { senders: body.senders, keywords: body.keywords || KEYWORDS };
+    if (body.ok && body.senders && body.senders.length) {
+      return { senders: body.senders, keywords: body.keywords || KEYWORDS, loanSearch: body.loanSearch };
+    }
   } catch (e) {
     Logger.log('Using the built-in sender list: ' + e);
   }

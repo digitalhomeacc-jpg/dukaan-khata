@@ -14,6 +14,7 @@ import {
   isLenderSender,
   isReviewSender,
   LENDER_SENDERS,
+  LOAN_HISTORY_SEARCH,
   type LenderEvent,
   type LenderKey,
   lenderOf,
@@ -56,7 +57,7 @@ Deno.serve(async (req) => {
 
   if (req.method === "GET") {
     const senders = [...new Set([...BANK_SENDERS, ...LENDER_SENDERS])];
-    return json(200, { ok: true, senders, keywords: SEARCH_KEYWORDS });
+    return json(200, { ok: true, senders, keywords: SEARCH_KEYWORDS, loanSearch: LOAN_HISTORY_SEARCH });
   }
 
   let payload: { messages?: EmailInput[] };

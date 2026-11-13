@@ -104,7 +104,10 @@ export function isReviewSender(from: string): boolean {
 }
 
 /** Digital lenders: their emails are kept for loan tracking. */
-export const LENDER_SENDERS = ["slice.bank.in", "sliceit.com", "kreditbee.in", "fibe.in", "earlysalary.com"];
+export const LENDER_SENDERS = ["slice.bank.in", "sliceit.com", "kreditbee.in", "krazybee.com", "fibe.in", "earlysalary.com", "earlysalary.in"];
+
+/** Gmail search for all of a lender's emails, any age (sender name or address). */
+export const LOAN_HISTORY_SEARCH = "from:(kreditbee OR krazybee OR fibe OR earlysalary OR slice.bank.in)";
 
 export const SEARCH_KEYWORDS = [
   "debited", "credited", "spent", "debit", "credit", "withdrawn", "UPI", "transaction",
@@ -114,7 +117,7 @@ export const SEARCH_KEYWORDS = [
 
 export function isLenderSender(from: string): boolean {
   const f = from.toLowerCase();
-  return LENDER_SENDERS.some((s) => f.includes(s));
+  return LENDER_SENDERS.some((s) => f.includes(s)) || /\b(kreditbee|krazybee|fibe|earlysalary)\b/.test(f);
 }
 
 /** Marketing mail from a bank's newsletter address is never a transaction. */
