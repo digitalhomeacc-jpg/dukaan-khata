@@ -166,9 +166,16 @@ function findLast4(text: string): string | null {
   return null;
 }
 
+/** "HITESH GUPTA" → "Hitesh Gupta"; mixed-case names are left alone. */
+function tidyCase(s: string): string {
+  if (s !== s.toUpperCase() || !/[A-Z]{3}/.test(s)) return s;
+  return s.toLowerCase().replace(/(^|[\s.&(\-\/])([a-z])/g, (_, p, c) => p + c.toUpperCase());
+}
+
 function cleanMerchant(raw: string | undefined | null): string | null {
   if (!raw) return null;
   let s = raw
+    .replace(/^[x*]+/i, "")
     .replace(/\s+/g, " ")
     .replace(/^(?:vpa|upi|mr\.?|ms\.?|m\/s\.?)\s+/i, "")
     .replace(/[\s.,;:\-]+$/, "")
@@ -176,8 +183,10 @@ function cleanMerchant(raw: string | undefined | null): string | null {
   if (s.length < 2) return null;
   if (/^\d+$/.test(s)) return null;
   if (/^(your|the|a|an|on|via|using|account|a\/c)$/i.test(s)) return null;
+  // Footer and help text is never a payee.
+  if (/support you|every step|report it|customer care|toll.?free|your (hdfc|icici|sbi|axis)? ?(bank )?(account|a\/c)/i.test(s)) return null;
   if (s.length > 48) s = s.slice(0, 48).trim();
-  return s;
+  return tidyCase(s);
 }
 
 /** "UPI/P2M/412345678901/SWIGGY LIMITED/..." → "SWIGGY LIMITED" */
@@ -190,8 +199,24 @@ function fromUpiPath(info: string): string | null {
 
 const STOP = String.raw`(?=\s+(?:on|dated|at|via|using|ref|reference|txn|transaction|from|for|with|avl|available|upi|\(|is\b|has\b|was\b)|[.,;]|\s*$)`;
 
-function findMerchant(text: string, dir: Direction): string | null {
+/** The part of an alert before the help/footer text, where the payee is named. */
+function alertCore(text: string): string {
+  return text.split(/\b(?:if you did not|if this (?:was|transaction was) not|we(?:'|’)re here|need help\?|warm regards|thank you for banking|regards,)/i)[0];
+}
+
+function findMerchant(fullText: string, dir: Direction): string | null {
+  const text = alertCore(fullText);
   const tries: Array<() => string | null> = [
+    // HDFC 2026: "towards VPA ******6712@ybl (Hotel Vijay) on" / "from VPA x@okaxis (NAME)"
+    () => {
+      const m = text.match(/(?:to|towards|by|from)\s+vpa\s+(\S+@[\w.\-]+)\s*\(([^)]{2,60})\)/i);
+      return m ? cleanMerchant(m[2]) ?? cleanMerchant(m[1]) : null;
+    },
+    // HDFC 2026 credit: "Sender: NAME (VPA: …)" / "Payee: …" / "Beneficiary: …"
+    () => {
+      const m = text.match(/\b(?:sender|receiver|payee|beneficiary|merchant(?: name)?|paid to|received from)\s*:\s*([^(\n]{2,60}?)(?=\s*\(|\s+[a-z]\.\s|\s+(?:upi|ref|vpa)\b|$)/i);
+      return m ? cleanMerchant(m[1]) : null;
+    },
     // "to VPA swiggy@icici SWIGGY on" / "by VPA x@okaxis JOHN DOE on"
     () => {
       const m = text.match(/(?:to|by|from)\s+vpa\s+(\S+@\S+?)\s+([A-Za-z][A-Za-z0-9 &.'\-]{1,40}?)\s+on\b/i);

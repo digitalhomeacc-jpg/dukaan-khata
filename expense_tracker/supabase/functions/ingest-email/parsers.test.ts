@@ -29,7 +29,7 @@ test("HDFC UPI debit", () => {
   ));
   assert.equal(t.amount, 250);
   assert.equal(t.direction, "debit");
-  assert.equal(t.merchant, "SWIGGY LIMITED");
+  assert.equal(t.merchant, "Swiggy Limited");
   assert.equal(t.bank, "HDFC");
   assert.equal(t.accountLast4, "4321");
   assert.equal(t.method, "upi");
@@ -45,7 +45,7 @@ test("HDFC UPI credit", () => {
   ));
   assert.equal(t.amount, 5000);
   assert.equal(t.direction, "credit");
-  assert.equal(t.merchant, "RAHUL KUMAR");
+  assert.equal(t.merchant, "Rahul Kumar");
   assert.equal(t.txnAt, "2026-11-11T06:30:00.000Z"); // 11 Nov noon IST
 });
 
@@ -57,7 +57,7 @@ test("HDFC credit card spend (new format)", () => {
   ));
   assert.equal(t.amount, 1249);
   assert.equal(t.direction, "debit");
-  assert.equal(t.merchant, "AMAZON PAY INDIA");
+  assert.equal(t.merchant, "Amazon Pay India");
   assert.equal(t.accountLast4, "9876");
   assert.equal(t.method, "card");
   assert.equal(t.accountKind, "card");
@@ -72,7 +72,7 @@ test("HDFC credit card spend (old format)", () => {
   ));
   assert.equal(t.amount, 640.5);
   assert.equal(t.direction, "debit");
-  assert.equal(t.merchant, "ZOMATO");
+  assert.equal(t.merchant, "Zomato");
   assert.equal(t.txnAt, "2026-11-10T15:45:02.000Z");
 });
 
@@ -83,7 +83,7 @@ test("HDFC HTML body", () => {
     "<html><body><p>Dear Customer,</p><p>Rs.&nbsp;1,000.00 has been debited from account **4321 to VPA blinkit@hdfcbank BLINKIT on 12-11-26.</p></body></html>",
   ));
   assert.equal(t.amount, 1000);
-  assert.equal(t.merchant, "BLINKIT");
+  assert.equal(t.merchant, "Blinkit");
 });
 
 test("Credit card bill payment is a transfer", () => {
@@ -105,7 +105,7 @@ test("ICICI credit card", () => {
   ));
   assert.equal(t.amount, 2399);
   assert.equal(t.direction, "debit");
-  assert.equal(t.merchant, "MYNTRA DESIGNS");
+  assert.equal(t.merchant, "Myntra Designs");
   assert.equal(t.accountLast4, "5678");
   assert.equal(t.bank, "ICICI");
   assert.equal(t.txnAt, "2026-11-11T12:52:10.000Z");
@@ -119,7 +119,7 @@ test("ICICI account debit with UPI info", () => {
   ));
   assert.equal(t.amount, 180);
   assert.equal(t.direction, "debit");
-  assert.equal(t.merchant, "UBER INDIA");
+  assert.equal(t.merchant, "Uber India");
   assert.equal(t.accountLast4, "123");
 });
 
@@ -131,7 +131,7 @@ test("ICICI salary credit", () => {
   ));
   assert.equal(t.amount, 85000);
   assert.equal(t.direction, "credit");
-  assert.ok(t.merchant?.includes("ACME TECHNOLOGIES"), t.merchant ?? "");
+  assert.ok(t.merchant?.includes("Acme Technologies"), t.merchant ?? "");
   assert.equal(t.method, "netbanking");
 });
 
@@ -144,7 +144,7 @@ test("SBI debit by transfer", () => {
   ));
   assert.equal(t.amount, 499);
   assert.equal(t.direction, "debit");
-  assert.equal(t.merchant, "NETFLIX");
+  assert.equal(t.merchant, "Netflix");
   assert.equal(t.accountLast4, "6789");
   assert.equal(t.bank, "SBI");
 });
@@ -157,7 +157,7 @@ test("SBI UPI debit", () => {
   ));
   assert.equal(t.amount, 120);
   assert.equal(t.direction, "debit");
-  assert.equal(t.merchant, "CHAI POINT");
+  assert.equal(t.merchant, "Chai Point");
 });
 
 test("SBI Card spend", () => {
@@ -167,7 +167,7 @@ test("SBI Card spend", () => {
     "Rs.3,450.00 spent on your SBI Credit Card ending 4455 at RELIANCE DIGITAL on 09/11/26. Trxn. not done by you? Report at https://sbicard.com/Dispute",
   ));
   assert.equal(t.amount, 3450);
-  assert.equal(t.merchant, "RELIANCE DIGITAL");
+  assert.equal(t.merchant, "Reliance Digital");
   assert.equal(t.accountLast4, "4455");
   assert.equal(t.txnAt, "2026-11-09T06:30:00.000Z");
 });
@@ -192,7 +192,7 @@ test("Axis UPI debit", () => {
   ));
   assert.equal(t.amount, 349);
   assert.equal(t.direction, "debit");
-  assert.equal(t.merchant, "DOMINOS PIZZA");
+  assert.equal(t.merchant, "Dominos Pizza");
   assert.equal(t.accountLast4, "2468");
   assert.equal(t.bank, "Axis");
   assert.equal(t.txnAt, "2026-11-12T07:35:44.000Z");
@@ -205,7 +205,7 @@ test("Axis credit card spend", () => {
     "Transaction alert: INR 1,875.00 spent on Axis Bank Credit Card no. XX1357 at BOOKMYSHOW on 08-11-2026 20:10:05 IST. Available Limit: INR 54,000.00.",
   ));
   assert.equal(t.amount, 1875);
-  assert.equal(t.merchant, "BOOKMYSHOW");
+  assert.equal(t.merchant, "Bookmyshow");
   assert.equal(t.accountLast4, "1357");
 });
 
@@ -216,7 +216,7 @@ test("Axis UPI credit", () => {
     "Dear Customer, INR 1,200.00 credited to A/c no. XX2468 on 12-11-26 13:40:01 IST by UPI/P2A/431698765432/PRIYA SHARMA",
   ));
   assert.equal(t.direction, "credit");
-  assert.equal(t.merchant, "PRIYA SHARMA");
+  assert.equal(t.merchant, "Priya Sharma");
 });
 
 // ---------------------------------------------------------------- noise
@@ -253,4 +253,38 @@ test("HDFC low balance warning is ignored", () => {
 test("HDFC promotional mailer is ignored", () => {
   rejected(mail("HDFC Bank <information@mailers.hdfcbank.bank.in>", "Rs.2,000 voucher with your HDFC Bank Debit Card linked with A/c xx6516",
     "This Dhanteras, Get Rs.2,000 Voucher on single in-store transaction of Rs.1 Lakh & above on Jewellery using your HDFC Bank Debit Card. Offer valid from 31 st Oct 26"));
+});
+
+// HDFC's 2026 wording (names and numbers made up).
+const HDFC_FOOTER = " If you did not authorize this transaction, please report it immediately at: a. When in India (Toll free): 1800 258 6161 c. Or SMS 'BLOCK UPI' to 7308080808. We're here to support you in every step of the way. Warm regards, HDFC Bank";
+
+test("HDFC 2026 UPI debit: name in brackets, footer ignored", () => {
+  const t = ok(mail("HDFC Bank InstaAlerts <alerts@hdfcbank.bank.in>", "❗  You have done a UPI txn. Check details!",
+    "Dear Customer, Greetings from HDFC Bank! Rs.265.00 is debited from your account ending 3191 towards VPA ******6712@ybl (Hotel Sagar) on 12-11-26. UPI transaction reference no.: 800011112222." + HDFC_FOOTER));
+  assert.equal(t.amount, 265);
+  assert.equal(t.direction, "debit");
+  assert.equal(t.merchant, "Hotel Sagar");
+  assert.equal(t.accountLast4, "3191");
+  assert.equal(t.method, "upi");
+});
+
+test("HDFC 2026 UPI debit to a person in capitals", () => {
+  const t = ok(mail("alerts@hdfcbank.bank.in", "❗  You have done a UPI txn. Check details!",
+    "Dear Customer, Rs.800.00 is debited from your account ending 6516 towards VPA ******4168@kotakbank (AMIT KUMAR SHAH) on 10-11-26. UPI transaction reference no.: 600000000001." + HDFC_FOOTER));
+  assert.equal(t.merchant, "Amit Kumar Shah");
+  assert.equal(t.accountLast4, "6516");
+});
+
+test("HDFC 2026 UPI credit: Sender line", () => {
+  const t = ok(mail("HDFC Bank InstaAlerts <alerts@hdfcbank.bank.in>", "View: Account update for your HDFC Bank A/c",
+    "Dear Customer, Greetings from HDFC Bank! We're writing to inform you that Rs.220.00 has been successfully credited to your HDFC Bank account ending in 3191. Transaction Details: a. Date: 12-11-26 b. Sender: ROHAN VIJAY DESAI (VPA: ************00-1@okicici) c. UPI Reference No.: 600000000002 Need Help? India (Toll-Free): 1800 258 6161 Thank you for banking with HDFC Bank. Warm Regards, HDFC Bank"));
+  assert.equal(t.amount, 220);
+  assert.equal(t.direction, "credit");
+  assert.equal(t.merchant, "Rohan Vijay Desai");
+  assert.equal(t.accountLast4, "3191");
+});
+
+test("payee is never taken from the footer", () => {
+  const t = ok(mail("alerts@hdfcbank.bank.in", "UPI", "Rs.50.00 is debited from your account ending 3191 on 12-11-26." + HDFC_FOOTER));
+  assert.equal(t.merchant, null);
 });
