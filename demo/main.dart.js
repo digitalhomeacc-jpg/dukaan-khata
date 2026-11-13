@@ -71950,7 +71950,7 @@ m=t.N
 l=t.S
 k=A.D(m,l)
 s=5
-return A.c(o.bA(0,"SELECT substr(vl.vdate, 1, 7) AS m, SUM(vl.credit - vl.debit) AS d FROM voucher_lines vl JOIN vouchers v ON v.id = vl.voucher_id WHERE v.party_id = ? AND v.deleted = 0 AND vl.deleted = 0 AND vl.ledger_id = ? AND vl.vdate BETWEEN ? AND ? GROUP BY m",[c9,p.b+":discount_recd",d0,d1]),$async$xj)
+return A.c(o.bA(0,"SELECT substr(vl.vdate, 1, 7) AS m, SUM(vl.credit - vl.debit) AS d FROM voucher_lines vl JOIN vouchers v ON v.id = vl.voucher_id WHERE v.party_id = ? AND v.deleted = 0 AND vl.deleted = 0 AND vl.ledger_id = ? AND vl.vdate BETWEEN ? AND ? AND COALESCE(v.narration, '') NOT LIKE '%coin%' AND COALESCE(v.narration, '') NOT LIKE '%GMC%' AND COALESCE(v.narration, '') NOT LIKE '%gift%' GROUP BY m",[c9,p.b+":discount_recd",d0,d1]),$async$xj)
 case 5:j=d3,i=j.d,h=t.X,g=-1
 case 6:if(!(++g,g<i.length)){s=7
 break}f=A.bc(i[g],!1,h)
@@ -71963,19 +71963,17 @@ k.l(0,d,c+B.o.D(A.bk(e.h(0,"d"))))
 s=6
 break
 case 7:s=8
-return A.c(o.bA(0,"SELECT substr(vdate, 1, 7) AS m, SUM(amount) AS d FROM vouchers WHERE party_id = ? AND vtype = 'history' AND deleted = 0 AND vdate BETWEEN ? AND ? AND (status LIKE 'stmt:discount%' OR (COALESCE(status, '') NOT LIKE 'stmt:%' AND pay_ledger_id = 'hist:paid' AND (narration LIKE '%discount%' OR narration LIKE '%\u0938\u0942\u091f%' OR narration LIKE '%scheme%'))) GROUP BY m",[c9,d0,d1]),$async$xj)
-case 8:o=d3,j=o.d,i=-1
-case 9:if(!(++i,i<j.length)){s=10
-break}f=A.bc(j[i],!1,h)
+return A.c(o.bA(0,"SELECT substr(vdate, 1, 7) AS m, SUM(amount) AS d FROM vouchers WHERE party_id = ? AND vtype = 'history' AND deleted = 0 AND vdate BETWEEN ? AND ? AND (status LIKE 'stmt:discount%' OR (COALESCE(status, '') NOT LIKE 'stmt:%' AND pay_ledger_id = 'hist:paid' AND (narration LIKE '%discount%' OR narration LIKE '%\u0938\u0942\u091f%' OR narration LIKE '%scheme%'))) "+A.af("AND COALESCE(v.narration, '') NOT LIKE '%coin%' AND COALESCE(v.narration, '') NOT LIKE '%GMC%' AND COALESCE(v.narration, '') NOT LIKE '%gift%'","v.narration","narration")+" GROUP BY m",[c9,d0,d1]),$async$xj)
+case 8:o=d3
+j=o.d
+i=-1
+while(++i,i<j.length){f=A.bc(j[i],!1,h)
 f.$flags=3
 e=new A.bj(o,f)
 g=A.a6(e.h(0,"m"))
 d=k.h(0,A.a6(e.h(0,"m")))
 if(d==null)d=0
-k.l(0,g,d+B.o.D(A.bk(e.h(0,"d"))))
-s=9
-break
-case 10:b=new A.aTO()
+k.l(0,g,d+B.o.D(A.bk(e.h(0,"d"))))}b=new A.aTO()
 a=A.D(m,l)
 a0=A.D(m,l)
 a1=A.D(m,l)
@@ -74330,10 +74328,10 @@ s=A.E(c5).ax
 r=new A.b5Z(c4)
 q=new A.b6_(c4)
 p=c6.d
-A:{if("create"===p){c5=B.bLd
-break A}if("delete"===p){c5=B.bL5
+A:{if("create"===p){c5=B.bLc
+break A}if("delete"===p){c5=B.bL4
 break A}if("edit"===p){c5=B.bI3
-break A}if("hide"===p){c5=B.bL0
+break A}if("hide"===p){c5=B.bL_
 break A}c5=new A.d(s.b,B.aim)
 break A}o=c5.a
 n=c2
@@ -80999,7 +80997,7 @@ j=A.a([s,r,q,A.cC(!1,o,o,o,!0,o,o,o,!0,o,o,B.ajA,o,o,o,o,o,new A.aXv(n),!1,o,o,o
 j.push(A.cC(!1,o,o,o,!0,o,o,o,!0,o,o,B.EG,o,o,o,o,o,new A.aXw(a),!1,o,o,o,o,o,o,o,A.q(m.$1("audit"),o,o,o,o,o,o,o,o),o,o,o))
 B.f.L(i,j)}i.push(B.kx)
 i.push(A.cC(!1,o,o,o,!0,o,o,o,!0,o,B.c18,B.ajW,o,o,o,o,o,new A.aXx(a),!1,o,o,o,o,o,o,o,B.bZl,o,o,o))
-i.push(A.dX(A.q("Dukaan Khata \xb7 "+A.f(m.$1("version"))+" 13/11/26 09:37",o,o,o,o,A.E(a).ok.Q,o,o,o),o,o))
+i.push(A.dX(A.q("Dukaan Khata \xb7 "+A.f(m.$1("version"))+" 13/11/26 09:47",o,o,o,o,A.E(a).ok.Q,o,o,o),o,o))
 i.push(B.kx)
 return A.e8(k,o,A.dF(i,o,o,B.ak,!1),o,o)},
 N8(a){return this.aTQ(a)},
@@ -124275,7 +124273,7 @@ hL(a){return this.c.$1(a)}}
 A.avA.prototype={
 al9(a,b,c){return a.F5(b,c)},
 b4P(a,b,c){if(a.F6(b,c))return new A.d(!0,a.F5(b,c))
-return B.bKQ}}
+return B.bKP}}
 A.yQ.prototype={
 a8(){return new A.Un(A.aK(t.od),new A.H())}}
 A.avB.prototype={
@@ -129442,9 +129440,9 @@ switch(b.a){case 0:o=B.bO3
 break
 case 2:o=B.bO4
 break
-case 3:o=B.bKP
+case 3:o=B.bKO
 break
-case 1:o=B.bKR
+case 1:o=B.bKQ
 break}s=o.a
 q.b=s
 r=o.b
@@ -136838,7 +136836,7 @@ this.Yl()},
 Yl(){var s,r,q,p,o,n,m=this,l=m.w
 switch(l.a.c.a){case 0:s=B.bML
 break
-case 2:s=B.bL7
+case 2:s=B.bL6
 break
 case 3:s=B.bKC
 break
@@ -186868,7 +186866,7 @@ B.bCP=new A.d("\u0939\u091f\u0935\u093e","Delete")
 B.bJb=new A.d("\u092c\u0926\u0932\u093e","Edit")
 B.bDs=new A.d("\u091c\u094b\u0921\u093e","Add")
 B.bI0=new A.d("\u0936\u094b\u0927\u093e","Search")
-B.bKS=new A.d("\u0928\u093e\u0935, \u092a\u093e\u0928 \u0928\u0902. \u0915\u093f\u0902\u0935\u093e \u092b\u094b\u0928","Name, page no. or phone")
+B.bKR=new A.d("\u0928\u093e\u0935, \u092a\u093e\u0928 \u0928\u0902. \u0915\u093f\u0902\u0935\u093e \u092b\u094b\u0928","Name, page no. or phone")
 B.bJ1=new A.d("\u0928\u0935\u0940\u0928 \u0917\u094d\u0930\u093e\u0939\u0915","New customer")
 B.bLY=new A.d("\u0928\u0935\u0940\u0928 \u092a\u0941\u0930\u0935\u0920\u093e\u0926\u093e\u0930","New supplier")
 B.bOD=new A.d("\u0928\u0935\u0940\u0928 \u0916\u093e\u0924\u0947","New account")
@@ -186962,7 +186960,7 @@ B.yq=new A.d("\u0906\u091c","Today")
 B.a_v=new A.d("\u0939\u093e \u092e\u0939\u093f\u0928\u093e","This month")
 B.bMO=new A.d("\u091a\u093e\u0932\u0942 \u0906\u0930\u094d\u0925\u093f\u0915 \u0935\u0930\u094d\u0937","This financial year")
 B.a_n=new A.d("\u092a\u093e\u0938\u0942\u0928","From")
-B.bKY=new A.d("\u092a\u0930\u094d\u092f\u0902\u0924","To")
+B.bKX=new A.d("\u092a\u0930\u094d\u092f\u0902\u0924","To")
 B.bGM=new A.d("\u0926\u0948\u0928\u093f\u0915 \u0938\u094d\u091f\u0949\u0915 \u0930\u091c\u093f\u0938\u094d\u091f\u0930","Daily stock register")
 B.bD3=new A.d("\u092e\u093e\u0939\u093f\u0924\u0940 \u092c\u0926\u0932\u093e (\u092b\u094b\u0928, \u092a\u093e\u0928, \u0938\u0941\u0930\u0941\u0935\u093e\u0924\u0940\u091a\u0940 \u092c\u093e\u0915\u0940)","Edit details (phone, page, opening)")
 B.bNo=new A.d("\u0935\u0930\u093e\u0908","Varhaai")
@@ -186995,7 +186993,7 @@ B.bD7=new A.d("\u0926\u093f\u0932\u0947\u0932\u093e \u092e\u093e\u0932 \u092a\u0
 B.bEa=new A.d("\u092e\u093e\u0932 \u092f\u0947\u0923\u0947","Goods they owe")
 B.bNB=new A.d("\u092e\u093e\u0932 \u0926\u0947\u0923\u0947","Goods we owe")
 B.bER=new A.d("\u0909\u0938\u0928\u093e \u092e\u093e\u0932","Goods lent / borrowed")
-B.bKX=new A.d("\u092a\u094b\u0924\u0940/\u092e\u093e\u0932 \u2013 \u092a\u0948\u0936\u093e\u0936\u093f\u0935\u093e\u092f","Bags \u2013 no money")
+B.bKW=new A.d("\u092a\u094b\u0924\u0940/\u092e\u093e\u0932 \u2013 \u092a\u0948\u0936\u093e\u0936\u093f\u0935\u093e\u092f","Bags \u2013 no money")
 B.bJ3=new A.d("\u0938\u0941\u0930\u0941\u0935\u093e\u0924\u0940\u091a\u093e \u0909\u0938\u0928\u093e \u092e\u093e\u0932","Opening goods owed")
 B.bMz=new A.d("\u0938\u0941\u0930\u0941\u0935\u093e\u0924\u0940\u091a\u093e","Opening")
 B.bJ9=new A.d('{date} \u092a\u0942\u0930\u094d\u0935\u0940\u091a \u0926\u093f\u0932\u0947\u0932\u093e/\u0918\u0947\u0924\u0932\u0947\u0932\u093e \u092e\u093e\u0932. \u092b\u0915\u094d\u0924 "\u092e\u093e\u0932 \u092f\u0947\u0923\u0947/\u0926\u0947\u0923\u0947" \u092e\u0927\u094d\u092f\u0947 \u0927\u0930\u0924\u094b \u2013 \u0938\u094d\u091f\u0949\u0915, \u092a\u0948\u0938\u0947, \u0928\u092b\u093e \u092c\u0926\u0932\u0924 \u0928\u093e\u0939\u0940.',"Already out before {date}. Counts only in goods owed \u2013 stock, money, profit unchanged.")
@@ -187038,7 +187036,7 @@ B.bM9=new A.d("\u0928\u0935\u0940\u0928 \u0915\u0930\u094d\u092e\u091a\u093e\u09
 B.bEA=new A.d("\u092e\u0939\u093f\u0928\u093e \u092a\u0917\u093e\u0930\u093e\u0935\u0930\u091a\u0947 \u0915\u0930\u094d\u092e\u091a\u093e\u0930\u0940 \u0907\u0925\u0947 \u091c\u094b\u0921\u093e (\u0939\u092e\u093e\u0932 \u0928\u093e\u0939\u0940 \u2013 \u0924\u094d\u092f\u093e\u0902\u091a\u0940 \u0939\u092e\u093e\u0932\u0940 \u0930\u094b\u091c \u0939\u094b\u0924\u0947).","Add monthly-salaried staff here (not hamals \u2013 their hamali is settled daily).")
 B.a_E=new A.d("\u092a\u0917\u093e\u0930","Salary")
 B.bIe=new A.d("\u092e\u0939\u093f\u0928\u093e \u092a\u0917\u093e\u0930","Monthly salary")
-B.bKU=new A.d("\u092f\u093e \u092e\u0939\u093f\u0928\u094d\u092f\u093e\u091a\u093e \u092a\u0917\u093e\u0930","This month's salary")
+B.bKT=new A.d("\u092f\u093e \u092e\u0939\u093f\u0928\u094d\u092f\u093e\u091a\u093e \u092a\u0917\u093e\u0930","This month's salary")
 B.bPi=new A.d("\u0909\u091a\u0932 \u0915\u092a\u093e\u0924","Advance recovered")
 B.bHd=new A.d("\u0926\u0930\u092e\u0939\u093e \u0909\u091a\u0932 \u0915\u092a\u093e\u0924 (\u0910\u091a\u094d\u091b\u093f\u0915)","Advance recovered per month (optional)")
 B.bDJ=new A.d("\u092a\u0917\u093e\u0930 \u0926\u0947\u0924\u093e\u0928\u093e \u090f\u0935\u0922\u0940 \u0909\u091a\u0932 \u0906\u092a\u094b\u0906\u092a \u0915\u093e\u092a\u0932\u0940 \u091c\u093e\u0908\u0932","Filled in automatically when paying salary")
@@ -187054,7 +187052,7 @@ B.bEj=new A.d("\u0909\u091a\u0932","Advance")
 B.bI1=new A.d("\u0909\u091a\u0932 \u092a\u0930\u0924 \u0906\u0932\u0940","Advance repaid")
 B.bO7=new A.d("\u0906\u0927\u0940\u091a\u0940 \u0909\u091a\u0932 \u092c\u093e\u0915\u0940","Advance already given")
 B.bDN=new A.d("\u0939\u093f\u0936\u094b\u092c \u0938\u0941\u0930\u0942 \u0939\u094b\u0923\u094d\u092f\u093e\u0906\u0927\u0940 \u0926\u093f\u0932\u0947\u0932\u0940, \u0905\u091c\u0942\u0928 \u092c\u093e\u0915\u0940 \u0905\u0938\u0932\u0947\u0932\u0940 \u0909\u091a\u0932","Advance given before the books start, still to recover")
-B.bL4=new A.d("\u092a\u0942\u0930\u094d\u0923 \u0909\u091a\u0932","All of it")
+B.bL3=new A.d("\u092a\u0942\u0930\u094d\u0923 \u0909\u091a\u0932","All of it")
 B.bNv=new A.d("\u0915\u092a\u093e\u0924 \u0928\u093e\u0939\u0940","None")
 B.bIT=new A.d("\u092a\u0917\u093e\u0930 \u092b\u0915\u094d\u0924 \u092e\u093e\u0932\u0915 \u0926\u0947\u090a \u0936\u0915\u0924\u094b","Only the owner can pay salary")
 B.bFr=new A.d("\u0915\u092a\u093e\u0924 \u092a\u0917\u093e\u0930\u093e\u092a\u0947\u0915\u094d\u0937\u093e \u091c\u093e\u0938\u094d\u0924 \u0905\u0938\u0942 \u0936\u0915\u0924 \u0928\u093e\u0939\u0940","Recovery cannot be more than the salary")
@@ -187109,7 +187107,7 @@ B.bEs=new A.d("\u092d\u093e\u0921\u0947, \u092a\u093e\u0923\u0940, \u0915\u0930\
 B.bLe=new A.d("\u0928\u0935\u0940\u0928 \u0926\u0930\u092e\u0939\u093e \u0906\u0915\u093e\u0930","New monthly charge")
 B.bI_=new A.d("\u0926\u0930 \u092e\u0939\u093f\u0928\u094d\u092f\u093e\u0932\u093e \u0915\u093e\u092f \u0932\u093e\u0935\u093e\u092f\u091a\u0947","Charged every month")
 B.bDq=new A.d("\u0926\u0930 \u092e\u0939\u093f\u0928\u094d\u092f\u093e\u0932\u093e \u092c\u0926\u0932\u0924\u0947? \u0930\u093f\u0915\u093e\u092e\u0947 \u0920\u0947\u0935\u093e","Changes monthly? Leave empty")
-B.bL3=new A.d('\u0926\u0930 \u092e\u0939\u093f\u0928\u094d\u092f\u093e\u091a\u094d\u092f\u093e 1 \u0924\u093e\u0930\u0916\u0947\u0932\u093e \u092e\u0941\u0916\u094d\u092f\u092a\u0943\u0937\u094d\u0920\u093e\u0935\u0930 \u0906\u0920\u0935\u0923 \u092f\u0947\u0908\u0932. \u0930\u0915\u094d\u0915\u092e \u0924\u092a\u093e\u0938\u0942\u0928 "\u0932\u093e\u0935\u093e" \u2013 \u0924\u0940 \u0909\u0927\u093e\u0930 \u092c\u093f\u0932 \u092e\u094d\u0939\u0923\u0942\u0928 \u0916\u093e\u0924\u094d\u092f\u093e\u0924 \u091c\u093e\u0924\u0947.',"On the 1st of every month the home screen reminds you. Check the amounts and tap Charge \u2013 it goes on the khata as a credit bill.")
+B.bL2=new A.d('\u0926\u0930 \u092e\u0939\u093f\u0928\u094d\u092f\u093e\u091a\u094d\u092f\u093e 1 \u0924\u093e\u0930\u0916\u0947\u0932\u093e \u092e\u0941\u0916\u094d\u092f\u092a\u0943\u0937\u094d\u0920\u093e\u0935\u0930 \u0906\u0920\u0935\u0923 \u092f\u0947\u0908\u0932. \u0930\u0915\u094d\u0915\u092e \u0924\u092a\u093e\u0938\u0942\u0928 "\u0932\u093e\u0935\u093e" \u2013 \u0924\u0940 \u0909\u0927\u093e\u0930 \u092c\u093f\u0932 \u092e\u094d\u0939\u0923\u0942\u0928 \u0916\u093e\u0924\u094d\u092f\u093e\u0924 \u091c\u093e\u0924\u0947.',"On the 1st of every month the home screen reminds you. Check the amounts and tap Charge \u2013 it goes on the khata as a credit bill.")
 B.bKr=new A.d("(\u0926\u0930\u092e\u0939\u093e \u091f\u093e\u0915\u093e\u092f\u091a\u0947)","(enter monthly)")
 B.bG9=new A.d("\u0936\u0947\u0935\u091f\u091a\u093e \u0932\u093e\u0935\u0932\u093e","Last charged")
 B.bLQ=new A.d("\u092c\u0902\u0926","Stopped")
@@ -187140,7 +187138,7 @@ B.bDV=new A.d("\u0935\u094d\u092f\u0915\u094d\u0924\u0940 \u091c\u094b\u0921\u09
 B.bJZ=new A.d("\u092e\u093e\u0932\u0915: \u0938\u0930\u094d\u0935 \u0915\u093e\u0939\u0940 \u2013 \u091c\u0941\u0928\u094d\u092f\u093e \u0928\u094b\u0902\u0926\u0940 \u092c\u0926\u0932\u0923\u0947/\u0939\u091f\u0935\u0923\u0947, \u0928\u092b\u093e-\u0924\u094b\u091f\u093e, \u0938\u0941\u0930\u0941\u0935\u093e\u0924\u0940\u091a\u0940 \u092c\u093e\u0915\u0940, \u0935\u094d\u092f\u093e\u091c, \u092a\u0917\u093e\u0930, \u0935\u093e\u092a\u0930\u0915\u0930\u094d\u0924\u0947.","Owner: everything \u2013 edit/delete old entries, P&L, opening balances, interest, salary, users.")
 B.bOe=new A.d("\u0938\u094d\u091f\u093e\u092b: \u0906\u091c\u091a\u094d\u092f\u093e \u0928\u094b\u0902\u0926\u0940 \u0915\u0930\u0942 \u0936\u0915\u0924\u094b; \u091c\u0941\u0928\u094d\u092f\u093e \u0928\u094b\u0902\u0926\u0940 \u092c\u0926\u0932\u0923\u0947/\u0939\u091f\u0935\u0923\u0947, \u0928\u092b\u093e-\u0924\u094b\u091f\u093e, GST \u0928\u093e\u0939\u0940.","Staff: today's entries only; no editing old entries, P&L or GST.")
 B.bE4=new A.d("{name} \u0932\u093e \u092e\u093e\u0932\u0915 \u092e\u094d\u0939\u0923\u0942\u0928 \u091c\u094b\u0921\u093e\u092f\u091a\u0947? \u092e\u093e\u0932\u0915\u093e\u0932\u093e \u0938\u0930\u094d\u0935 \u0939\u0915\u094d\u0915 \u0905\u0938\u0924\u093e\u0924.","Add {name} as an owner? Owners can do everything.")
-B.bL2=new A.d("\u092e\u093e\u0932\u0915 \u0915\u0930\u093e","Make owner")
+B.bL1=new A.d("\u092e\u093e\u0932\u0915 \u0915\u0930\u093e","Make owner")
 B.bCS=new A.d("\u0938\u094d\u091f\u093e\u092b \u0915\u0930\u093e","Make staff")
 B.bJL=new A.d("\u0905\u091c\u0942\u0928 \u0932\u0949\u0917\u093f\u0928 \u0915\u0947\u0932\u0947 \u0928\u093e\u0939\u0940","not signed in yet")
 B.bJq=new A.d("\u092f\u093e \u0935\u094d\u092f\u0915\u094d\u0924\u0940\u0932\u093e \u0926\u0941\u0915\u093e\u0928\u093e\u0924\u0942\u0928 \u0915\u093e\u0922\u093e\u092f\u091a\u0947?","Remove this person from the shop?")
@@ -187226,7 +187224,7 @@ B.yt=new A.d("\u092c\u0901\u0915","Bank")
 B.bP_=new A.d("\u090f\u0915\u0942\u0923 \u092f\u0947\u0923\u0947","Total receivable")
 B.bI4=new A.d("\u090f\u0915\u0942\u0923 \u0926\u0947\u0923\u0947","Total payable")
 B.bNH=new A.d("\u0911\u092b\u0932\u093e\u0907\u0928 \u2013 \u0928\u0902\u0924\u0930 \u0938\u093f\u0902\u0915 \u0939\u094b\u0908\u0932","Offline \u2013 will sync later")
-B.bL6=new A.d("\u0938\u093f\u0902\u0915 \u091d\u093e\u0932\u0947","Synced")
+B.bL5=new A.d("\u0938\u093f\u0902\u0915 \u091d\u093e\u0932\u0947","Synced")
 B.bNm=new A.d("\u092b\u0915\u094d\u0924 \u0939\u093e \u092b\u094b\u0928","This device only")
 B.bMo=new A.d("\u0926\u0948\u0928\u0902\u0926\u093f\u0928 \u0928\u094b\u0902\u0926\u0935\u0939\u0940 (\u0921\u0947 \u092c\u0941\u0915)","Day Book")
 B.bJs=new A.d("\u0930\u094b\u0915\u0921 \u0935\u0939\u0940","Cash Book")
@@ -187260,7 +187258,7 @@ B.bLx=new A.d("\u0926\u0947\u0923\u0940","Liabilities")
 B.bCL=new A.d("\u092e\u093e\u0932\u092e\u0924\u094d\u0924\u093e","Assets")
 B.bD2=new A.d("\u092a\u0941\u0930\u0935\u0920\u093e\u0926\u093e\u0930 \u0926\u0947\u0923\u0947","Suppliers payable")
 B.bM8=new A.d("\u0917\u094d\u0930\u093e\u0939\u0915 \u0906\u0917\u093e\u090a","Customer advances")
-B.bKW=new A.d("\u0917\u094d\u0930\u093e\u0939\u0915 \u092f\u0947\u0923\u0947","Customers receivable")
+B.bKV=new A.d("\u0917\u094d\u0930\u093e\u0939\u0915 \u092f\u0947\u0923\u0947","Customers receivable")
 B.bFt=new A.d("\u092a\u0941\u0930\u0935\u0920\u093e\u0926\u093e\u0930 \u0906\u0917\u093e\u090a","Supplier advances")
 B.bH3=new A.d("\u092e\u093e\u0917\u0940\u0932 \u092c\u093e\u0915\u0940 \u092b\u0930\u0915","Opening balance difference")
 B.bEK=new A.d("\u0930\u094b\u0916/\u092c\u0901\u0915 \u092c\u0926\u0932","Transfer")
@@ -187291,14 +187289,14 @@ B.bD5=new A.d("\u0935\u093e\u0933\u0942 / \u0916\u0921\u0940","Sand / Aggregate"
 B.a_A=new A.d("\u0907\u0924\u0930","Other")
 B.bEr=new A.d("\u0909\u092a\u0935\u0930\u094d\u0917 (\u0939\u0935\u093e \u0905\u0938\u0932\u094d\u092f\u093e\u0938)","Subcategory (optional)")
 B.bMG=new A.d("\u0909\u0926\u093e. \u091f\u093e\u0915\u0940, \u092a\u093e\u0908\u092a","e.g. Tank, Pipe")
-B.bL9=new A.d("\u0909\u092a\u0935\u0930\u094d\u0917 \u0915\u093e\u0922\u093e","Remove subcategory")
+B.bL8=new A.d("\u0909\u092a\u0935\u0930\u094d\u0917 \u0915\u093e\u0922\u093e","Remove subcategory")
 B.bDe=new A.d("\u0935\u0938\u094d\u0924\u0942 \u091f\u093e\u0907\u092a \u0915\u0930\u093e","Type an item")
 B.bKq=new A.d("\u0909\u0926\u093e. \u0930\u0947\u0924\u0940 3, pipe, \u0938\u093f\u092e\u0947\u0902\u091f","e.g. reti 3, pipe, cement")
 B.bMe=new A.d("Google Drive \u092c\u0945\u0915\u0905\u092a \u0906\u0924\u093e \u0918\u094d\u092f\u093e","Back up to Google Drive now")
 B.bEX=new A.d("\u0930\u094b\u091c \u0930\u093e\u0924\u094d\u0930\u0940 \u0906\u092a\u094b\u0906\u092a \u0939\u094b\u0924\u094b \xb7 \u0906\u0924\u094d\u0924\u093e \u0918\u0947\u090a\u0928 \u0924\u092a\u093e\u0938\u093e","Runs every night by itself \xb7 take one now and check it")
 B.bHs=new A.d("\u092c\u0945\u0915\u0905\u092a \u0938\u094d\u0915\u094d\u0930\u093f\u092a\u094d\u091f\u091a\u0940 \u0932\u093f\u0902\u0915 \u091c\u094b\u0921\u093e","Add the backup script link")
 B.bKf=new A.d("\u092c\u0945\u0915\u0905\u092a \u0938\u094d\u0915\u094d\u0930\u093f\u092a\u094d\u091f\u091a\u0940 \u0932\u093f\u0902\u0915","Backup script link")
-B.bL_=new A.d("Apps Script \u2192 Deploy \u2192 Web app \u091a\u0940 \u0932\u093f\u0902\u0915 (\u2026/exec) \u0907\u0925\u0947 \u092a\u0947\u0938\u094d\u091f \u0915\u0930\u093e. \u0938\u0930\u094d\u0935 \u092e\u093e\u0932\u0915\u093e\u0902\u091a\u094d\u092f\u093e \u092b\u094b\u0928\u0935\u0930 \u0926\u093f\u0938\u0947\u0932.","Paste the Apps Script web-app link (\u2026/exec). It is shared with every owner's phone.")
+B.bKZ=new A.d("Apps Script \u2192 Deploy \u2192 Web app \u091a\u0940 \u0932\u093f\u0902\u0915 (\u2026/exec) \u0907\u0925\u0947 \u092a\u0947\u0938\u094d\u091f \u0915\u0930\u093e. \u0938\u0930\u094d\u0935 \u092e\u093e\u0932\u0915\u093e\u0902\u091a\u094d\u092f\u093e \u092b\u094b\u0928\u0935\u0930 \u0926\u093f\u0938\u0947\u0932.","Paste the Apps Script web-app link (\u2026/exec). It is shared with every owner's phone.")
 B.bE2=new A.d("\u0939\u0940 \u092c\u0945\u0915\u0905\u092a \u0938\u094d\u0915\u094d\u0930\u093f\u092a\u094d\u091f\u091a\u0940 \u0932\u093f\u0902\u0915 \u0926\u093f\u0938\u0924 \u0928\u093e\u0939\u0940 (script.google.com/\u2026/exec \u0939\u0935\u0940)","Not a backup script link (needs script.google.com/\u2026/exec)")
 B.bOf=new A.d("Drive \u092e\u0927\u094d\u092f\u0947 \u092c\u0945\u0915\u0905\u092a \u0918\u0947\u0924 \u0906\u0939\u0947\u2026","Backing up to Drive\u2026")
 B.bNt=new A.d("\u092c\u0945\u0915\u0905\u092a \u092a\u0942\u0930\u094d\u0923 \u0906\u0923\u093f \u092c\u0930\u094b\u092c\u0930 \u2713","Backup complete and matching \u2713")
@@ -187307,7 +187305,7 @@ B.bK6=new A.d("\u092f\u093e \u092b\u094b\u0928\u0935\u0930\u091a\u0947 {n} \u092
 B.bIH=new A.d("\u0926\u0941\u0938\u0931\u094d\u092f\u093e \u092b\u094b\u0928\u0935\u0930\u091a\u094d\u092f\u093e \u0928\u0935\u094d\u092f\u093e \u0928\u094b\u0902\u0926\u0940 \u0907\u0925\u0947 \u0905\u091c\u0942\u0928 \u0906\u0932\u094d\u092f\u093e \u0928\u0938\u0924\u0940\u0932. \u0928\u0947\u091f \u091a\u093e\u0932\u0942 \u0920\u0947\u0935\u0942\u0928 \u0925\u094b\u0921\u094d\u092f\u093e \u0935\u0947\u0933\u093e\u0928\u0947 \u092a\u0941\u0928\u094d\u0939\u093e \u0924\u092a\u093e\u0938\u093e.","New entries from another phone may not have reached this one yet. Stay online and check again in a minute.")
 B.bIY=new A.d("\u092f\u093e\u0926\u0940","Table")
 B.bPb=new A.d("\u0939\u093e \u092b\u094b\u0928","This phone")
-B.bLc=new A.d("\u0926\u0941\u0915\u093e\u0928","Shop")
+B.bLb=new A.d("\u0926\u0941\u0915\u093e\u0928","Shop")
 B.a_C=new A.d("\u0935\u093e\u092a\u0930\u0915\u0930\u094d\u0924\u0947","Users")
 B.bIg=new A.d("\u0916\u093e\u0924\u0940 / \u092a\u093e\u0930\u094d\u091f\u0940","Accounts / parties")
 B.bDC=new A.d("\u092e\u093e\u0932 / \u0938\u0947\u0935\u093e","Items / services")
@@ -187325,7 +187323,7 @@ B.bGq=new A.d("\u0924\u093f\u092e\u093e\u0939\u0940","Quarterly")
 B.bDU=new A.d("\u0930\u094b\u0916 \u0938\u0942\u091f","Cash discount")
 B.bIk=new A.d("\u0935\u093e\u0930\u094d\u0937\u093f\u0915","Yearly")
 B.bOX=new A.d("\u0916\u0930\u0940 \u0915\u093f\u0902\u092e\u0924 (\u0938\u0942\u091f \u0928\u0902\u0924\u0930)","Real cost (after discounts)")
-B.bKM=new A.d('\u0926\u0930 \u092a\u094d\u0930\u0924\u093f \u092c\u0945\u0917 \xb7 "\u092e\u0939\u093f\u0928\u093e" = \u0924\u094d\u092f\u093e \u092e\u0939\u093f\u0928\u094d\u092f\u093e\u091a\u0940 \u0938\u0942\u091f \u0935\u091c\u093e \xb7 "\u0935\u0930\u094d\u0937" = \u0906\u0930\u094d\u0925\u093f\u0915 \u0935\u0930\u094d\u0937\u093e\u0924\u0940\u0932 (\u090f\u092a\u094d\u0930\u093f\u0932\u2013\u092e\u093e\u0930\u094d\u091a) \u0938\u0930\u094d\u0935 \u0938\u0942\u091f \u0935\u0930\u094d\u0937\u092d\u0930\u093e\u091a\u094d\u092f\u093e \u092e\u093e\u0932\u093e\u0935\u0930 \u0935\u093e\u091f\u0942\u0928 \u2013 \u091a\u093e\u0932\u0942 \u0935\u0930\u094d\u0937\u093e\u0924 \u0906\u0924\u093e\u092a\u0930\u094d\u092f\u0902\u0924 \u092e\u093f\u0933\u093e\u0932\u0947\u0932\u094d\u092f\u093e \u0938\u0942\u091f\u0940\u0935\u0930 \xb7 \u0938\u093f\u0915\u094d\u092f\u0941\u0930\u093f\u091f\u0940 \u0935 \u0915\u0902\u092a\u0928\u0940\u0928\u0947 \u092c\u0901\u0915\u0947\u0924 \u0926\u093f\u0932\u0947\u0932\u0947 \u092a\u0948\u0938\u0947 \u0916\u0930\u094d\u091a\u093e\u0924 \u0928\u093e\u0939\u0940\u0924','rate per bag \xb7 "month" = less that month\'s discounts \xb7 "year" = every discount of the financial year (April\u2013March) spread over the year\'s goods \u2013 for the running year, discounts so far \xb7 security and company payouts are not cost')
+B.bLd=new A.d('\u0926\u0930 \u092a\u094d\u0930\u0924\u093f \u092c\u0945\u0917 \xb7 "\u092e\u0939\u093f\u0928\u093e" = \u0924\u094d\u092f\u093e \u092e\u0939\u093f\u0928\u094d\u092f\u093e\u091a\u0940 \u0938\u0942\u091f \u0935\u091c\u093e \xb7 "\u0935\u0930\u094d\u0937" = \u0906\u0930\u094d\u0925\u093f\u0915 \u0935\u0930\u094d\u0937\u093e\u0924\u0940\u0932 (\u090f\u092a\u094d\u0930\u093f\u0932\u2013\u092e\u093e\u0930\u094d\u091a) \u0938\u0930\u094d\u0935 \u0938\u0942\u091f \u0935\u0930\u094d\u0937\u092d\u0930\u093e\u091a\u094d\u092f\u093e \u092e\u093e\u0932\u093e\u0935\u0930 \u0935\u093e\u091f\u0942\u0928 \u2013 \u091a\u093e\u0932\u0942 \u0935\u0930\u094d\u0937\u093e\u0924 \u0906\u0924\u093e\u092a\u0930\u094d\u092f\u0902\u0924 \u092e\u093f\u0933\u093e\u0932\u0947\u0932\u094d\u092f\u093e \u0938\u0942\u091f\u0940\u0935\u0930 \xb7 \u0938\u093f\u0915\u094d\u092f\u0941\u0930\u093f\u091f\u0940, \u0935\u0902\u0921\u0930 \u0915\u0949\u0907\u0928 (\u0917\u093f\u092b\u094d\u091f \u0915\u093e\u0930\u094d\u0921) \u0935 GMC \u092a\u0949\u0932\u093f\u0938\u0940 \u0916\u0930\u094d\u091a\u093e\u0924/\u0938\u0942\u091f\u0940\u0924 \u0927\u0930\u0932\u0947 \u0928\u093e\u0939\u0940\u0924','rate per bag \xb7 "month" = less that month\'s discounts \xb7 "year" = every discount of the financial year (April\u2013March) spread over the year\'s goods \u2013 for the running year, discounts so far \xb7 security, Wonder Coin (gift cards) and GMC policy are left out')
 B.bF0=new A.d("\u0906\u0930\u094d\u0925\u093f\u0915 \u0935\u0930\u094d\u0937","FY")
 B.bKB=new A.d("\u0928\u093f\u0935\u094d\u0935\u0933 (\u092e\u0939\u093f\u0928\u093e)","Net (month)")
 B.bPe=new A.d("\u0928\u093f\u0935\u094d\u0935\u0933 (\u0935\u0930\u094d\u0937)","Net (year)")
@@ -187355,9 +187353,9 @@ B.bG_=new A.d("\u0939\u093f\u0936\u094b\u092c \u0938\u0941\u0930\u0942 \u091d\u0
 B.bGb=new A.d("\u0939\u093f\u0936\u094b\u092c \u0938\u0941\u0930\u0942 \u091d\u093e\u0932\u094d\u092f\u093e\u092a\u093e\u0938\u0942\u0928 \u091c\u092e\u093e (\u092a\u0948\u0938\u0947 + \u0938\u0942\u091f)","Credited since the books started (payments + discounts)")
 B.bPa=new A.d("\u0915\u0902\u092a\u0928\u0940","Company")
 B.bMw=new A.d("\u0906\u092a\u0932\u0947","Ours")
-B.bKV=new A.d("\u0906\u092a\u0932\u0947 \u091c\u092e\u093e","our advance")
+B.bKU=new A.d("\u0906\u092a\u0932\u0947 \u091c\u092e\u093e","our advance")
 B.bEW=new A.d("\u0938\u0930\u094d\u0935 {n} \u0913\u0933\u0940 \u091c\u0941\u0933\u0932\u094d\u092f\u093e","All {n} lines match")
-B.bKT=new A.d("{ok} \u091c\u0941\u0933\u0932\u094d\u092f\u093e \xb7 {a} \u0915\u0902\u092a\u0928\u0940\u0915\u0921\u0947 \u0906\u0939\u0947\u0924, \u0916\u093e\u0924\u094d\u092f\u093e\u0924 \u0928\u093e\u0939\u0940\u0924 \xb7 {b} \u0916\u093e\u0924\u094d\u092f\u093e\u0924 \u0906\u0939\u0947\u0924, \u0915\u0902\u092a\u0928\u0940\u0915\u0921\u0947 \u0928\u093e\u0939\u0940\u0924","{ok} match \xb7 {a} on theirs, not ours \xb7 {b} on ours, not theirs")
+B.bKS=new A.d("{ok} \u091c\u0941\u0933\u0932\u094d\u092f\u093e \xb7 {a} \u0915\u0902\u092a\u0928\u0940\u0915\u0921\u0947 \u0906\u0939\u0947\u0924, \u0916\u093e\u0924\u094d\u092f\u093e\u0924 \u0928\u093e\u0939\u0940\u0924 \xb7 {b} \u0916\u093e\u0924\u094d\u092f\u093e\u0924 \u0906\u0939\u0947\u0924, \u0915\u0902\u092a\u0928\u0940\u0915\u0921\u0947 \u0928\u093e\u0939\u0940\u0924","{ok} match \xb7 {a} on theirs, not ours \xb7 {b} on ours, not theirs")
 B.bNs=new A.d("\u0915\u0902\u092a\u0928\u0940\u091a\u094d\u092f\u093e \u0938\u094d\u091f\u0947\u091f\u092e\u0947\u0902\u091f\u092e\u0927\u094d\u092f\u0947 \u0906\u0939\u0947 \u2013 \u0906\u092a\u0932\u094d\u092f\u093e \u0916\u093e\u0924\u094d\u092f\u093e\u0924 \u0928\u093e\u0939\u0940","On the company statement \u2013 not in our khata")
 B.bMU=new A.d("\u0906\u092a\u0932\u094d\u092f\u093e \u0916\u093e\u0924\u094d\u092f\u093e\u0924 \u0906\u0939\u0947 \u2013 \u0915\u0902\u092a\u0928\u0940\u091a\u094d\u092f\u093e \u0938\u094d\u091f\u0947\u091f\u092e\u0947\u0902\u091f\u092e\u0927\u094d\u092f\u0947 \u0928\u093e\u0939\u0940","In our khata \u2013 not on the company statement")
 B.bJj=new A.d("\u092c\u093f\u0932","Invoice")
@@ -187440,7 +187438,7 @@ B.bDm=new A.d("\u092f\u093e \u0926\u093f\u0935\u0936\u0940 \u0909\u0927\u093e\u0
 B.bDg=new A.d("+ \u0935\u093f\u092d\u093e\u0917\u0942\u0928 (\u0925\u094b\u0921\u0947 \u0930\u094b\u0916, \u0925\u094b\u0921\u0947 \u092b\u094b\u0928\u092a\u0947)","+ Split (part cash, part PhonePe)")
 B.bGd=new A.d("\u0935\u093f\u092d\u093e\u0917\u0942\u0928 \u092d\u0930\u0932\u0947","Split payment")
 B.bJ_=new A.d("{mode} \u0928\u0947 \u0915\u093f\u0924\u0940?","How much by {mode}?")
-B.bLb=new A.d("\u092c\u093e\u0915\u0940 \u0930\u0915\u094d\u0915\u092e {mode} \u0928\u0947 \u0927\u0930\u0932\u0940 \u091c\u093e\u0908\u0932","The rest is counted as {mode}")
+B.bLa=new A.d("\u092c\u093e\u0915\u0940 \u0930\u0915\u094d\u0915\u092e {mode} \u0928\u0947 \u0927\u0930\u0932\u0940 \u091c\u093e\u0908\u0932","The rest is counted as {mode}")
 B.bJg=new A.d("\u0935\u093f\u092d\u093e\u0917\u0932\u0947\u0932\u0940 \u0930\u0915\u094d\u0915\u092e \u090f\u0915\u0942\u0923\u092a\u0947\u0915\u094d\u0937\u093e \u0915\u092e\u0940 \u0939\u0935\u0940","The split part must be less than the total")
 B.bJR=new A.d("+ \u0928\u0935\u0940\u0928 \u092f\u0941\u0928\u093f\u091f","+ New unit")
 B.bDX=new A.d("\u0909\u0926\u093e. \u091f\u094d\u0930\u093f\u092a, \u0917\u093e\u0921\u0940, \u092b\u0942\u091f","e.g. trip, truck, foot")
@@ -187452,7 +187450,7 @@ B.bOt=new A.d("\u092f\u0941\u0928\u093f\u091f \u092c\u0926\u0932\u093e","Change 
 B.bKH=new A.d("\u0932\u092a\u0935\u093e","Hide")
 B.bCq=new A.d("{n} \u0935\u0938\u094d\u0924\u0942 \u0932\u092a\u0935\u093e\u092f\u091a\u094d\u092f\u093e? (\u0939\u093f\u0936\u094b\u092c \u0924\u0938\u093e\u091a \u0930\u093e\u0939\u0940\u0932)","Hide {n} items? (accounts stay as they are)")
 B.bP6=new A.d("\u0935\u0938\u094d\u0924\u0942 \u0936\u094b\u0927\u093e","Search items")
-B.bLa=new A.d("\u0935\u0938\u094d\u0924\u0942 \u0936\u094b\u0927\u093e \xb7 \u0905\u0928\u0947\u0915 \u0928\u093f\u0935\u0921\u093e\u092f\u0932\u093e \u0926\u093e\u092c\u0942\u0928 \u0920\u0947\u0935\u093e","Search \xb7 long-press to select many")
+B.bL9=new A.d("\u0935\u0938\u094d\u0924\u0942 \u0936\u094b\u0927\u093e \xb7 \u0905\u0928\u0947\u0915 \u0928\u093f\u0935\u0921\u093e\u092f\u0932\u093e \u0926\u093e\u092c\u0942\u0928 \u0920\u0947\u0935\u093e","Search \xb7 long-press to select many")
 B.bHN=new A.d("\u092d\u093e\u0937\u093e","Language")
 B.bOP=new A.d("\u092e\u0930\u093e\u0920\u0940","Marathi")
 B.bF8=new A.d("English","English")
@@ -187502,7 +187500,7 @@ B.bOS=new A.d("\u092e\u0939\u093f\u0928\u093e","Month")
 B.bM1=new A.d("GST \u0916\u0930\u0947\u0926\u0940","GST purchases")
 B.bK_=new A.d("\u0907\u0928\u092a\u0941\u091f GST","Input GST")
 B.bJ8=new A.d("GST \u0935\u093f\u0915\u094d\u0930\u0940","GST sales")
-B.bKO=new A.d("\u0906\u0909\u091f\u092a\u0941\u091f GST","Output GST")
+B.bKN=new A.d("\u0906\u0909\u091f\u092a\u0941\u091f GST","Output GST")
 B.bNx=new A.d("\u092d\u0930\u093e\u092f\u091a\u093e GST","Net GST payable")
 B.bDE=new A.d("\u092c\u0901\u0915 \u0938\u094d\u091f\u0947\u091f\u092e\u0947\u0902\u091f \u091c\u0941\u0933\u0935\u0923\u0940","Bank statement matching")
 B.bMM=new A.d("PDF / Excel / CSV \u0938\u094d\u091f\u0947\u091f\u092e\u0947\u0902\u091f \u091f\u093e\u0915\u093e, \u092a\u094d\u0930\u0924\u094d\u092f\u0947\u0915 \u0928\u094b\u0902\u0926 \u0917\u094d\u0930\u093e\u0939\u0915/\u092a\u0941\u0930\u0935\u0920\u093e\u0926\u093e\u0930\u093e\u0936\u0940 \u091c\u0941\u0933\u0935\u093e","Upload a PDF / Excel / CSV statement, match each line to a party")
@@ -187536,7 +187534,7 @@ B.bGn=new A.d("\u0917\u093e\u0921\u0940 \u092d\u093e\u0921\u0947","Transport")
 B.bM6=new A.d("\u0906\u092a\u0932\u0940 \u0917\u093e\u0921\u0940","Own vehicle")
 B.bNC=new A.d("\u0928\u0935\u0940\u0928 \u091f\u094d\u0930\u093e\u0928\u094d\u0938\u092a\u094b\u0930\u094d\u091f\u0930","New transporter")
 B.bFw=new A.d("\u091f\u094d\u0930\u093e\u0928\u094d\u0938\u092a\u094b\u0930\u094d\u091f\u0930","Transporters")
-B.bKZ=new A.d("\u091f\u094d\u0930\u093e\u0928\u094d\u0938\u092a\u094b\u0930\u094d\u091f\u0930\u0932\u093e \u0926\u094d\u092f\u093e\u092f\u091a\u0947","Owed to transporter")
+B.bKY=new A.d("\u091f\u094d\u0930\u093e\u0928\u094d\u0938\u092a\u094b\u0930\u094d\u091f\u0930\u0932\u093e \u0926\u094d\u092f\u093e\u092f\u091a\u0947","Owed to transporter")
 B.bOs=new A.d("\u092d\u093e\u0921\u094d\u092f\u093e\u0924\u0940\u0932 \u0928\u092b\u093e","Transport margin")
 B.bCF=new A.d("\u0917\u093e\u0921\u0940 \u092d\u093e\u0921\u0947 \u0909\u0924\u094d\u092a\u0928\u094d\u0928","Transport income")
 B.bDL=new A.d("\u092e\u093e\u0932\u093e\u091a\u0940 \u0930\u0915\u094d\u0915\u092e","Goods")
@@ -187553,7 +187551,7 @@ B.bIA=new A.d("\u0935\u093e\u092f\u0926\u093e \u0932\u093f\u0939\u093e","Note a 
 B.bFf=new A.d("\u0935\u093e\u092f\u0926\u093e \u092a\u0941\u0922\u0947 \u0922\u0915\u0932\u0932\u093e","Promise put off")
 B.bOg=new A.d("\u092a\u0941\u0922\u0947 \u0922\u0915\u0932\u093e","Put off")
 B.bFL=new A.d("\u092a\u0948\u0938\u0947 \u0915\u0927\u0940 \u0926\u0947\u0923\u093e\u0930?","Will pay on")
-B.bL1=new A.d("\u0915\u093f\u0924\u0940 \u0926\u0947\u0923\u093e\u0930? (\u0910\u091a\u094d\u091b\u093f\u0915)","How much? (optional)")
+B.bL0=new A.d("\u0915\u093f\u0924\u0940 \u0926\u0947\u0923\u093e\u0930? (\u0910\u091a\u094d\u091b\u093f\u0915)","How much? (optional)")
 B.bGt=new A.d("\u0926\u0947\u0923\u093e\u0930","promised")
 B.bK5=new A.d("\u0909\u0926\u093e. \u092b\u094b\u0928\u0935\u0930 \u092c\u094b\u0932\u0932\u0947, \u0936\u0947\u0924\u0940\u091a\u0947 \u092a\u0948\u0938\u0947 \u0906\u0932\u094d\u092f\u093e\u0935\u0930","e.g. said on the phone, after harvest money comes")
 B.bNe=new A.d("\u0935\u093e\u092f\u0926\u093e \u0932\u093f\u0939\u093f\u0932\u093e: {date}","Promise noted: {date}")
@@ -187585,8 +187583,8 @@ B.bJE=new A.d("\u0928\u093e\u0935 \u0928\u0938\u0932\u0947\u0932\u094d\u092f\u09
 B.bNP=new A.d("{a} \u0928\u0935\u0940\u0928 \u0916\u093e\u0924\u0940 \u091c\u094b\u0921\u0932\u0940, {u} \u092c\u0926\u0932\u0932\u0940","{a} accounts added, {u} updated")
 B.bLk=new A.d("\u091c\u092e\u093e","Received")
 B.bGx=new A.d("\u0926\u093f\u0932\u0947","Paid")
-B.bL8=new A.d("\u0930\u0915\u094d\u0915\u092e (\u092e\u093e\u0932 \u0928 \u0932\u093f\u0939\u093f\u0924\u093e)","Amount (without items)")
-B.bKN=new A.d("\u0924\u094d\u092f\u093e\u091a \u0935\u0947\u0933\u0940 \u092e\u093f\u0933\u093e\u0932\u0947\u0932\u0947 \u092a\u0948\u0938\u0947","Money received at the time")
+B.bL7=new A.d("\u0930\u0915\u094d\u0915\u092e (\u092e\u093e\u0932 \u0928 \u0932\u093f\u0939\u093f\u0924\u093e)","Amount (without items)")
+B.bKM=new A.d("\u0924\u094d\u092f\u093e\u091a \u0935\u0947\u0933\u0940 \u092e\u093f\u0933\u093e\u0932\u0947\u0932\u0947 \u092a\u0948\u0938\u0947","Money received at the time")
 B.bHJ=new A.d("\u0924\u094d\u092f\u093e\u091a \u0935\u0947\u0933\u0940 \u0926\u093f\u0932\u0947\u0932\u0947 \u092a\u0948\u0938\u0947","Money paid at the time")
 B.bMs=new A.d("\u0915\u0945\u0932\u0947\u0902\u0921\u0930","Calendar")
 B.bMH=new A.d("\u0924\u093e\u0930\u0940\u0916 \u0905\u0936\u0940 \u0932\u093f\u0939\u093e: 14/9/26 \u0915\u093f\u0902\u0935\u093e 140926","Type a date like 14/9/26 or 140926")
@@ -187663,7 +187661,7 @@ B.bHS=new A.d("\u0928\u094b\u0902\u0926 \u092b\u0915\u094d\u0924 \u092e\u093e\u0
 B.bCe=new A.d("\u091c\u0941\u0928\u094d\u092f\u093e \u0928\u094b\u0902\u0926\u0940 \u092b\u0915\u094d\u0924 \u092e\u093e\u0932\u0915 \u092c\u0926\u0932\u0942 \u0936\u0915\u0924\u093e\u0924","Only the owner can change past entries")
 B.bNM=new A.d("\u0939\u0947 \u0938\u092e\u091c\u0932\u0947 \u0928\u093e\u0939\u0940","Could not read")
 B.bKG=new A.d("\u092e\u093e\u0907\u0915 \u0909\u092a\u0932\u092c\u094d\u0927 \u0928\u093e\u0939\u0940","Microphone not available")
-B.bwH=new A.ap(B.bxX,[B.bNJ,B.bMu,B.bED,B.bH4,B.bEO,B.a_s,B.bMq,B.bGa,B.bJN,B.ys,B.a_r,B.a_P,B.rk,B.a_q,B.bIV,B.a_t,B.a_F,B.a_B,B.a_Q,B.bGp,B.bIF,B.a_U,B.bCP,B.bJb,B.bDs,B.bI0,B.bKS,B.bJ1,B.bLY,B.bOD,B.bD6,B.bE3,B.bI9,B.bH6,B.bE5,B.bLy,B.bHf,B.bFa,B.bIm,B.bIS,B.bIw,B.bM5,B.bNE,B.bN9,B.bKc,B.bOq,B.bCv,B.bI6,B.bP8,B.bOK,B.bGo,B.bIX,B.bFm,B.bM2,B.bEM,B.bM7,B.bJi,B.bHK,B.a_S,B.a_H,B.bIq,B.bIZ,B.bNF,B.bPc,B.bLh,B.bLU,B.bJD,B.bNW,B.bEZ,B.a_y,B.bFU,B.bNd,B.a_i,B.bIy,B.bCY,B.bDA,B.a_s,B.bGw,B.bCB,B.bId,B.bNq,B.bEH,B.a_w,B.bKl,B.bFz,B.bJO,B.bG6,B.bOl,B.bEu,B.a_R,B.bGL,B.bF9,B.bOp,B.bJp,B.bEN,B.bHB,B.bE_,B.bHv,B.bMv,B.bMN,B.bIW,B.bDF,B.bPh,B.a_p,B.bEi,B.bH8,B.bDl,B.bJy,B.bFN,B.bOk,B.bMQ,B.yr,B.bMk,B.bCk,B.bMA,B.bNS,B.a_g,B.yq,B.a_v,B.bMO,B.a_n,B.bKY,B.bGM,B.bD3,B.bNo,B.bOL,B.bCD,B.bK3,B.bLB,B.bGK,B.bHY,B.bKa,B.bMD,B.bM0,B.bMm,B.bDr,B.bMF,B.bOi,B.bDQ,B.bFy,B.bCy,B.bEm,B.bHp,B.bCg,B.bFH,B.a_k,B.a_M,B.a_k,B.a_M,B.bHL,B.bMg,B.bO6,B.bD7,B.bEa,B.bNB,B.bER,B.bKX,B.bJ3,B.bMz,B.bJ9,B.bNK,B.bOO,B.bOJ,B.bJM,B.bKx,B.a_o,B.a_o,B.bNl,B.bGG,B.bEy,B.bGS,B.bLw,B.bD1,B.bDI,B.bOm,B.bIB,B.bJY,B.bCu,B.bO9,B.bHP,B.bJQ,B.bOZ,B.bOB,B.bIj,B.bCG,B.bLj,B.bEf,B.bJK,B.bN2,B.bN1,B.bOG,B.bJB,B.bIl,B.bKt,B.a_T,B.a_T,B.bND,B.bM9,B.bEA,B.a_E,B.a_E,B.bIe,B.bKU,B.bPi,B.bHd,B.bDJ,B.bD_,B.bK2,B.bIi,B.bM4,B.bO0,B.bIJ,B.bLv,B.bI5,B.bEj,B.bI1,B.bO7,B.bDN,B.bL4,B.bNv,B.bIT,B.bFr,B.bOH,B.a_K,B.a_K,B.bIa,B.bLF,B.bJP,B.bMp,B.bNr,B.bHq,B.bKe,B.bIG,B.bDO,B.bCm,B.bEC,B.bEg,B.bFq,B.bMP,B.bEh,B.bEl,B.bH1,B.bFT,B.bDn,B.bGs,B.bK8,B.bE0,B.bF_,B.bMh,B.bGi,B.bNa,B.bH_,B.bOC,B.bHl,B.bLS,B.bNi,B.bF2,B.bOE,B.bDu,B.bGl,B.bIx,B.bOa,B.bCt,B.bMx,B.bKL,B.bP0,B.bFe,B.bMy,B.a_z,B.bK7,B.bEs,B.bLe,B.bI_,B.bDq,B.a_n,B.bL3,B.bKr,B.bG9,B.bLQ,B.bCo,B.bGU,B.bDi,B.bDS,B.a_z,B.bNN,B.bGF,B.bFM,B.bJu,B.bHZ,B.bNL,B.bCl,B.a_G,B.bFC,B.bFv,B.a_G,B.bPg,B.bJ5,B.bHh,B.bOd,B.bHQ,B.bDH,B.bLf,B.bHa,B.bHU,B.bDV,B.bJZ,B.bOe,B.bE4,B.bL2,B.bCS,B.bJL,B.bJq,B.bIO,B.bMb,B.bO1,B.bNT,B.a_O,B.bG1,B.bIR,B.bMt,B.bHr,B.bD8,B.bCz,B.bGP,B.bIP,B.bDT,B.bLL,B.a_R,B.a_i,B.bIU,B.bD9,B.bNf,B.bCK,B.bFx,B.bJx,B.bKj,B.bOW,B.bLl,B.bGe,B.bLO,B.bFK,B.bCU,B.a_h,B.bIt,B.bDz,B.bMc,B.bEt,B.bNh,B.bKK,B.bDk,B.bHe,B.bMY,B.bEU,B.bNg,B.bFI,B.bDY,B.bMl,B.bKF,B.bFR,B.bI8,B.bK4,B.bCc,B.bNu,B.bH9,B.bHA,B.bMX,B.bMa,B.bNA,B.bOM,B.bFG,B.bIE,B.bMj,B.bNZ,B.bHb,B.bHw,B.bHI,B.bLo,B.bP9,B.yr,B.bOA,B.bIb,B.bNQ,B.bDv,B.bLr,B.bDB,B.bOc,B.bGD,B.bEY,B.bJe,B.bCw,B.bM3,B.bGv,B.a_j,B.yt,B.bP_,B.bI4,B.bNH,B.bL6,B.bNm,B.bMo,B.bJs,B.bMS,B.bJH,B.bNy,B.bOx,B.bFP,B.bD4,B.bO5,B.bLq,B.bHF,B.bLu,B.bGJ,B.bLg,B.bIp,B.bG0,B.bOn,B.bCn,B.bKv,B.a_w,B.bFj,B.bCx,B.bCV,B.bFp,B.bLm,B.bES,B.bFJ,B.bHM,B.bLK,B.bLx,B.bCL,B.bD2,B.bM8,B.bKW,B.bFt,B.bH3,B.ys,B.a_r,B.rk,B.a_q,B.a_F,B.a_B,B.bEK,B.a_t,B.a_Q,B.a_p,B.a_S,B.a_H,B.a_I,B.a_J,B.bJ7,B.yt,B.yr,B.bE6,B.rk,B.bIC,B.bGV,B.a_P,B.bIs,B.bFu,B.bKm,B.bCf,B.bHj,B.bJ0,B.bPd,B.bJm,B.bNp,B.bDt,B.bDW,B.bGB,B.bMR,B.bGA,B.bHg,B.bGu,B.bKE,B.bD5,B.a_A,B.bEr,B.bMG,B.bL9,B.bDe,B.bKq,B.bMe,B.bEX,B.bHs,B.bKf,B.bL_,B.bE2,B.bOf,B.bNt,B.bMi,B.bK6,B.bIH,B.bIY,B.bPb,B.bLc,B.a_C,B.bIg,B.bDC,B.a_u,B.bHn,B.bNz,B.bGC,B.a_m,B.bNw,B.bIz,B.bKz,B.bGm,B.bIc,B.bGq,B.bDU,B.bIk,B.a_A,B.bOX,B.bKM,B.bF0,B.bKB,B.bPe,B.bCM,B.a_V,B.bEc,B.bOU,B.bLN,B.bJf,B.bGX,B.bJX,B.bOR,B.bDp,B.bFc,B.bH7,B.bJc,B.bNj,B.bEn,B.bLn,B.bJA,B.bDa,B.bEQ,B.bGj,B.bIo,B.bN4,B.bG_,B.bGb,B.bPa,B.bMw,B.bKV,B.bEW,B.bKT,B.bNs,B.bMU,B.bJj,B.bFk,B.bGg,B.bO2,B.bMV,B.bHm,B.bLC,B.bCR,B.bID,B.bIh,B.bDZ,B.bDP,B.bGE,B.bNY,B.bFi,B.bN6,B.bDb,B.bHu,B.bJI,B.bP2,B.bMJ,B.bFl,B.bIK,B.bNR,B.bH2,B.bCp,B.bNX,B.bG7,B.bGf,B.bE8,B.bEd,B.bDo,B.bG2,B.bEk,B.yq,B.bO_,B.bLW,B.a_v,B.bOY,B.bDM,B.a_O,B.bKw,B.bJw,B.bFo,B.bII,B.bIM,B.a_V,B.bEL,B.bKu,B.bNU,B.bHV,B.bLX,B.bHH,B.bEb,B.bOh,B.bIn,B.bOw,B.bFb,B.bMZ,B.bMI,B.a_l,B.bJS,B.bDc,B.bLA,B.bLH,B.bFZ,B.a_f,B.bDd,B.bHX,B.bN7,B.bMf,B.bKI,B.bHy,B.bEI,B.bOy,B.bH5,B.bKn,B.bP7,B.bKA,B.bFE,B.bDm,B.a_J,B.a_j,B.yt,B.bDg,B.bGd,B.bJ_,B.bLb,B.bJg,B.bJR,B.bDX,B.bGI,B.bE9,B.bJF,B.bFd,B.bOt,B.bKH,B.bCq,B.bP6,B.bLa,B.bHN,B.bOP,B.bF8,B.bK1,B.bJn,B.bCN,B.a_C,B.bCJ,B.bP5,B.bNk,B.bJo,B.bMK,B.bKJ,B.a_m,B.bEp,B.bCd,B.bP4,B.bHo,B.bMW,B.bHi,B.bDK,B.bMn,B.bOV,B.bHk,B.bFA,B.bN8,B.bOT,B.bON,B.bDf,B.bGQ,B.bEo,B.bGk,B.bEv,B.bHx,B.a_L,B.a_L,B.bG8,B.bHc,B.bE7,B.bIQ,B.bI7,B.bGH,B.bCA,B.bPf,B.bNn,B.bOo,B.bNV,B.bLi,B.bOS,B.bM1,B.bK_,B.bJ8,B.bKO,B.bNx,B.bDE,B.bMM,B.bEE,B.bFs,B.bOQ,B.bEx,B.bNG,B.bDw,B.bLs,B.bHD,B.bKg,B.bLG,B.bCX,B.bLZ,B.bFF,B.bEB,B.bFO,B.bJC,B.bHR,B.bJk,B.bCE,B.a_l,B.bGY,B.bCT,B.bKp,B.bLR,B.bMB,B.bE1,B.bF6,B.bGn,B.a_f,B.bM6,B.bNC,B.a_I,B.bFw,B.bKZ,B.bOs,B.bCF,B.bDL,B.bP3,B.bFD,B.bOr,B.bGc,B.bCZ,B.bF3,B.a_g,B.a_x,B.bLP,B.bLI,B.bIA,B.bFf,B.bOg,B.bFL,B.bL1,B.bGt,B.a_y,B.bK5,B.bNe,B.bFW,B.bJW,B.bEV,B.bK0,B.yq,B.bGy,B.bCr,B.a_U,B.bIN,B.bNO,B.bIu,B.a_x,B.bHG,B.bHT,B.bPj,B.bGO,B.bLz,B.bFS,B.bJ2,B.bG4,B.bGr,B.bET,B.bNc,B.bGz,B.bLp,B.bKb,B.bJ6,B.bJE,B.bNP,B.ys,B.rk,B.bLk,B.bGx,B.bL8,B.bKN,B.bHJ,B.bMs,B.bMH,B.bJz,B.bHO,B.bJt,B.a_h,B.bCC,B.bKD,B.bD0,B.bIf,B.bFX,B.bHW,B.a_D,B.bOu,B.bME,B.bG3,B.a_D,B.bHE,B.bKo,B.bLt,B.bIr,B.bFh,B.bEG,B.bDG,B.bM_,B.bKh,B.bLT,B.bDx,B.bOI,B.bGZ,B.bDj,B.bDh,B.bCW,B.bCh,B.bEJ,B.bOz,B.bJl,B.bCI,B.bCO,B.bGT,B.bK9,B.bN0,B.bEF,B.bMr,B.bGN,B.bJG,B.bO8,B.bF7,B.bEw,B.bIL,B.bIv,B.bDR,B.bHz,B.bGh,B.a_u,B.bFY,B.bLD,B.bFg,B.bGW,B.bFQ,B.bLJ,B.bGR,B.bHt,B.bEz,B.bJh,B.bMC,B.bJT,B.bDy,B.bEe,B.bG5,B.bLM,B.bKk,B.bFV,B.bP1,B.bHS,B.bCe,B.bNM,B.bKG],A.am("ap<h,+(h,h)>"))
+B.bwH=new A.ap(B.bxX,[B.bNJ,B.bMu,B.bED,B.bH4,B.bEO,B.a_s,B.bMq,B.bGa,B.bJN,B.ys,B.a_r,B.a_P,B.rk,B.a_q,B.bIV,B.a_t,B.a_F,B.a_B,B.a_Q,B.bGp,B.bIF,B.a_U,B.bCP,B.bJb,B.bDs,B.bI0,B.bKR,B.bJ1,B.bLY,B.bOD,B.bD6,B.bE3,B.bI9,B.bH6,B.bE5,B.bLy,B.bHf,B.bFa,B.bIm,B.bIS,B.bIw,B.bM5,B.bNE,B.bN9,B.bKc,B.bOq,B.bCv,B.bI6,B.bP8,B.bOK,B.bGo,B.bIX,B.bFm,B.bM2,B.bEM,B.bM7,B.bJi,B.bHK,B.a_S,B.a_H,B.bIq,B.bIZ,B.bNF,B.bPc,B.bLh,B.bLU,B.bJD,B.bNW,B.bEZ,B.a_y,B.bFU,B.bNd,B.a_i,B.bIy,B.bCY,B.bDA,B.a_s,B.bGw,B.bCB,B.bId,B.bNq,B.bEH,B.a_w,B.bKl,B.bFz,B.bJO,B.bG6,B.bOl,B.bEu,B.a_R,B.bGL,B.bF9,B.bOp,B.bJp,B.bEN,B.bHB,B.bE_,B.bHv,B.bMv,B.bMN,B.bIW,B.bDF,B.bPh,B.a_p,B.bEi,B.bH8,B.bDl,B.bJy,B.bFN,B.bOk,B.bMQ,B.yr,B.bMk,B.bCk,B.bMA,B.bNS,B.a_g,B.yq,B.a_v,B.bMO,B.a_n,B.bKX,B.bGM,B.bD3,B.bNo,B.bOL,B.bCD,B.bK3,B.bLB,B.bGK,B.bHY,B.bKa,B.bMD,B.bM0,B.bMm,B.bDr,B.bMF,B.bOi,B.bDQ,B.bFy,B.bCy,B.bEm,B.bHp,B.bCg,B.bFH,B.a_k,B.a_M,B.a_k,B.a_M,B.bHL,B.bMg,B.bO6,B.bD7,B.bEa,B.bNB,B.bER,B.bKW,B.bJ3,B.bMz,B.bJ9,B.bNK,B.bOO,B.bOJ,B.bJM,B.bKx,B.a_o,B.a_o,B.bNl,B.bGG,B.bEy,B.bGS,B.bLw,B.bD1,B.bDI,B.bOm,B.bIB,B.bJY,B.bCu,B.bO9,B.bHP,B.bJQ,B.bOZ,B.bOB,B.bIj,B.bCG,B.bLj,B.bEf,B.bJK,B.bN2,B.bN1,B.bOG,B.bJB,B.bIl,B.bKt,B.a_T,B.a_T,B.bND,B.bM9,B.bEA,B.a_E,B.a_E,B.bIe,B.bKT,B.bPi,B.bHd,B.bDJ,B.bD_,B.bK2,B.bIi,B.bM4,B.bO0,B.bIJ,B.bLv,B.bI5,B.bEj,B.bI1,B.bO7,B.bDN,B.bL3,B.bNv,B.bIT,B.bFr,B.bOH,B.a_K,B.a_K,B.bIa,B.bLF,B.bJP,B.bMp,B.bNr,B.bHq,B.bKe,B.bIG,B.bDO,B.bCm,B.bEC,B.bEg,B.bFq,B.bMP,B.bEh,B.bEl,B.bH1,B.bFT,B.bDn,B.bGs,B.bK8,B.bE0,B.bF_,B.bMh,B.bGi,B.bNa,B.bH_,B.bOC,B.bHl,B.bLS,B.bNi,B.bF2,B.bOE,B.bDu,B.bGl,B.bIx,B.bOa,B.bCt,B.bMx,B.bKL,B.bP0,B.bFe,B.bMy,B.a_z,B.bK7,B.bEs,B.bLe,B.bI_,B.bDq,B.a_n,B.bL2,B.bKr,B.bG9,B.bLQ,B.bCo,B.bGU,B.bDi,B.bDS,B.a_z,B.bNN,B.bGF,B.bFM,B.bJu,B.bHZ,B.bNL,B.bCl,B.a_G,B.bFC,B.bFv,B.a_G,B.bPg,B.bJ5,B.bHh,B.bOd,B.bHQ,B.bDH,B.bLf,B.bHa,B.bHU,B.bDV,B.bJZ,B.bOe,B.bE4,B.bL1,B.bCS,B.bJL,B.bJq,B.bIO,B.bMb,B.bO1,B.bNT,B.a_O,B.bG1,B.bIR,B.bMt,B.bHr,B.bD8,B.bCz,B.bGP,B.bIP,B.bDT,B.bLL,B.a_R,B.a_i,B.bIU,B.bD9,B.bNf,B.bCK,B.bFx,B.bJx,B.bKj,B.bOW,B.bLl,B.bGe,B.bLO,B.bFK,B.bCU,B.a_h,B.bIt,B.bDz,B.bMc,B.bEt,B.bNh,B.bKK,B.bDk,B.bHe,B.bMY,B.bEU,B.bNg,B.bFI,B.bDY,B.bMl,B.bKF,B.bFR,B.bI8,B.bK4,B.bCc,B.bNu,B.bH9,B.bHA,B.bMX,B.bMa,B.bNA,B.bOM,B.bFG,B.bIE,B.bMj,B.bNZ,B.bHb,B.bHw,B.bHI,B.bLo,B.bP9,B.yr,B.bOA,B.bIb,B.bNQ,B.bDv,B.bLr,B.bDB,B.bOc,B.bGD,B.bEY,B.bJe,B.bCw,B.bM3,B.bGv,B.a_j,B.yt,B.bP_,B.bI4,B.bNH,B.bL5,B.bNm,B.bMo,B.bJs,B.bMS,B.bJH,B.bNy,B.bOx,B.bFP,B.bD4,B.bO5,B.bLq,B.bHF,B.bLu,B.bGJ,B.bLg,B.bIp,B.bG0,B.bOn,B.bCn,B.bKv,B.a_w,B.bFj,B.bCx,B.bCV,B.bFp,B.bLm,B.bES,B.bFJ,B.bHM,B.bLK,B.bLx,B.bCL,B.bD2,B.bM8,B.bKV,B.bFt,B.bH3,B.ys,B.a_r,B.rk,B.a_q,B.a_F,B.a_B,B.bEK,B.a_t,B.a_Q,B.a_p,B.a_S,B.a_H,B.a_I,B.a_J,B.bJ7,B.yt,B.yr,B.bE6,B.rk,B.bIC,B.bGV,B.a_P,B.bIs,B.bFu,B.bKm,B.bCf,B.bHj,B.bJ0,B.bPd,B.bJm,B.bNp,B.bDt,B.bDW,B.bGB,B.bMR,B.bGA,B.bHg,B.bGu,B.bKE,B.bD5,B.a_A,B.bEr,B.bMG,B.bL8,B.bDe,B.bKq,B.bMe,B.bEX,B.bHs,B.bKf,B.bKZ,B.bE2,B.bOf,B.bNt,B.bMi,B.bK6,B.bIH,B.bIY,B.bPb,B.bLb,B.a_C,B.bIg,B.bDC,B.a_u,B.bHn,B.bNz,B.bGC,B.a_m,B.bNw,B.bIz,B.bKz,B.bGm,B.bIc,B.bGq,B.bDU,B.bIk,B.a_A,B.bOX,B.bLd,B.bF0,B.bKB,B.bPe,B.bCM,B.a_V,B.bEc,B.bOU,B.bLN,B.bJf,B.bGX,B.bJX,B.bOR,B.bDp,B.bFc,B.bH7,B.bJc,B.bNj,B.bEn,B.bLn,B.bJA,B.bDa,B.bEQ,B.bGj,B.bIo,B.bN4,B.bG_,B.bGb,B.bPa,B.bMw,B.bKU,B.bEW,B.bKS,B.bNs,B.bMU,B.bJj,B.bFk,B.bGg,B.bO2,B.bMV,B.bHm,B.bLC,B.bCR,B.bID,B.bIh,B.bDZ,B.bDP,B.bGE,B.bNY,B.bFi,B.bN6,B.bDb,B.bHu,B.bJI,B.bP2,B.bMJ,B.bFl,B.bIK,B.bNR,B.bH2,B.bCp,B.bNX,B.bG7,B.bGf,B.bE8,B.bEd,B.bDo,B.bG2,B.bEk,B.yq,B.bO_,B.bLW,B.a_v,B.bOY,B.bDM,B.a_O,B.bKw,B.bJw,B.bFo,B.bII,B.bIM,B.a_V,B.bEL,B.bKu,B.bNU,B.bHV,B.bLX,B.bHH,B.bEb,B.bOh,B.bIn,B.bOw,B.bFb,B.bMZ,B.bMI,B.a_l,B.bJS,B.bDc,B.bLA,B.bLH,B.bFZ,B.a_f,B.bDd,B.bHX,B.bN7,B.bMf,B.bKI,B.bHy,B.bEI,B.bOy,B.bH5,B.bKn,B.bP7,B.bKA,B.bFE,B.bDm,B.a_J,B.a_j,B.yt,B.bDg,B.bGd,B.bJ_,B.bLa,B.bJg,B.bJR,B.bDX,B.bGI,B.bE9,B.bJF,B.bFd,B.bOt,B.bKH,B.bCq,B.bP6,B.bL9,B.bHN,B.bOP,B.bF8,B.bK1,B.bJn,B.bCN,B.a_C,B.bCJ,B.bP5,B.bNk,B.bJo,B.bMK,B.bKJ,B.a_m,B.bEp,B.bCd,B.bP4,B.bHo,B.bMW,B.bHi,B.bDK,B.bMn,B.bOV,B.bHk,B.bFA,B.bN8,B.bOT,B.bON,B.bDf,B.bGQ,B.bEo,B.bGk,B.bEv,B.bHx,B.a_L,B.a_L,B.bG8,B.bHc,B.bE7,B.bIQ,B.bI7,B.bGH,B.bCA,B.bPf,B.bNn,B.bOo,B.bNV,B.bLi,B.bOS,B.bM1,B.bK_,B.bJ8,B.bKN,B.bNx,B.bDE,B.bMM,B.bEE,B.bFs,B.bOQ,B.bEx,B.bNG,B.bDw,B.bLs,B.bHD,B.bKg,B.bLG,B.bCX,B.bLZ,B.bFF,B.bEB,B.bFO,B.bJC,B.bHR,B.bJk,B.bCE,B.a_l,B.bGY,B.bCT,B.bKp,B.bLR,B.bMB,B.bE1,B.bF6,B.bGn,B.a_f,B.bM6,B.bNC,B.a_I,B.bFw,B.bKY,B.bOs,B.bCF,B.bDL,B.bP3,B.bFD,B.bOr,B.bGc,B.bCZ,B.bF3,B.a_g,B.a_x,B.bLP,B.bLI,B.bIA,B.bFf,B.bOg,B.bFL,B.bL0,B.bGt,B.a_y,B.bK5,B.bNe,B.bFW,B.bJW,B.bEV,B.bK0,B.yq,B.bGy,B.bCr,B.a_U,B.bIN,B.bNO,B.bIu,B.a_x,B.bHG,B.bHT,B.bPj,B.bGO,B.bLz,B.bFS,B.bJ2,B.bG4,B.bGr,B.bET,B.bNc,B.bGz,B.bLp,B.bKb,B.bJ6,B.bJE,B.bNP,B.ys,B.rk,B.bLk,B.bGx,B.bL7,B.bKM,B.bHJ,B.bMs,B.bMH,B.bJz,B.bHO,B.bJt,B.a_h,B.bCC,B.bKD,B.bD0,B.bIf,B.bFX,B.bHW,B.a_D,B.bOu,B.bME,B.bG3,B.a_D,B.bHE,B.bKo,B.bLt,B.bIr,B.bFh,B.bEG,B.bDG,B.bM_,B.bKh,B.bLT,B.bDx,B.bOI,B.bGZ,B.bDj,B.bDh,B.bCW,B.bCh,B.bEJ,B.bOz,B.bJl,B.bCI,B.bCO,B.bGT,B.bK9,B.bN0,B.bEF,B.bMr,B.bGN,B.bJG,B.bO8,B.bF7,B.bEw,B.bIL,B.bIv,B.bDR,B.bHz,B.bGh,B.a_u,B.bFY,B.bLD,B.bFg,B.bGW,B.bFQ,B.bLJ,B.bGR,B.bHt,B.bEz,B.bJh,B.bMC,B.bJT,B.bDy,B.bEe,B.bG5,B.bLM,B.bKk,B.bFV,B.bP1,B.bHS,B.bCe,B.bNM,B.bKG],A.am("ap<h,+(h,h)>"))
 B.l=new A.f_(0,"lu")
 B.e=new A.f_(1,"ll")
 B.bM=new A.f_(2,"lt")
@@ -188380,16 +188378,16 @@ B.ry=new A.f9(4,"scrollLeft")
 B.rz=new A.f9(8,"scrollRight")
 B.bKi=new A.d(B.ry,B.rz)
 B.bKC=new A.d(B.rz,B.ry)
-B.bKP=new A.d(!1,!1)
-B.bKQ=new A.d(!1,null)
-B.bKR=new A.d(!1,!0)
-B.bL0=new A.d(B.jq,B.Eg)
-B.bL5=new A.d(B.bb,B.E_)
+B.bKO=new A.d(!1,!1)
+B.bKP=new A.d(!1,null)
+B.bKQ=new A.d(!1,!0)
+B.bL_=new A.d(B.jq,B.Eg)
+B.bL4=new A.d(B.bb,B.E_)
 B.rv=new A.f9(16,"scrollUp")
 B.rw=new A.f9(32,"scrollDown")
-B.bL7=new A.d(B.rv,B.rw)
+B.bL6=new A.d(B.rv,B.rw)
 B.ai2=new A.aF(57423,"MaterialIcons",!1)
-B.bLd=new A.d(B.bm,B.ai2)
+B.bLc=new A.d(B.bm,B.ai2)
 B.bLE=new A.d("item","items")
 B.bMd=new A.d("ledger","audit_accounts")
 B.a_N=new A.d(null,null)
