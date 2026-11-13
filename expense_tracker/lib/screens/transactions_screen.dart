@@ -6,6 +6,7 @@ import '../models.dart';
 import '../ui/category_style.dart';
 import '../ui/format.dart';
 import 'budgets_screen.dart';
+import 'import_statement_screen.dart';
 import 'month_bar.dart';
 import 'txn_editor.dart';
 
@@ -69,6 +70,12 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
         title: MonthBar(month: _month, onChanged: (m) => setState(() => _month = m)),
         centerTitle: true,
         actions: [
+          if (widget.accountId != null && account != null && account.kind == AccountKind.bank)
+            IconButton(
+              tooltip: 'Import bank statement',
+              icon: const Icon(Icons.upload_file),
+              onPressed: () => openImportStatement(context, data, account: account),
+            ),
           if (widget.accountId == null)
             PopupMenuButton<String?>(
               tooltip: 'Show one account',

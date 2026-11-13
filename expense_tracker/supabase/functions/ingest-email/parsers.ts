@@ -190,7 +190,7 @@ function tidyCase(s: string): string {
   return s.toLowerCase().replace(/(^|[\s.&(\-\/])([a-z])/g, (_, p, c) => p + c.toUpperCase());
 }
 
-function cleanMerchant(raw: string | undefined | null): string | null {
+export function cleanMerchant(raw: string | undefined | null): string | null {
   if (!raw) return null;
   let s = raw
     .replace(/^[x*]+/i, "")

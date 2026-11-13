@@ -6,6 +6,7 @@ import '../logic/summary.dart';
 import '../models.dart';
 import '../ui/category_style.dart';
 import '../ui/format.dart';
+import 'import_statement_screen.dart';
 import 'lender_loans.dart';
 import 'transactions_screen.dart';
 
@@ -85,6 +86,11 @@ class AccountsScreen extends StatelessWidget {
       appBar: AppBar(
         title: const Text('Accounts'),
         actions: [
+          IconButton(
+            tooltip: 'Import bank statement',
+            icon: const Icon(Icons.upload_file),
+            onPressed: () => openImportStatement(context, data),
+          ),
           IconButton(tooltip: 'Add account', icon: const Icon(Icons.add), onPressed: () => editAccount(context, data)),
         ],
       ),

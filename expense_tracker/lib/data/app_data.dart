@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert' show base64Encode;
+import 'dart:typed_data' show Uint8List;
 
 import 'package:flutter/foundation.dart' show ChangeNotifier, visibleForTesting;
 import 'package:flutter/services.dart' show rootBundle;
@@ -304,6 +306,26 @@ class AppData extends ChangeNotifier {
       'txn_at': DateTime.now().toUtc().toIso8601String(), 'category_id': cat, 'account_id': accountId ?? cashAccount?.id,
       'source': 'manual', 'note': 'Settle up',
     });
+  }
+
+  // ------------------------------------------------------- bank statements
+
+  /// Reads a bank statement on the server. With [dryRun] nothing is saved: it says what would be imported.
+  Future<Map<String, dynamic>> importStatement(Uint8List bytes, String fileName,
+      {String? accountId, required bool dryRun, bool setOpening = false}) async {
+    final res = await _db.functions.invoke('import-statement', body: {
+      'file': base64Encode(bytes),
+      'fileName': fileName,
+      'accountId': accountId,
+      'dryRun': dryRun,
+      'setOpening': setOpening,
+    });
+    final data = res.data;
+    if (data is Map<String, dynamic>) {
+      if (data['error'] != null) throw Exception(data['error']);
+      return data;
+    }
+    throw Exception('Unexpected answer from the server');
   }
 
   // ---------------------------------------------------------------- budgets
