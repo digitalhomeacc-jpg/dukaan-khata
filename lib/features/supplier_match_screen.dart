@@ -399,10 +399,11 @@ class _SupplierMatchScreenState extends State<SupplierMatchScreen> {
                                     // the invoice as a purchase: our item, MT → bags, the exact total
                                     final item = StatementImport.guessItem(StatementImport.productOf(l.text), await app.stock.list());
                                     if (!context.mounted) return;
+                                    // dated the day the goods come in (today), not the invoice date:
+                                    // stock must show up only when the truck arrives
                                     await VoucherScreen.open(context, VoucherType.purchase,
                                         partyId: widget.supplier.id,
-                                        date: l.date,
-                                        narration: l.text,
+                                        narration: '${app.t('sm_invoice_of')} ${shortDate(l.date)} · ${l.text}',
                                         lines: [if (item != null && l.qty > 0) ItemLine.fromTotal(item.id, l.qty * factor, l.debit)]);
                                 }
                                 await _rematch();

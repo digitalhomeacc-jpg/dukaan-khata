@@ -632,6 +632,7 @@ const Map<String, (String, String)> _s = {
   'rv_net': ('निव्वळ', 'Net'),
   'rv_accounts_help': ('या दिवसांत ज्या खात्यांत बदल झाला', 'Accounts that moved in these days'),
   'rv_checked': ('{a} / {n} तपासले', '{a} / {n} checked'),
+  'sm_invoice_of': ('बिल दिनांक', 'Invoice dated'),
   'repeat_last': ('मागचे बिल पुन्हा', 'Repeat last bill'),
   'days_unpaid': ('{n} दिवस', '{n} days'),
   'settle_full_in': ('पूर्ण बाकी जमा  ₹{amt}', 'Receive full balance  ₹{amt}'),
