@@ -29,10 +29,33 @@ class AccountsScreen extends StatelessWidget {
       final bal = balances[a.id] ?? 0;
       final flow = accountFlow(data.transactions, a.id, month);
       final isCard = a.kind == AccountKind.card;
+      final check = checkBalance(data.transactions, a, data.balanceReadings);
       return ListTile(
         leading: CircleAvatar(child: Icon(accountIcon(a))),
         title: Text(a.name),
-        subtitle: Text('This month: in ${money(flow.moneyIn)} · out ${money(flow.moneyOut)}'),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('This month: in ${money(flow.moneyIn)} · out ${money(flow.moneyOut)}'),
+            if (check != null)
+              Row(
+                children: [
+                  Icon(check.matches ? Icons.verified_outlined : Icons.warning_amber_rounded,
+                      size: 14, color: check.matches ? Colors.green.shade700 : scheme.error),
+                  const SizedBox(width: 4),
+                  Flexible(
+                    child: Text(
+                      check.matches
+                          ? 'Matches bank (${money(check.bank)})'
+                          : 'Bank says ${money(check.bank)} · ${money(check.difference.abs())} off',
+                      style: TextStyle(color: check.matches ? null : scheme.error),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+          ],
+        ),
         trailing: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.end,

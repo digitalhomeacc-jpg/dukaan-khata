@@ -5,6 +5,7 @@ import '../data/app_data.dart';
 import '../models.dart';
 import '../ui/category_style.dart';
 import '../ui/format.dart';
+import 'split_section.dart';
 
 Future<void> openTxnEditor(BuildContext context, AppData data, {Txn? existing, Txn? prefill}) {
   return Navigator.of(context).push(MaterialPageRoute<void>(
@@ -240,6 +241,18 @@ class _TxnEditorState extends State<TxnEditor> {
               textCapitalization: TextCapitalization.sentences,
               decoration: const InputDecoration(labelText: 'Note (optional)'),
             ),
+            if (existing != null && !existing.isLoanTransfer && !_isLoan) ...[
+              const SizedBox(height: 16),
+              ListenableBuilder(
+                listenable: widget.data,
+                builder: (context, _) {
+                  final live = widget.data.txn(existing.id) ?? existing;
+                  return live.isDebit
+                      ? SplitSection(data: widget.data, payment: live)
+                      : PaidBackSection(data: widget.data, credit: live);
+                },
+              ),
+            ],
             const SizedBox(height: 8),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,

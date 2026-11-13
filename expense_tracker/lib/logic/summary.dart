@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import '../models.dart';
 
 DateTime monthStart(DateTime d) => DateTime(d.year, d.month);
@@ -25,19 +27,48 @@ class MonthSummary {
 bool counts(Txn t, Set<String> loanCategoryIds) =>
     !t.excluded && !t.isLoanTransfer && !loanCategoryIds.contains(t.categoryId);
 
+/// How much of each payment friends cover, and which money received was a friend paying their part.
+class ShareTotals {
+  const ShareTotals({this.othersPart = const {}, this.paidBack = const {}});
+
+  /// Payment id → friends' parts of it.
+  final Map<String, double> othersPart;
+
+  /// Received-money id → the part of it that was friends paying you back.
+  final Map<String, double> paidBack;
+
+  static const none = ShareTotals();
+
+  /// The part of a transaction that is really yours: your share of a group payment,
+  /// and nothing for money friends sent to cover their share.
+  double own(Txn t) => math.max(0, t.amount - ((t.isDebit ? othersPart : paidBack)[t.id] ?? 0));
+}
+
+ShareTotals shareTotals(Iterable<TxnShare> shares) {
+  final others = <String, double>{}, back = <String, double>{};
+  for (final s in shares) {
+    others[s.txnId] = (others[s.txnId] ?? 0) + s.amount;
+    if (s.paidTxnId != null) back[s.paidTxnId!] = (back[s.paidTxnId!] ?? 0) + s.amount;
+  }
+  return ShareTotals(othersPart: others, paidBack: back);
+}
+
 /// Totals for one month, without transfers and loans so money is not counted twice.
-MonthSummary summarize(Iterable<Txn> txns, DateTime month, {Set<String> loanCategoryIds = const {}}) {
+MonthSummary summarize(Iterable<Txn> txns, DateTime month,
+    {Set<String> loanCategoryIds = const {}, ShareTotals shares = ShareTotals.none}) {
   var spent = 0.0, received = 0.0;
   final cat = <String?, double>{};
   final merch = <String, double>{};
   for (final t in txns) {
     if (!counts(t, loanCategoryIds) || !inMonth(t.txnAt, month)) continue;
+    final amount = shares.own(t);
+    if (amount <= 0) continue;
     if (t.isDebit) {
-      spent += t.amount;
-      cat[t.categoryId] = (cat[t.categoryId] ?? 0) + t.amount;
-      merch[t.title] = (merch[t.title] ?? 0) + t.amount;
+      spent += amount;
+      cat[t.categoryId] = (cat[t.categoryId] ?? 0) + amount;
+      merch[t.title] = (merch[t.title] ?? 0) + amount;
     } else {
-      received += t.amount;
+      received += amount;
     }
   }
   int desc<K>(MapEntry<K, double> a, MapEntry<K, double> b) => b.value.compareTo(a.value);
@@ -51,13 +82,13 @@ MonthSummary summarize(Iterable<Txn> txns, DateTime month, {Set<String> loanCate
 
 /// Spending for the [count] months ending with [lastMonth], oldest first.
 List<MapEntry<DateTime, double>> monthlySpend(Iterable<Txn> txns, DateTime lastMonth, int count,
-    {Set<String> loanCategoryIds = const {}}) {
+    {Set<String> loanCategoryIds = const {}, ShareTotals shares = ShareTotals.none}) {
   final first = addMonths(monthStart(lastMonth), -(count - 1));
   final totals = {for (var i = 0; i < count; i++) addMonths(first, i): 0.0};
   for (final t in txns) {
     if (!counts(t, loanCategoryIds) || !t.isDebit) continue;
     final key = monthStart(t.txnAt);
-    if (totals.containsKey(key)) totals[key] = totals[key]! + t.amount;
+    if (totals.containsKey(key)) totals[key] = totals[key]! + shares.own(t);
   }
   return totals.entries.map((e) => MapEntry(e.key, _round(e.value))).toList();
 }
@@ -87,6 +118,59 @@ Map<String, double> accountBalances(Iterable<Txn> txns, Iterable<Account> accoun
     }
   }
   return bal.map((k, v) => MapEntry(k, _round(v)));
+}
+
+/// Effect of a transaction on one account's balance (0 when it doesn't touch it).
+double _effect(Txn t, String accountId) {
+  final signed = t.isDebit ? -t.amount : t.amount;
+  var e = 0.0;
+  if (t.accountId == accountId) e += signed;
+  if (t.excluded && t.counterAccountId == accountId) e -= signed;
+  return e;
+}
+
+/// Balance of [account] after each of its transactions, by transaction id.
+Map<String, double> runningBalances(Iterable<Txn> txns, Account account) {
+  final mine = txns.where((t) => _effect(t, account.id) != 0).toList()
+    ..sort((a, b) => a.txnAt.compareTo(b.txnAt));
+  var bal = account.openingBalance;
+  final out = <String, double>{};
+  for (final t in mine) {
+    bal += _effect(t, account.id);
+    out[t.id] = _round(bal);
+  }
+  return out;
+}
+
+/// The app's balance for [account] at [time].
+double balanceAt(Iterable<Txn> txns, Account account, DateTime time) {
+  var bal = account.openingBalance;
+  for (final t in txns) {
+    if (!t.txnAt.isAfter(time)) bal += _effect(t, account.id);
+  }
+  return _round(bal);
+}
+
+class BalanceCheck {
+  BalanceCheck({required this.bank, required this.app, required this.asOf});
+
+  final double bank;
+  final double app;
+  final DateTime asOf;
+
+  /// Bank minus app: more than zero means money came in that the app doesn't know about.
+  double get difference => _round(bank - app);
+  bool get matches => difference.abs() < 1;
+}
+
+/// Compares the latest balance the bank told us with the app's balance at that moment.
+BalanceCheck? checkBalance(Iterable<Txn> txns, Account account, Iterable<BalanceReading> readings) {
+  BalanceReading? latest;
+  for (final r in readings) {
+    if (r.accountId == account.id && (latest == null || r.asOf.isAfter(latest.asOf))) latest = r;
+  }
+  if (latest == null) return null;
+  return BalanceCheck(bank: latest.balance, app: balanceAt(txns, account, latest.asOf), asOf: latest.asOf);
 }
 
 /// Money in and out of one account in a month (moves from other own accounts included).
@@ -121,9 +205,18 @@ class LoanBalance {
 
 /// Running balance per friend over all loan transactions. Received money is
 /// borrowing (or being repaid); spent money is lending (or repaying).
-List<LoanBalance> loanBalances(Iterable<Txn> txns, Set<String> loanCategoryIds) {
+/// Unpaid shares of group payments count as money the friend owes you.
+List<LoanBalance> loanBalances(Iterable<Txn> txns, Set<String> loanCategoryIds, {Iterable<TxnShare> shares = const []}) {
   final byPerson = <String, List<Txn>>{};
   final names = <String, String>{};
+  final owesYou = <String, double>{};
+  for (final s in shares) {
+    if (s.paid) continue;
+    final key = s.person.toLowerCase().trim();
+    names.putIfAbsent(key, () => s.person.trim());
+    owesYou[key] = (owesYou[key] ?? 0) + s.amount;
+    byPerson.putIfAbsent(key, () => []);
+  }
   for (final t in txns) {
     if (!loanCategoryIds.contains(t.categoryId)) continue;
     final key = t.title.toLowerCase().trim();
@@ -134,7 +227,7 @@ List<LoanBalance> loanBalances(Iterable<Txn> txns, Set<String> loanCategoryIds) 
     for (final e in byPerson.entries)
       LoanBalance(
         names[e.key]!,
-        _round(e.value.fold(0.0, (s, t) => s + (t.isDebit ? -t.amount : t.amount))),
+        _round(e.value.fold(0.0, (s, t) => s + (t.isDebit ? -t.amount : t.amount)) - (owesYou[e.key] ?? 0)),
         e.value..sort((a, b) => b.txnAt.compareTo(a.txnAt)),
       ),
   ];
@@ -202,7 +295,8 @@ LoanStatus loanStatus(Loan loan, Iterable<LoanEvent> allEvents, {DateTime? now})
     final after = loan.outstandingAt == null || e.at.isAfter(loan.outstandingAt!);
     if (e.kind == LoanEventKind.repay) {
       repaid += e.amount;
-      repayCount++;
+      // Payments before the loan was added are already in emisPaidBefore.
+      if (loan.createdAt == null || e.at.isAfter(loan.createdAt!)) repayCount++;
       if (after) sinceOut += e.amount;
     } else {
       borrowed += e.amount;

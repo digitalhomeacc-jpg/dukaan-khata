@@ -29,6 +29,8 @@ export interface ParsedTxn {
   txnAt: string;
   /** Card bill payments, own-account transfers: kept but left out of totals. */
   isTransfer: boolean;
+  /** Account balance after this transaction, when the alert mentions it. */
+  balanceAfter: number | null;
 }
 
 export type ParseResult =
@@ -384,6 +386,7 @@ export function parseBankEmail(email: EmailInput): ParseResult {
       method: findMethod(text),
       txnAt: resolveTime(text, email.date),
       isTransfer: isTransfer(text, direction),
+      balanceAfter: findBalance(text)?.balance ?? null,
     },
   };
 }
@@ -472,4 +475,50 @@ export function parseLenderEmail(email: EmailInput): LenderEvent | "ignore" | nu
   // Lender marketing (prizes, offers, safety tips) is not a transaction.
   if (!/\b(debited|credited|received\s+(?:rs|inr|₹))/.test(t)) return "ignore";
   return null;
+}
+
+// ------------------------------------------------------------------ balances
+
+const CUR = String.raw`(?:(?:rs\.?|inr|₹)\s*)+`;
+const NUMBER = String.raw`(-?[0-9][0-9,]*(?:\.[0-9]{1,2})?)`;
+
+/** "Avl Bal Rs 22,341.10", "Available Balance is INR 45,210.33", "Balance as of yesterday: Rs. INR 21.91". */
+export function findBalance(text: string): { balance: number; when: "now" | "yesterday" | string } | null {
+  const t = normalize(text);
+  let m = t.match(new RegExp(String.raw`balance\s+as\s+of\s+yesterday\s*:?\s*` + CUR + NUMBER, "i"));
+  if (m) return { balance: Number(m[1].replace(/,/g, "")), when: "yesterday" };
+  m = t.match(new RegExp(String.raw`balance\s+(?:as\s+on|on)\s+([0-9a-z\-\/ ,]{6,20}?)\s*(?:is|:)\s*` + CUR + NUMBER, "i"));
+  if (m) return { balance: Number(m[2].replace(/,/g, "")), when: m[1] };
+  m = t.match(new RegExp(String.raw`(?:avl\.?|aval\.?|available|closing|clear|net\s+available)\s*(?:bal(?:ance)?)\.?\s*(?:in\s+(?:your\s+)?(?:a\/c|account)[^.]{0,30}?)?(?:is|:|-)?\s*` + CUR + NUMBER, "i")) ??
+    t.match(new RegExp(String.raw`balance\s+in\s+your\s+(?:a\/c|account)[^.]{0,40}?\s+is\s+` + CUR + NUMBER, "i"));
+  if (m) return { balance: Number(m[1].replace(/,/g, "")), when: "now" };
+  return null;
+}
+
+export interface BalanceReading {
+  bank: string | null;
+  accountLast4: string | null;
+  balance: number;
+  /** ISO time the balance is for. */
+  asOf: string;
+}
+
+/** A balance-only email (daily balance, low-balance warning). */
+export function parseBalanceEmail(email: EmailInput): BalanceReading | null {
+  const text = normalize(`${email.subject}. ${email.body}`);
+  const b = findBalance(text);
+  if (!b) return null;
+  const received = isNaN(new Date(email.date).getTime()) ? new Date() : new Date(email.date);
+  let asOf: string;
+  if (b.when === "now") {
+    asOf = received.toISOString();
+  } else if (b.when === "yesterday") {
+    // End of the previous day in India.
+    const day = istDay(new Date(received.getTime() - 86_400_000).toISOString());
+    asOf = new Date(`${day}T23:59:00${IST}`).toISOString();
+  } else {
+    const d = findDate(b.when)?.date;
+    asOf = d ? new Date(`${d}T23:59:00${IST}`).toISOString() : received.toISOString();
+  }
+  return { bank: detectBank(email.from, text), accountLast4: findLast4(text), balance: b.balance, asOf };
 }

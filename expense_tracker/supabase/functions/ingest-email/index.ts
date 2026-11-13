@@ -22,6 +22,7 @@ import {
   looksTransactional,
   merchantKey,
   type ParsedTxn,
+  parseBalanceEmail,
   parseBankEmail,
   SEARCH_KEYWORDS,
 } from "./parsers.ts";
@@ -86,6 +87,7 @@ Deno.serve(async (req) => {
   const existing = new Map((existingRows ?? []).map((r) => [r.email_id as string, r]));
 
   const lenderEvents: Array<{ email: EmailInput; ev: LenderEvent }> = [];
+  const readings: Array<Record<string, unknown>> = [];
   const inserts = [];
   const updates: Array<{ id: string; row: Record<string, unknown> }> = [];
   const unparsed = [];
@@ -129,6 +131,9 @@ Deno.serve(async (req) => {
         email_from: email.from.slice(0, 200),
         email_received_at: email.date,
       };
+      if (t.balanceAfter != null && accountId) {
+        readings.push({ user_id: userId, account_id: accountId, balance: t.balanceAfter, as_of: t.txnAt, email_id: email.id });
+      }
       const rule = ruleFor.get(merchantKey(t.merchant)) ?? null;
       const old = existing.get(email.id);
       if (!old) {
@@ -137,8 +142,19 @@ Deno.serve(async (req) => {
         updates.push({ id: old.id as string, row: { ...row, category_id: old.category_id ?? rule } });
       }
     }
+    if (!result.ok) {
+      // Daily balance / low-balance emails: a balance reading for that account.
+      const b = parseBalanceEmail(email);
+      const acc = b && b.bank && b.accountLast4
+        ? accounts.find((a) => a.bank === b.bank && a.last4 === b.accountLast4)
+        : undefined;
+      if (b && acc) {
+        readings.push({ user_id: userId, account_id: acc.id, balance: b.balance, as_of: b.asOf, email_id: email.id });
+        continue;
+      }
+    }
     const review = isReviewSender(email.from);
-    if (lender || review || (!result.ok && (result.reason === "unreadable" || looksTransactional(`${email.subject} ${email.body}`)))) {
+    if ((lender && !result.ok) || review || (!result.ok && (result.reason === "unreadable" || looksTransactional(`${email.subject} ${email.body}`)))) {
       unparsed.push({
         user_id: userId,
         email_id: email.id,
@@ -164,6 +180,10 @@ Deno.serve(async (req) => {
     const { error } = await supabase.from("transactions").update(u.row).eq("id", u.id).eq("edited", false);
     if (!error) updated++;
   }
+  if (readings.length) {
+    await supabase.from("balance_readings").upsert(readings, { onConflict: "user_id,email_id", ignoreDuplicates: true });
+  }
+
   let loanEvents = 0;
   for (const { email, ev } of lenderEvents) {
     const loan = await ensureLoan(userId, lenderOf(email.from), accounts);
@@ -213,6 +233,7 @@ Deno.serve(async (req) => {
     unreadable: unparsed.filter((u) => u.kind === "unreadable").length,
     lender: unparsed.filter((u) => u.kind === "lender").length + lenderEvents.length,
     loanEvents,
+    balances: readings.length,
   });
 });
 

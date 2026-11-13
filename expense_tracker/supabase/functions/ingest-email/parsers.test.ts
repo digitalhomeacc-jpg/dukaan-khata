@@ -345,3 +345,32 @@ test("failed repayment, OTP and offers are ignored", () => {
 test("Slice bank account alerts go to the normal reader", () => {
   assert.equal(lender("₹300 debited from your slice account", "₹300 debited from your slice bank account xx2690 via UPI."), null);
 });
+
+// ---------------------------------------------------------------- balances
+import { findBalance, parseBalanceEmail } from "./parsers.ts";
+
+test("balance after a transaction", () => {
+  assert.equal(findBalance("debited… Avl Bal Rs 22,341.10. -SBI")?.balance, 22341.1);
+  assert.equal(findBalance("The Available Balance is INR 45,210.33.")?.balance, 45210.33);
+  assert.equal(findBalance("received ₹590 in your slice bank a/c xx2690. Aval. Bal. Rs. 646.49! Transaction")?.balance, 646.49);
+  assert.equal(findBalance("has dropped below Rs. INR 5,000.00, which is the threshold"), null);
+  const t = ok(mail("cbssbi.cas@alerts.sbi.co.in", "Transaction Alert", "Your A/C XXXXX6789 has a debit by transfer of Rs 499.00 on 12Nov26. Transfer to NETFLIX. Avl Bal Rs 22,341.10. -SBI"));
+  assert.equal(t.balanceAfter, 22341.1);
+});
+
+test("HDFC 'balance as of yesterday' email", () => {
+  const r = parseBalanceEmail(mail("HDFC Bank InstaAlerts <alerts@hdfcbank.bank.in>", "View: Account update for your HDFC Bank A/c",
+    "Dear Customer, The balance in your account ending XX6516 has dropped below Rs. INR 5,000.00, which is the threshold set by you. Balance as of yesterday: Rs. INR 21.91 Please note that deposits or credits may take some time to reflect."));
+  assert.ok(r);
+  assert.equal(r.balance, 21.91);
+  assert.equal(r.accountLast4, "6516");
+  assert.equal(r.bank, "HDFC");
+  assert.equal(r.asOf, "2026-11-11T18:29:00.000Z"); // 11 Nov 23:59 IST (email on 12 Nov)
+});
+
+test("balance as on a date", () => {
+  const r = parseBalanceEmail(mail("alerts@hdfcbank.bank.in", "Balance", "Available balance in your A/c XX3191 as on 12-11-26 is INR 1,234.56."));
+  assert.ok(r);
+  assert.equal(r.balance, 1234.56);
+  assert.equal(r.accountLast4, "3191");
+});

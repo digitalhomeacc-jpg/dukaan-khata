@@ -5,6 +5,7 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../config.dart';
+import '../logic/summary.dart' show ShareTotals, shareTotals;
 import '../models.dart';
 
 /// Live copy of the signed-in user's data, kept up to date by Supabase Realtime.
@@ -33,6 +34,15 @@ class AppData extends ChangeNotifier {
         loanEvents = rows.map(LoanEvent.fromMap).toList();
         notifyListeners();
       }, onError: _onError),
+      db.from('balance_readings').stream(primaryKey: ['id']).order('as_of').listen((rows) {
+        balanceReadings = rows.map(BalanceReading.fromMap).toList();
+        notifyListeners();
+      }, onError: _onError),
+      db.from('txn_shares').stream(primaryKey: ['id']).listen((rows) {
+        shares = rows.map(TxnShare.fromMap).toList();
+        _shareTotals = null;
+        notifyListeners();
+      }, onError: _onError),
       db.from('profiles').stream(primaryKey: ['id']).listen((rows) {
         if (rows.isNotEmpty) profile = rows.first;
         notifyListeners();
@@ -49,6 +59,8 @@ class AppData extends ChangeNotifier {
     this.accounts = const [],
     this.loans = const [],
     this.loanEvents = const [],
+    this.balanceReadings = const [],
+    this.shares = const [],
     this.unread = const [],
     this.profile = const {},
   })  : _client = null,
@@ -67,6 +79,23 @@ class AppData extends ChangeNotifier {
   List<Account> accounts = const [];
   List<Loan> loans = const [];
   List<LoanEvent> loanEvents = const [];
+  List<BalanceReading> balanceReadings = const [];
+  List<TxnShare> shares = const [];
+  ShareTotals? _shareTotals;
+
+  /// Friends' parts of group payments, for the totals.
+  ShareTotals get shareTotalsNow => _shareTotals ??= shareTotals(shares);
+
+  List<TxnShare> sharesOf(String txnId) => shares.where((s) => s.txnId == txnId).toList();
+  List<TxnShare> sharesPaidBy(String txnId) => shares.where((s) => s.paidTxnId == txnId).toList();
+
+  Txn? txn(String? id) {
+    if (id == null) return null;
+    for (final t in transactions) {
+      if (t.id == id) return t;
+    }
+    return null;
+  }
   List<UnreadEmail> unread = const [];
   Map<String, dynamic> profile = const {};
 
@@ -203,6 +232,31 @@ class AppData extends ChangeNotifier {
         'outstanding': owed,
         'outstanding_at': DateTime.now().toUtc().toIso8601String(),
       }).eq('id', loanId);
+
+  // ------------------------------------------------------- shared payments
+
+  Future<void> addShare(String txnId, String person, double amount, {String? paidTxnId}) =>
+      _db.from('txn_shares').insert({
+        'txn_id': txnId,
+        'person': person.trim(),
+        'amount': amount,
+        'paid_txn_id': paidTxnId,
+        if (paidTxnId != null) 'paid_at': DateTime.now().toUtc().toIso8601String(),
+      });
+
+  Future<void> deleteShare(String id) => _db.from('txn_shares').delete().eq('id', id);
+
+  /// The friend paid their part, with this money received (or in cash when null).
+  Future<void> markSharePaid(String id, {String? paidTxnId}) => _db.from('txn_shares').update({
+        'paid_txn_id': paidTxnId,
+        'paid_at': DateTime.now().toUtc().toIso8601String(),
+      }).eq('id', id);
+
+  // ------------------------------------------------------------- bank balance
+
+  /// Shifts the opening balance so the app agrees with the bank's latest balance.
+  Future<void> matchBankBalance(Account a, double difference) =>
+      _db.from('accounts').update({'opening_balance': a.openingBalance + difference}).eq('id', a.id);
 
   // ------------------------------------------------------------- Gmail sync
 

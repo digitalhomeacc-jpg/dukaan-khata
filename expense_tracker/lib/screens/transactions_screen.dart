@@ -53,8 +53,11 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
       _accountId == null ? data.transactions : data.transactions.where((t) => t.accountId == _accountId),
       _month,
       loanCategoryIds: loans,
+      shares: data.shareTotalsNow,
     );
     final account = data.account(_accountId);
+    final running = account == null ? const <String, double>{} : runningBalances(data.transactions, account);
+    final check = account == null ? null : checkBalance(data.transactions, account, data.balanceReadings);
     final shown = data.transactions.where(_keep).toList();
     final days = groupByDay(shown);
     final uncategorised =
@@ -101,6 +104,8 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                       ),
                     ),
                   ),
+                if (account != null && check != null)
+                  SliverToBoxAdapter(child: BalanceCheckCard(data: data, account: account, check: check)),
                 SliverToBoxAdapter(child: _SummaryCard(summary: summary)),
                 if (uncategorised > 0 && _filter != _Filter.uncategorised)
                   SliverToBoxAdapter(
@@ -159,10 +164,10 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                     child: _EmptyState(hasAny: data.transactions.isNotEmpty),
                   ),
                 for (final day in days) ...[
-                  SliverToBoxAdapter(child: _DayHeader(day: day.key, txns: day.value, loanCategoryIds: loans)),
+                  SliverToBoxAdapter(child: _DayHeader(day: day.key, txns: day.value, loanCategoryIds: loans, shares: data.shareTotalsNow)),
                   SliverList.builder(
                     itemCount: day.value.length,
-                    itemBuilder: (context, i) => TxnTile(txn: day.value[i], data: data),
+                    itemBuilder: (context, i) => TxnTile(txn: day.value[i], data: data, balanceAfter: running[day.value[i].id]),
                   ),
                 ],
                 const SliverToBoxAdapter(child: SizedBox(height: 96)),
@@ -211,15 +216,16 @@ class _SummaryCard extends StatelessWidget {
 }
 
 class _DayHeader extends StatelessWidget {
-  const _DayHeader({required this.day, required this.txns, required this.loanCategoryIds});
+  const _DayHeader({required this.day, required this.txns, required this.loanCategoryIds, required this.shares});
 
   final DateTime day;
   final List<Txn> txns;
   final Set<String> loanCategoryIds;
+  final ShareTotals shares;
 
   @override
   Widget build(BuildContext context) {
-    final spent = txns.where((t) => t.isDebit && counts(t, loanCategoryIds)).fold(0.0, (s, t) => s + t.amount);
+    final spent = txns.where((t) => t.isDebit && counts(t, loanCategoryIds)).fold(0.0, (s, t) => s + shares.own(t));
     final style = Theme.of(context).textTheme.labelLarge?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant);
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
@@ -234,10 +240,13 @@ class _DayHeader extends StatelessWidget {
 }
 
 class TxnTile extends StatelessWidget {
-  const TxnTile({super.key, required this.txn, required this.data});
+  const TxnTile({super.key, required this.txn, required this.data, this.balanceAfter});
 
   final Txn txn;
   final AppData data;
+
+  /// Account balance after this transaction (shown when looking at one account).
+  final double? balanceAfter;
 
   String? _accountText() {
     final a = data.account(txn.accountId);
@@ -266,7 +275,17 @@ class TxnTile extends StatelessWidget {
     } else if (isLoan) {
       details = '${txn.isDebit ? 'Lent / repaid' : 'Borrowed / got back'} · $details';
     }
-    final amountColor = txn.excluded || isLoan ? scheme.outline : (txn.isDebit ? scheme.onSurface : Colors.green.shade700);
+    final mySplit = data.sharesOf(txn.id);
+    final paidBack = data.sharesPaidBy(txn.id);
+    if (mySplit.isNotEmpty) {
+      final own = data.shareTotalsNow.own(txn);
+      final open = mySplit.where((s) => !s.paid).length;
+      details = 'Your share ${money(own)}${open > 0 ? ' · $open to pay you' : ''} · $details';
+    } else if (paidBack.isNotEmpty) {
+      details = 'Paid back: ${paidBack.map((s) => s.person).toSet().join(', ')}\'s share · $details';
+    }
+    final notMine = paidBack.isNotEmpty && data.shareTotalsNow.own(txn) == 0;
+    final amountColor = txn.excluded || isLoan || notMine ? scheme.outline : (txn.isDebit ? scheme.onSurface : Colors.green.shade700);
     return ListTile(
       leading: CategoryAvatar(cat),
       title: Text(txn.title, maxLines: 1, overflow: TextOverflow.ellipsis),
@@ -280,13 +299,22 @@ class TxnTile extends StatelessWidget {
         children: [
           if (txn.fromEmail) Icon(Icons.mail_outline, size: 14, color: scheme.outline),
           const SizedBox(width: 4),
-          Text(
-            signedMoney(txn.amount, isDebit: txn.isDebit),
-            style: TextStyle(
-              color: amountColor,
-              fontWeight: FontWeight.w600,
-              decoration: txn.excluded ? TextDecoration.lineThrough : null,
-            ),
+          Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                signedMoney(txn.amount, isDebit: txn.isDebit),
+                style: TextStyle(
+                  color: amountColor,
+                  fontWeight: FontWeight.w600,
+                  decoration: txn.excluded ? TextDecoration.lineThrough : null,
+                ),
+              ),
+              if (balanceAfter != null)
+                Text('Bal ${balanceAfter! < 0 ? '−' : ''}${money(balanceAfter!.abs())}',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(color: scheme.outline)),
+            ],
           ),
         ],
       ),
@@ -317,4 +345,78 @@ class _EmptyState extends StatelessWidget {
           ],
         ),
       );
+}
+
+/// Bank's balance (from its email) next to the app's, with the difference.
+class BalanceCheckCard extends StatelessWidget {
+  const BalanceCheckCard({super.key, required this.data, required this.account, required this.check});
+
+  final AppData data;
+  final Account account;
+  final BalanceCheck check;
+
+  Future<void> _match(BuildContext context) async {
+    final yes = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('Use the bank\'s balance?'),
+        content: Text(
+          'The opening balance of ${account.name} changes by ${check.difference < 0 ? '−' : '+'}${money(check.difference.abs())} '
+          'so the app shows ${money(check.bank)} on ${dayLabel(check.asOf)}, like the bank. '
+          'Better first: add any missing transaction (cash deposit, card charge, bank fee) if you know it.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Use bank balance')),
+        ],
+      ),
+    );
+    if (yes == true) await data.matchBankBalance(account, check.difference);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final ok = check.matches;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      child: Card.outlined(
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(ok ? Icons.verified_outlined : Icons.warning_amber_rounded,
+                      color: ok ? Colors.green.shade700 : scheme.error, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(ok ? 'Matches the bank' : 'Differs from the bank by ${money(check.difference.abs())}',
+                        style: const TextStyle(fontWeight: FontWeight.w600)),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text('Bank: ${money(check.bank)} · App: ${check.app < 0 ? '−' : ''}${money(check.app.abs())} · ${dayLabel(check.asOf)}, ${timeLabel(check.asOf)}',
+                  style: Theme.of(context).textTheme.bodySmall),
+              if (!ok) ...[
+                const SizedBox(height: 6),
+                Text(
+                  check.difference > 0
+                      ? 'The bank has more: money came in that the app has not seen (e.g. a cash deposit or a refund).'
+                      : 'The bank has less: money went out that the app has not seen (e.g. a card charge, ATM or bank fee).',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(onPressed: () => _match(context), child: const Text('Use bank balance')),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }

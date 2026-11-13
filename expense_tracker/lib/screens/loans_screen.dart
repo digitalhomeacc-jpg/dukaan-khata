@@ -15,7 +15,7 @@ class LoansScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final loans = loanBalances(data.transactions, data.loanCategoryIds);
+    final loans = loanBalances(data.transactions, data.loanCategoryIds, shares: data.shares);
     final lenderLoans = data.loans.where((l) => !l.closed).toList();
     final lenderOwed = lenderLoans.fold(0.0, (s, l) => s + loanStatus(l, data.loanEvents).owed);
     final iOwe = loans.where((l) => l.balance > 0).fold(0.0, (s, l) => s + l.balance) + lenderOwed;
@@ -53,7 +53,8 @@ class LoansScreen extends StatelessWidget {
           if (lenderLoans.isEmpty)
             const Padding(
               padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
-              child: Text('Slice borrow appears here by itself from its emails. Add KreditBee, Fibe or any other loan with “Add a loan”.'),
+              child: Text('Loans from banks or loan apps: add one with “Add a loan” to see what you owe, EMIs left and the next due date. '
+                  'Loans from apps that send emails (such as Slice) appear here by themselves.'),
             ),
           for (final l in lenderLoans) LenderLoanCard(data: data, loan: l),
           const SizedBox(height: 8),
@@ -171,7 +172,7 @@ class _PersonLoans extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final l = loanBalances(data.transactions, data.loanCategoryIds)
+    final l = loanBalances(data.transactions, data.loanCategoryIds, shares: data.shares)
         .where((x) => x.person.toLowerCase() == person.toLowerCase())
         .firstOrNull;
     final balance = l?.balance ?? 0;
@@ -219,6 +220,24 @@ class _PersonLoans extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 16),
+          for (final s in data.shares.where((s) => !s.paid && s.person.toLowerCase().trim() == person.toLowerCase().trim()))
+            ListTile(
+              leading: Icon(Icons.call_split, color: Colors.green.shade700),
+              title: Text('Their part of ${data.txn(s.txnId)?.title ?? 'a group payment'}'),
+              subtitle: Text(data.txn(s.txnId) == null ? 'Owes you' : '${dayLabel(data.txn(s.txnId)!.txnAt)} · owes you'),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(money(s.amount), style: const TextStyle(fontWeight: FontWeight.w600)),
+                  IconButton(
+                    tooltip: 'Paid back in cash',
+                    icon: const Icon(Icons.check_circle_outline),
+                    onPressed: () => data.markSharePaid(s.id),
+                  ),
+                ],
+              ),
+              onTap: data.txn(s.txnId) == null ? null : () => openTxnEditor(context, data, existing: data.txn(s.txnId)),
+            ),
           for (final t in l?.txns ?? const <Txn>[])
             ListTile(
               leading: Icon(t.isDebit ? Icons.call_made : Icons.call_received,

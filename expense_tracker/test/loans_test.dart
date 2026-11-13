@@ -99,4 +99,22 @@ void main() {
     expect(s.spent, 136);
     expect(s.received, 0);
   });
+
+  test('payments from before the loan was added are not counted twice', () {
+    final loan = Loan(
+      id: 'L', lender: 'kreditbee', name: 'KreditBee', emiAmount: 4161, tenureMonths: 10,
+      emisPaidBefore: 4, dueDay: 10, outstanding: 24477, outstandingAt: DateTime(2026, 11, 13, 16),
+      createdAt: DateTime(2026, 11, 13, 16), nextDueAmount: 4161, nextDueDate: DateTime(2026, 12, 10),
+    );
+    final s = loanStatus(loan, [ev(LoanEventKind.repay, 4161, DateTime(2026, 11, 10))], now: now);
+    expect(s.emisPaid, 4);
+    expect(s.emisLeft, 6);
+    expect(s.owed, 24477);
+    expect(s.nextDueDate, DateTime(2026, 12, 10));
+    expect(s.nextDuePaid, false);
+    final after = loanStatus(loan, [ev(LoanEventKind.repay, 4161, DateTime(2026, 12, 9))], now: DateTime(2026, 12, 11));
+    expect(after.emisPaid, 5);
+    expect(after.owed, 20316);
+    expect(after.nextDueDate, DateTime(2027, 1, 10));
+  });
 }

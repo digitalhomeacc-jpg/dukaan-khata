@@ -194,6 +194,7 @@ class Loan {
     this.aliases = const [],
     this.accountId,
     this.closed = false,
+    this.createdAt,
   });
 
   final String id;
@@ -213,6 +214,9 @@ class Loan {
   final List<String> aliases;
   final String? accountId;
   final bool closed;
+
+  /// When the loan was added; EMIs paid before then are in [emisPaidBefore].
+  final DateTime? createdAt;
 
   factory Loan.fromMap(Map<String, dynamic> m) {
     double? n(Object? v) => v == null ? null : _num(v);
@@ -234,6 +238,7 @@ class Loan {
       aliases: ((m['aliases'] as List?) ?? const []).cast<String>(),
       accountId: m['account_id'] as String?,
       closed: m['closed'] == true,
+      createdAt: m['created_at'] == null ? null : DateTime.parse(m['created_at'] as String).toLocal(),
     );
   }
 }
@@ -259,5 +264,45 @@ class LoanEvent {
         at: DateTime.parse(m['event_at'] as String).toLocal(),
         note: m['note'] as String?,
         fromEmail: m['email_id'] != null,
+      );
+}
+
+/// The bank's own balance for an account, read from an email.
+class BalanceReading {
+  const BalanceReading({required this.id, required this.accountId, required this.balance, required this.asOf});
+
+  final String id;
+  final String accountId;
+  final double balance;
+  final DateTime asOf;
+
+  factory BalanceReading.fromMap(Map<String, dynamic> m) => BalanceReading(
+        id: m['id'] as String,
+        accountId: m['account_id'] as String,
+        balance: _num(m['balance']),
+        asOf: DateTime.parse(m['as_of'] as String).toLocal(),
+      );
+}
+
+/// A friend's part of a payment you made for a group; [paidTxnId] is the money they sent back.
+class TxnShare {
+  const TxnShare({required this.id, required this.txnId, required this.person, required this.amount, this.paidTxnId, this.paidAt});
+
+  final String id;
+  final String txnId;
+  final String person;
+  final double amount;
+  final String? paidTxnId;
+  final DateTime? paidAt;
+
+  bool get paid => paidTxnId != null || paidAt != null;
+
+  factory TxnShare.fromMap(Map<String, dynamic> m) => TxnShare(
+        id: m['id'] as String,
+        txnId: m['txn_id'] as String,
+        person: m['person'] as String,
+        amount: _num(m['amount']),
+        paidTxnId: m['paid_txn_id'] as String?,
+        paidAt: m['paid_at'] == null ? null : DateTime.parse(m['paid_at'] as String).toLocal(),
       );
 }
