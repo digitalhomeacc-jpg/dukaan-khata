@@ -47,8 +47,15 @@ Deno.serve(async (req) => {
   if (!body.file) return json(400, { error: "No file." });
 
   let rows: string[][];
+  let kind = "unknown";
   try {
     const bytes = Uint8Array.from(atob(body.file), (c) => c.charCodeAt(0));
+    const head = new TextDecoder().decode(bytes.slice(0, 64)).trimStart().toLowerCase();
+    kind = head.startsWith("%pdf") ? "pdf" : bytes[0] === 0x50 && bytes[1] === 0x4b ? "xlsx"
+      : bytes[0] === 0xd0 && bytes[1] === 0xcf ? "xls" : head.startsWith("<") ? "html" : "text";
+    if (kind === "pdf") {
+      return json(400, { error: "This is a PDF. In NetBanking choose the format XLS or Delimited, then download again." });
+    }
     const wb = XLSX.read(bytes, { type: "array" });
     const sheet = wb.Sheets[wb.SheetNames[0]];
     rows = (XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, defval: "" }) as unknown[][])
@@ -58,7 +65,15 @@ Deno.serve(async (req) => {
   }
   const st = readStatement(rows);
   if (!st.txns.length) {
-    return json(400, { error: "No transactions found. Download the statement as XLS or Delimited (not PDF) and try again." });
+    // Say what was in the file, so a new layout can be added.
+    const sample = rows.filter((r) => r.some((c) => c.trim())).slice(0, 25)
+      .map((r) => r.filter((c) => c.trim()).map((c) => c.trim().slice(0, 18)).slice(0, 7).join(" | "))
+      .filter((l) => /date|narration|description|particular|withdraw|deposit|debit|credit|balance/i.test(l)).slice(0, 2);
+    return json(400, {
+      error: `No transactions found in this ${kind.toUpperCase()} file (${rows.length} rows${body.fileName ? `, ${body.fileName}` : ""}). ` +
+        (sample.length ? `Column row seen: ${sample[0]}. ` : "No column titles like Date / Narration / Balance were found. ") +
+        "Send a screenshot of this message so the layout can be added.",
+    });
   }
 
   // Which account: the one picked in the app, else the statement's bank + last 4 digits.
