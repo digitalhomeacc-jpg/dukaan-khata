@@ -400,9 +400,35 @@ class PlaceDetailScreen extends StatelessWidget {
                     ].join(' '),
                     onTap: () async {
                       final pick = await pickCategory(context, data, selected: g.categoryId, title: g.name);
-                      if (pick == null) return;
+                      if (pick == null || !context.mounted) return;
+                      // Some already sorted one by one? Then ask whether to keep them.
+                      final unsorted = g.txns.where((t) => t.categoryId == null).toList();
+                      var which = g.txns;
+                      if (unsorted.isNotEmpty && unsorted.length < g.txns.length) {
+                        final onlyRest = await showDialog<bool>(
+                          context: context,
+                          builder: (c) => SimpleDialog(
+                            title: const Text('Which payments?'),
+                            children: [
+                              SimpleDialogOption(
+                                onPressed: () => Navigator.pop(c, true),
+                                child: ListTile(
+                                  title: Text('Only the ${unsorted.length} with no category'),
+                                  subtitle: const Text('Keeps the ones you already sorted'),
+                                ),
+                              ),
+                              SimpleDialogOption(
+                                onPressed: () => Navigator.pop(c, false),
+                                child: ListTile(title: Text('All ${g.txns.length} payments')),
+                              ),
+                            ],
+                          ),
+                        );
+                        if (onlyRest == null) return;
+                        if (onlyRest) which = unsorted;
+                      }
                       await data.categorizeGroup(
-                        g.txns,
+                        which,
                         pick.id,
                         vpas: g.vpas,
                         names: g.vpas.isEmpty || !looksLikePerson(g.name) ? g.keys : const {},

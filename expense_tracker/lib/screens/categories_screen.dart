@@ -67,6 +67,7 @@ Future<String?> openCategoryForm(BuildContext context, AppData data, {Category? 
     showModalBottomSheet<String>(
       context: context,
       isScrollControlled: true,
+      useSafeArea: true,
       showDragHandle: true,
       builder: (_) => _CategoryForm(data: data, existing: existing, initialName: name),
     );
@@ -116,15 +117,23 @@ class _CategoryFormState extends State<_CategoryForm> {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
+    // Scrolls on small screens; Save stays at the top so it is always reachable.
+    return SingleChildScrollView(
       padding: EdgeInsets.fromLTRB(20, 0, 20, 20 + MediaQuery.viewInsetsOf(context).bottom),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(
-            widget.existing == null ? 'New category' : 'Edit category',
-            style: Theme.of(context).textTheme.titleLarge,
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  widget.existing == null ? 'New category' : 'Edit category',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+              ),
+              FilledButton(onPressed: _save, child: const Text('Save')),
+            ],
           ),
           const SizedBox(height: 16),
           TextField(
@@ -220,8 +229,6 @@ class _CategoryFormState extends State<_CategoryForm> {
             title: const Text('Loans with friends'),
             subtitle: const Text('Shown in the Loans tab, not counted as spending or income'),
           ),
-          const SizedBox(height: 8),
-          FilledButton(onPressed: _save, child: const Text('Save')),
         ],
       ),
     );

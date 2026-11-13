@@ -249,6 +249,21 @@ class _QuickSortScreenState extends State<QuickSortScreen> {
               onPressed: () => setState(() => _skippedTxns.add(current.id)),
               child: const Text('Skip this payment'),
             ),
+            if (txnsLeft.length > 1)
+              OutlinedButton.icon(
+                onPressed: () async {
+                  final p = await pickCategory(
+                    context,
+                    data,
+                    allowNone: false,
+                    allowFriends: isPerson,
+                    title: 'The other ${txnsLeft.length} payments',
+                  );
+                  if (p?.id != null) await _apply(txnsLeft, p!.id, remember: false);
+                },
+                icon: const Icon(Icons.done_all),
+                label: Text('Put the ${txnsLeft.length} left in one category'),
+              ),
           ] else ...[
             Text(
               isPerson ? 'All ${g.txns.length} payments were…' : 'Everything at ${g.name} is…',

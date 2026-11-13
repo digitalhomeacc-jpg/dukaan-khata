@@ -49,5 +49,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('What was it?'), findsOneWidget);
     expect(find.text('3 left'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('Put the 3 left in one category'), 200,
+        scrollable: find.byType(Scrollable).first);
+    expect(find.text('Put the 3 left in one category'), findsOneWidget);
   });
 }

@@ -187,6 +187,28 @@ void main() {
     expect(find.textContaining('Warm Regards'), findsNothing);
   });
 
+  testWidgets('new category form scrolls on a small phone and can be saved from the top', (tester) async {
+    final data = sample();
+    tester.view.physicalSize = const Size(360, 560) * 3;
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (c) => Scaffold(
+            body: TextButton(onPressed: () => openCategoryForm(c, data), child: const Text('open')),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(find.widgetWithText(FilledButton, 'Save'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('Loans with friends'), 200, scrollable: find.byType(Scrollable).last);
+    expect(find.text('Loans with friends'), findsOneWidget);
+  });
+
   testWidgets('editor for an email transaction', (tester) async {
     final data = sample();
     await pump(tester, TxnEditor(data: data, existing: data.transactions.first));
