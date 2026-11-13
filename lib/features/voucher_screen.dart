@@ -170,6 +170,11 @@ class _VoucherScreenState extends State<VoucherScreen> {
   final narration = TextEditingController();
   final ref = TextEditingController();
   bool gstBill = false;
+  /// अधिक पर्याय: GST, round off, हस्ते, bill no. – folded away unless used
+  bool moreOpen = false;
+  bool get _moreUsed =>
+      gstRate > 0 || (Money.parse(roundCtl.text) ?? 0) != 0 || hasteCtl.text.trim().isNotEmpty || ref.text.trim().isNotEmpty || gstBill;
+  bool get _showMore => moreOpen || _moreUsed;
   bool goodsOpening = false; // उसना माल already out before the books start
   List<Booking> openBookings = []; // party's bookings still to deliver (sale / purchase)
   String? _bookingsFor;
@@ -739,6 +744,7 @@ class _VoucherScreenState extends State<VoucherScreen> {
           roundCtl.clear();
           hasteCtl.clear();
           hasteSuggestions = [];
+          moreOpen = false;
           party = null;
           payId = creditAllowed ? (_isBuying ? null : app.vouchers.sys('cash')) : payId;
           splitOn = false;
@@ -887,8 +893,8 @@ class _VoucherScreenState extends State<VoucherScreen> {
               ],
               if (chargesOn) _chargesCard(app),
               if (type == VoucherType.purchase) _varhaiCard(app),
-              if (gstAllowed && app.actor.isOwner) _gstCard(app),
-              if (roundAllowed) _roundCard(app),
+              if (_showMore && gstAllowed && app.actor.isOwner) _gstCard(app),
+              if (_showMore && roundAllowed) _roundCard(app),
               if (!stockOnly)
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 8),
@@ -998,6 +1004,21 @@ class _VoucherScreenState extends State<VoucherScreen> {
               controller: narration,
               decoration: InputDecoration(labelText: t('narration'), border: const OutlineInputBorder(), isDense: true),
             ),
+            if (!_showMore)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  key: const Key('more_options'),
+                  icon: const Icon(Icons.tune, size: 18),
+                  label: Text(t(stockOnly
+                      ? 'more_opts_short'
+                      : (gstAllowed && app.actor.isOwner) || roundAllowed
+                          ? 'more_opts'
+                          : 'more_opts_short')),
+                  onPressed: () => setState(() => moreOpen = true),
+                ),
+              ),
+            if (_showMore) ...[
             const SizedBox(height: 8),
             TextField(
               key: const Key('haste'),
@@ -1033,6 +1054,7 @@ class _VoucherScreenState extends State<VoucherScreen> {
                   FilterChip(label: Text(t('gst_bill_needed')), selected: gstBill, onSelected: (v) => setState(() => gstBill = v)),
               ],
             ),
+            ],
             const SizedBox(height: 80),
           ],
         ),
