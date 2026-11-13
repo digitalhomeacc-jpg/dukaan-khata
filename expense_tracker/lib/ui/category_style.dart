@@ -23,6 +23,7 @@ const categoryIcons = <String, IconData>{
   'gift': Icons.card_giftcard,
   'savings': Icons.savings,
   'coffee': Icons.local_cafe,
+  'handshake': Icons.handshake,
   'label': Icons.label,
 };
 
@@ -51,3 +52,18 @@ class CategoryAvatar extends StatelessWidget {
     );
   }
 }
+
+IconData accountIcon(Account? a) => switch (a?.kind) {
+      AccountKind.cash => Icons.payments_outlined,
+      AccountKind.card => Icons.credit_card,
+      AccountKind.wallet => Icons.account_balance_wallet_outlined,
+      AccountKind.bank => Icons.account_balance,
+      null => Icons.help_outline,
+    };
+
+String accountKindLabel(AccountKind k) => switch (k) {
+      AccountKind.cash => 'Cash',
+      AccountKind.bank => 'Bank account',
+      AccountKind.card => 'Credit card',
+      AccountKind.wallet => 'Wallet',
+    };

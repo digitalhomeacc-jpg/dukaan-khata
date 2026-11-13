@@ -33,6 +33,7 @@ test("HDFC UPI debit", () => {
   assert.equal(t.bank, "HDFC");
   assert.equal(t.accountLast4, "4321");
   assert.equal(t.method, "upi");
+  assert.equal(t.accountKind, "bank");
   assert.equal(t.isTransfer, false);
 });
 
@@ -59,6 +60,7 @@ test("HDFC credit card spend (new format)", () => {
   assert.equal(t.merchant, "AMAZON PAY INDIA");
   assert.equal(t.accountLast4, "9876");
   assert.equal(t.method, "card");
+  assert.equal(t.accountKind, "card");
   assert.equal(t.txnAt, "2026-11-12T04:11:07.000Z");
 });
 

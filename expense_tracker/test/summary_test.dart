@@ -2,7 +2,9 @@ import 'package:expense_tracker/logic/summary.dart';
 import 'package:expense_tracker/models.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-Txn t(double amount, DateTime at, {bool debit = true, String? cat, String? merchant, bool excluded = false}) => Txn(
+Txn t(double amount, DateTime at,
+        {bool debit = true, String? cat, String? merchant, bool excluded = false, String? acc, String? to}) =>
+    Txn(
       id: '$amount$at',
       amount: amount,
       isDebit: debit,
@@ -10,6 +12,8 @@ Txn t(double amount, DateTime at, {bool debit = true, String? cat, String? merch
       categoryId: cat,
       merchant: merchant,
       excluded: excluded,
+      accountId: acc,
+      counterAccountId: to,
     );
 
 void main() {
@@ -83,5 +87,71 @@ void main() {
     expect(x.txnAt.isUtc, false);
     expect(x.txnAt.toUtc(), DateTime.utc(2026, 11, 12, 4, 11, 7));
     expect(x.title, 'AMAZON');
+  });
+
+  group('personal loans', () {
+    final loanTxns = [
+      t(5000, DateTime(2026, 11, 2), debit: false, cat: 'loan', merchant: 'Rahul'), // borrowed
+      t(2000, DateTime(2026, 11, 9), cat: 'loan', merchant: 'rahul '), // paid part back
+      t(1500, DateTime(2026, 11, 4), cat: 'loan', merchant: 'Priya'), // lent
+      t(700, DateTime(2026, 11, 6), debit: false, cat: 'loan', merchant: 'Sam'),
+      t(700, DateTime(2026, 11, 7), cat: 'loan', merchant: 'Sam'), // settled
+      t(300, DateTime(2026, 11, 7), cat: 'food', merchant: 'Swiggy'),
+    ];
+
+    test('are left out of spending and income', () {
+      final s = summarize(loanTxns, nov, loanCategoryIds: {'loan'});
+      expect(s.spent, 300);
+      expect(s.received, 0);
+      expect(monthlySpend(loanTxns, nov, 1, loanCategoryIds: {'loan'}).single.value, 300);
+    });
+
+    test('balance per friend, names matched loosely, open loans first', () {
+      final l = loanBalances(loanTxns, {'loan'});
+      expect(l.map((x) => x.person).toList(), ['Rahul', 'Priya', 'Sam']);
+      expect(l[0].balance, 3000); // you owe Rahul
+      expect(l[0].txns.length, 2);
+      expect(l[1].balance, -1500); // Priya owes you
+      expect(l[2].settled, true);
+    });
+  });
+
+  group('accounts', () {
+    const accounts = [
+      Account(id: 'cash', name: 'Cash', kind: AccountKind.cash, openingBalance: 500),
+      Account(id: 'hdfc', name: 'HDFC', openingBalance: 10000),
+      Account(id: 'card', name: 'ICICI Card', kind: AccountKind.card, openingBalance: -2000),
+    ];
+    final txns = [
+      t(85000, DateTime(2026, 11, 1), debit: false, acc: 'hdfc'), // salary in
+      t(2000, DateTime(2026, 11, 2), acc: 'hdfc', to: 'cash', excluded: true), // ATM
+      t(150, DateTime(2026, 11, 2), acc: 'cash'), // chai
+      t(1249, DateTime(2026, 11, 3), acc: 'card'), // card spend
+      t(3249, DateTime(2026, 11, 20), debit: false, acc: 'card', to: 'hdfc', excluded: true), // bill paid from HDFC
+      t(99, DateTime(2026, 11, 4)), // no account
+      t(400, DateTime(2026, 10, 30), acc: 'cash'),
+    ];
+
+    test('balances include opening balance and both sides of transfers', () {
+      final b = accountBalances(txns, accounts);
+      expect(b['cash'], 500 + 2000 - 150 - 400);
+      expect(b['hdfc'], 10000 + 85000 - 2000 - 3249);
+      expect(b['card'], 0); // -2000 - 1249 + 3249
+    });
+
+    test('a counter account is ignored unless the transaction is a transfer', () {
+      final b = accountBalances([t(100, DateTime(2026, 11, 1), acc: 'hdfc', to: 'cash')], accounts);
+      expect(b['cash'], 500);
+      expect(b['hdfc'], 9900);
+    });
+
+    test('monthly flow per account', () {
+      final cash = accountFlow(txns, 'cash', nov);
+      expect(cash.moneyIn, 2000);
+      expect(cash.moneyOut, 150);
+      final hdfc = accountFlow(txns, 'hdfc', nov);
+      expect(hdfc.moneyIn, 85000);
+      expect(hdfc.moneyOut, 5249);
+    });
   });
 }

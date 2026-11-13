@@ -46,6 +46,7 @@ class CategoriesScreen extends StatelessWidget {
               ListTile(
                 leading: CategoryAvatar(c),
                 title: Text(c.name),
+                subtitle: c.isLoan ? const Text('Loans – not counted in spending') : null,
                 onTap: () => _edit(context, c),
                 trailing: IconButton(icon: const Icon(Icons.delete_outline), onPressed: () => _delete(context, c)),
               ),
@@ -70,6 +71,7 @@ class _CategoryFormState extends State<_CategoryForm> {
   late final _name = TextEditingController(text: widget.existing?.name ?? '');
   late String _icon = widget.existing?.icon ?? 'label';
   late int _color = widget.existing?.color ?? categoryColors.first;
+  late bool _isLoan = widget.existing?.isLoan ?? false;
   String? _error;
 
   @override
@@ -82,7 +84,7 @@ class _CategoryFormState extends State<_CategoryForm> {
     final name = _name.text.trim();
     if (name.isEmpty) return setState(() => _error = 'Enter a name');
     try {
-      await widget.data.saveCategory(id: widget.existing?.id, name: name, icon: _icon, color: _color);
+      await widget.data.saveCategory(id: widget.existing?.id, name: name, icon: _icon, color: _color, isLoan: _isLoan);
       if (mounted) Navigator.pop(context);
     } catch (e) {
       setState(() => _error = e.toString().contains('duplicate') ? 'You already have “$name”' : 'Could not save: $e');
@@ -137,7 +139,14 @@ class _CategoryFormState extends State<_CategoryForm> {
                 ),
             ],
           ),
-          const SizedBox(height: 16),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            value: _isLoan,
+            onChanged: (v) => setState(() => _isLoan = v),
+            title: const Text('Loans with friends'),
+            subtitle: const Text('Shown in the Loans tab, not counted as spending or income'),
+          ),
+          const SizedBox(height: 8),
           FilledButton(onPressed: _save, child: const Text('Save')),
         ],
       ),

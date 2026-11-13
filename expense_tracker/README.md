@@ -23,6 +23,13 @@ Gmail** into **their own** account automatically.
   is filed under it.
 * Card bill payments and own-account transfers are marked *not counted*, so money is not
   counted twice (you can toggle this on any transaction).
+* **Accounts**: Cash, bank accounts, credit cards and wallets, each with a balance (set an opening
+  balance once). Every transaction says which account the money left or arrived in. Accounts from bank
+  emails are created and matched automatically (bank + last 4 digits). ATM withdrawals move money from
+  the bank into Cash, and are not counted as spending.
+* **Personal loans**: "I borrowed" / "I lent" with a friend's name. The Loans tab shows who owes whom,
+  and loans are never counted as spending or income. Any category can be made a loan category, so a bank
+  transfer to a friend can be filed under *Personal loans* too.
 * Emails that look like a payment but can't be read land in *Settings → Emails we couldn't read*,
   where one tap turns them into a transaction.
 
@@ -32,7 +39,7 @@ Gmail** into **their own** account automatically.
 |---|---|
 | `lib/` | Flutter app (screens, Supabase data layer, monthly summaries) |
 | `apps_script/Code.gs` | The Gmail script. The app copies it with the user's URL and key filled in |
-| `supabase/migrations/0001_init.sql` | Tables, Row Level Security, new-user trigger with default categories |
+| `supabase/migrations/` | Tables, Row Level Security, new-user set-up (default categories, Cash account) |
 | `supabase/functions/ingest-email/` | Edge Function + bank email parsers (`parsers.ts`) and their tests |
 | `tool/preview_main.dart` | The app with sample data and no backend, for trying the UI |
 
@@ -41,7 +48,8 @@ Gmail** into **their own** account automatically.
 ### 1. Supabase project
 
 1. Create a free project at [supabase.com](https://supabase.com). Pick the **Mumbai** region.
-2. **SQL Editor** → paste `supabase/migrations/0001_init.sql` → Run.
+2. **SQL Editor** → paste `supabase/migrations/0001_init.sql` → Run, then the same for
+   `0002_accounts_loans.sql` (and any later numbered files, in order).
 3. **Authentication → Sign In / Providers → Email**: leave email + password on.
    For a group of friends you can turn off *Confirm email*. Then nobody has to click a link before
    their first login.

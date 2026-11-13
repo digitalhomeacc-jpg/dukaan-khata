@@ -5,7 +5,7 @@
 // (The script authenticates with the per-user `x-ingest-token` header instead of a JWT.)
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { looksTransactional, merchantKey, parseBankEmail, type EmailInput } from "./parsers.ts";
+import { looksTransactional, merchantKey, parseBankEmail, type EmailInput, type ParsedTxn } from "./parsers.ts";
 
 const MAX_MESSAGES = 100;
 const MAX_BODY = 8000;
@@ -49,6 +49,9 @@ Deno.serve(async (req) => {
     .from("merchant_rules").select("merchant_key, category_id").eq("user_id", userId);
   const ruleFor = new Map((rules ?? []).map((r) => [r.merchant_key as string, r.category_id as string]));
 
+  const accounts = await loadAccounts(userId);
+  const cashId = accounts.find((a) => a.kind === "cash")?.id ?? null;
+
   const rows = [];
   const unparsed = [];
   for (const m of messages) {
@@ -62,6 +65,9 @@ Deno.serve(async (req) => {
     const result = parseBankEmail(email);
     if (result.ok) {
       const t = result.txn;
+      const accountId = await accountFor(userId, accounts, t);
+      // ATM cash: money moves from the bank account into Cash; it is not spending.
+      const atm = t.method === "atm" && t.direction === "debit";
       rows.push({
         user_id: userId,
         amount: t.amount,
@@ -75,7 +81,9 @@ Deno.serve(async (req) => {
         source: "email",
         email_id: email.id,
         email_subject: email.subject.slice(0, 200),
-        excluded: t.isTransfer,
+        account_id: accountId,
+        counter_account_id: atm ? cashId : null,
+        excluded: t.isTransfer || atm,
         needs_review: !t.merchant,
       });
     } else if (result.reason === "unreadable" || looksTransactional(`${email.subject} ${email.body}`)) {
@@ -112,3 +120,31 @@ Deno.serve(async (req) => {
     unreadable: unparsed.length,
   });
 });
+
+type Account = { id: string; name: string; kind: string; bank: string | null; last4: string | null };
+
+async function loadAccounts(userId: string): Promise<Account[]> {
+  const { data } = await supabase.from("accounts")
+    .select("id, name, kind, bank, last4").eq("user_id", userId);
+  return (data ?? []) as Account[];
+}
+
+/** The user's account for this bank + last 4 digits, created on first sight. */
+async function accountFor(userId: string, accounts: Account[], t: ParsedTxn): Promise<string | null> {
+  if (!t.bank) return null;
+  if (!t.accountLast4) {
+    const same = accounts.filter((a) => a.bank === t.bank && a.kind === t.accountKind);
+    return same.length === 1 ? same[0].id : null;
+  }
+  const found = accounts.find((a) => a.bank === t.bank && a.last4 === t.accountLast4);
+  if (found) return found.id;
+
+  const name = `${t.bank} ${t.accountKind === "card" ? "Card" : "A/c"} ••${t.accountLast4}`.slice(0, 40);
+  const { data } = await supabase.from("accounts")
+    .upsert({ user_id: userId, name, kind: t.accountKind, bank: t.bank, last4: t.accountLast4 },
+      { onConflict: "user_id,name" })
+    .select("id, name, kind, bank, last4").single();
+  if (!data) return null;
+  accounts.push(data as Account);
+  return (data as Account).id;
+}

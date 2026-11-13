@@ -21,6 +21,10 @@ class AppData extends ChangeNotifier {
         categories = rows.map(Category.fromMap).toList();
         notifyListeners();
       }, onError: _onError),
+      db.from('accounts').stream(primaryKey: ['id']).order('created_at', ascending: true).listen((rows) {
+        accounts = rows.map(Account.fromMap).toList();
+        notifyListeners();
+      }, onError: _onError),
       db.from('profiles').stream(primaryKey: ['id']).listen((rows) {
         if (rows.isNotEmpty) profile = rows.first;
         notifyListeners();
@@ -34,6 +38,7 @@ class AppData extends ChangeNotifier {
   AppData.preview({
     required this.transactions,
     required this.categories,
+    this.accounts = const [],
     this.unread = const [],
     this.profile = const {},
   })  : _client = null,
@@ -49,6 +54,7 @@ class AppData extends ChangeNotifier {
   Object? error;
   List<Txn> transactions = const [];
   List<Category> categories = const [];
+  List<Account> accounts = const [];
   List<UnreadEmail> unread = const [];
   Map<String, dynamic> profile = const {};
 
@@ -65,6 +71,20 @@ class AppData extends ChangeNotifier {
     }
     return null;
   }
+
+  Set<String> get loanCategoryIds => {for (final c in categories) if (c.isLoan) c.id};
+  Category? get loanCategory => categories.where((c) => c.isLoan).firstOrNull;
+
+  Account? account(String? id) {
+    if (id == null) return null;
+    for (final a in accounts) {
+      if (a.id == id) return a;
+    }
+    return null;
+  }
+
+  List<Account> get activeAccounts => accounts.where((a) => !a.archived).toList();
+  Account? get cashAccount => accounts.where((a) => a.kind == AccountKind.cash && !a.archived).firstOrNull;
 
   void _onError(Object e) {
     error = e;
@@ -89,8 +109,9 @@ class AppData extends ChangeNotifier {
 
   // -------------------------------------------------------------- categories
 
-  Future<void> saveCategory({String? id, required String name, required String icon, required int color}) async {
-    final row = {'name': name.trim(), 'icon': icon, 'color': color};
+  Future<void> saveCategory(
+      {String? id, required String name, required String icon, required int color, bool isLoan = false}) async {
+    final row = {'name': name.trim(), 'icon': icon, 'color': color, 'kind': isLoan ? 'loan' : 'normal'};
     if (id == null) {
       await _db.from('categories').insert(row);
     } else {
@@ -99,6 +120,36 @@ class AppData extends ChangeNotifier {
   }
 
   Future<void> deleteCategory(String id) => _db.from('categories').delete().eq('id', id);
+
+  /// Makes the "Personal loans" category if the user deleted it.
+  Future<Category> ensureLoanCategory() async {
+    final existing = loanCategory;
+    if (existing != null) return existing;
+    final row = await _db
+        .from('categories')
+        .upsert({'name': 'Personal loans', 'icon': 'handshake', 'color': 0xFF3F51B5, 'kind': 'loan'},
+            onConflict: 'user_id,name')
+        .select()
+        .single();
+    final c = Category.fromMap(row);
+    categories = [...categories.where((x) => x.id != c.id), c];
+    notifyListeners();
+    return c;
+  }
+
+  // ---------------------------------------------------------------- accounts
+
+  Future<void> saveAccount(
+      {String? id, required String name, required AccountKind kind, required double openingBalance, bool archived = false}) async {
+    final row = {'name': name.trim(), 'kind': kind.name, 'opening_balance': openingBalance, 'archived': archived};
+    if (id == null) {
+      await _db.from('accounts').insert(row);
+    } else {
+      await _db.from('accounts').update(row).eq('id', id);
+    }
+  }
+
+  Future<void> deleteAccount(String id) => _db.from('accounts').delete().eq('id', id);
 
   // ------------------------------------------------------------- Gmail sync
 

@@ -21,7 +21,12 @@ class MonthBar extends StatelessWidget {
           icon: const Icon(Icons.chevron_left),
           onPressed: () => onChanged(addMonths(month, -1)),
         ),
-        Text(monthLabel(month), style: Theme.of(context).textTheme.titleMedium),
+        Flexible(
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(monthLabel(month), style: Theme.of(context).textTheme.titleMedium),
+          ),
+        ),
         IconButton(
           tooltip: 'Next month',
           icon: const Icon(Icons.chevron_right),

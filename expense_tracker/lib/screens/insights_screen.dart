@@ -21,8 +21,8 @@ class _InsightsScreenState extends State<InsightsScreen> {
   @override
   Widget build(BuildContext context) {
     final data = widget.data;
-    final s = summarize(data.transactions, _month);
-    final trend = monthlySpend(data.transactions, _month, 6);
+    final s = summarize(data.transactions, _month, loanCategoryIds: data.loanCategoryIds);
+    final trend = monthlySpend(data.transactions, _month, 6, loanCategoryIds: data.loanCategoryIds);
     final text = Theme.of(context).textTheme;
 
     return Scaffold(

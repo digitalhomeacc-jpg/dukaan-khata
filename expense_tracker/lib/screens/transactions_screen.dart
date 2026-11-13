@@ -11,9 +11,12 @@ import 'txn_editor.dart';
 enum _Filter { all, spent, received, uncategorised }
 
 class TransactionsScreen extends StatefulWidget {
-  const TransactionsScreen({super.key, required this.data});
+  const TransactionsScreen({super.key, required this.data, this.accountId});
 
   final AppData data;
+
+  /// Opened from the Accounts tab: only this account's transactions.
+  final String? accountId;
 
   @override
   State<TransactionsScreen> createState() => _TransactionsScreenState();
@@ -23,9 +26,11 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
   var _month = monthStart(DateTime.now());
   var _filter = _Filter.all;
   var _query = '';
+  late String? _accountId = widget.accountId;
 
   bool _keep(Txn t) {
     if (!inMonth(t.txnAt, _month)) return false;
+    if (_accountId != null && t.accountId != _accountId && t.counterAccountId != _accountId) return false;
     final ok = switch (_filter) {
       _Filter.all => true,
       _Filter.spent => t.isDebit,
@@ -43,7 +48,13 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
   @override
   Widget build(BuildContext context) {
     final data = widget.data;
-    final summary = summarize(data.transactions, _month);
+    final loans = data.loanCategoryIds;
+    final summary = summarize(
+      _accountId == null ? data.transactions : data.transactions.where((t) => t.accountId == _accountId),
+      _month,
+      loanCategoryIds: loans,
+    );
+    final account = data.account(_accountId);
     final shown = data.transactions.where(_keep).toList();
     final days = groupByDay(shown);
     final uncategorised =
@@ -53,6 +64,23 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
       appBar: AppBar(
         title: MonthBar(month: _month, onChanged: (m) => setState(() => _month = m)),
         centerTitle: true,
+        actions: [
+          if (widget.accountId == null)
+            PopupMenuButton<String?>(
+              tooltip: 'Show one account',
+              icon: Icon(_accountId == null ? Icons.filter_list : Icons.filter_list_alt),
+              initialValue: _accountId,
+              onSelected: (id) => setState(() => _accountId = id == '' ? null : id),
+              itemBuilder: (_) => [
+                const PopupMenuItem(value: '', child: Text('All accounts')),
+                for (final a in data.accounts)
+                  PopupMenuItem(
+                    value: a.id,
+                    child: ListTile(dense: true, leading: Icon(accountIcon(a)), title: Text(a.name)),
+                  ),
+              ],
+            ),
+        ],
       ),
       body: !data.loaded
           ? Center(
@@ -62,6 +90,17 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
             )
           : CustomScrollView(
               slivers: [
+                if (account != null)
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                      child: InputChip(
+                        avatar: Icon(accountIcon(account), size: 18),
+                        label: Text(account.name),
+                        onDeleted: widget.accountId == null ? () => setState(() => _accountId = null) : null,
+                      ),
+                    ),
+                  ),
                 SliverToBoxAdapter(child: _SummaryCard(summary: summary)),
                 if (uncategorised > 0 && _filter != _Filter.uncategorised)
                   SliverToBoxAdapter(
@@ -120,7 +159,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                     child: _EmptyState(hasAny: data.transactions.isNotEmpty),
                   ),
                 for (final day in days) ...[
-                  SliverToBoxAdapter(child: _DayHeader(day: day.key, txns: day.value)),
+                  SliverToBoxAdapter(child: _DayHeader(day: day.key, txns: day.value, loanCategoryIds: loans)),
                   SliverList.builder(
                     itemCount: day.value.length,
                     itemBuilder: (context, i) => TxnTile(txn: day.value[i], data: data),
@@ -172,14 +211,15 @@ class _SummaryCard extends StatelessWidget {
 }
 
 class _DayHeader extends StatelessWidget {
-  const _DayHeader({required this.day, required this.txns});
+  const _DayHeader({required this.day, required this.txns, required this.loanCategoryIds});
 
   final DateTime day;
   final List<Txn> txns;
+  final Set<String> loanCategoryIds;
 
   @override
   Widget build(BuildContext context) {
-    final spent = txns.where((t) => t.isDebit && !t.excluded).fold(0.0, (s, t) => s + t.amount);
+    final spent = txns.where((t) => t.isDebit && counts(t, loanCategoryIds)).fold(0.0, (s, t) => s + t.amount);
     final style = Theme.of(context).textTheme.labelLarge?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant);
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
@@ -199,16 +239,27 @@ class TxnTile extends StatelessWidget {
   final Txn txn;
   final AppData data;
 
+  String? _accountText() {
+    final a = data.account(txn.accountId);
+    final from = a?.name ??
+        (txn.bank == null ? null : '${txn.bank}${txn.accountLast4 != null ? ' ••${txn.accountLast4}' : ''}');
+    final other = data.account(txn.counterAccountId);
+    if (txn.excluded && other != null) return txn.isDebit ? '${from ?? '?'} → ${other.name}' : '${other.name} → ${from ?? '?'}';
+    return from;
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final cat = data.category(txn.categoryId);
-    final details = [
+    var details = [
       cat?.name ?? (txn.isDebit ? 'No category' : null),
-      if (txn.bank != null) '${txn.bank}${txn.accountLast4 != null ? ' ••${txn.accountLast4}' : ''}',
+      _accountText(),
       timeLabel(txn.txnAt),
     ].whereType<String>().join(' · ');
-    final amountColor = txn.excluded ? scheme.outline : (txn.isDebit ? scheme.onSurface : Colors.green.shade700);
+    final isLoan = cat?.isLoan ?? false;
+    if (isLoan) details = '${txn.isDebit ? 'Lent / repaid' : 'Borrowed / got back'} · $details';
+    final amountColor = txn.excluded || isLoan ? scheme.outline : (txn.isDebit ? scheme.onSurface : Colors.green.shade700);
     return ListTile(
       leading: CategoryAvatar(cat),
       title: Text(txn.title, maxLines: 1, overflow: TextOverflow.ellipsis),

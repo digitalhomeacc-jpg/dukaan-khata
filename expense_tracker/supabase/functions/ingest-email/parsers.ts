@@ -22,6 +22,8 @@ export interface ParsedTxn {
   merchant: string | null;
   bank: string | null;
   accountLast4: string | null;
+  /** Credit card vs. bank account (debit cards and UPI belong to the bank account). */
+  accountKind: "bank" | "card";
   method: Method;
   /** ISO timestamp of the transaction. */
   txnAt: string;
@@ -299,6 +301,7 @@ export function parseBankEmail(email: EmailInput): ParseResult {
       merchant: findMerchant(text, direction),
       bank: detectBank(email.from, text),
       accountLast4: findLast4(text),
+      accountKind: /credit card/i.test(text) ? "card" : "bank",
       method: findMethod(text),
       txnAt: resolveTime(text, email.date),
       isTransfer: isTransfer(text, direction),
