@@ -725,17 +725,19 @@ class AppData extends ChangeNotifier {
 
   // ------------------------------------------------------------ transactions
 
-  Future<void> saveTxn(Txn t, {required bool isNew, bool rememberCategory = false}) async {
+  /// Saves a payment; returns its id.
+  Future<String> saveTxn(Txn t, {required bool isNew, bool rememberCategory = false}) async {
     final row = t.toWriteMap();
     if (isNew) {
-      await _db.from('transactions').insert({...row, 'source': 'manual'});
-      return;
+      final r = await _db.from('transactions').insert({...row, 'source': 'manual'}).select('id').single();
+      return r['id'] as String;
     }
     // `edited` keeps a later re-read of the bank email from overwriting the user's changes.
     await _db.from('transactions').update({...row, 'edited': true}).eq('id', t.id);
     if (rememberCategory && t.categoryId != null) {
       await _db.rpc('set_category', params: {'p_txn': t.id, 'p_category': t.categoryId, 'p_remember': true});
     }
+    return t.id;
   }
 
   Future<void> deleteTxn(String id) => _db.from('transactions').delete().eq('id', id);

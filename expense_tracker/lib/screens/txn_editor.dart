@@ -64,6 +64,9 @@ class _TxnEditorState extends State<TxnEditor> {
   var _remember = false;
   var _busy = false;
 
+  /// New payment shared with friends: each friend's part (added with the payment).
+  final _parts = <({TextEditingController name, TextEditingController amount})>[];
+
   bool get _isNew => widget.existing == null;
   bool get _isLoan => widget.data.loanCategoryIds.contains(_categoryId);
 
@@ -75,6 +78,10 @@ class _TxnEditorState extends State<TxnEditor> {
     _merchant.dispose();
     _merchantFocus.dispose();
     _note.dispose();
+    for (final p in _parts) {
+      p.name.dispose();
+      p.amount.dispose();
+    }
     super.dispose();
   }
 
@@ -117,10 +124,38 @@ class _TxnEditorState extends State<TxnEditor> {
           : (widget.existing?.paidBy == widget.existing?.merchant ? null : widget.existing?.paidBy),
     );
     final categoryChanged = _categoryId != widget.existing?.categoryId;
+    final friendParts = <String, double>{
+      for (final p in _parts)
+        if (p.name.text.trim().isNotEmpty && (double.tryParse(p.amount.text.replaceAll(',', '')) ?? 0) > 0)
+          p.name.text.trim(): double.parse(p.amount.text.replaceAll(',', '')),
+    };
+    final partsTotal = friendParts.values.fold(0.0, (v, x) => v + x);
+    if (_isNew && _isDebit && partsTotal > txn.amount + 0.005) {
+      setState(() => _busy = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Friends\' parts (${money(partsTotal)}) are more than the bill (${money(txn.amount)})')),
+      );
+      return;
+    }
     try {
       final remember = !_isNew && categoryChanged && _remember && _merchant.text.trim().isNotEmpty;
       final vpa = widget.existing?.payeeVpa;
-      await widget.data.saveTxn(txn, isNew: _isNew, rememberCategory: remember && vpa == null);
+      final id = await widget.data.saveTxn(txn, isNew: _isNew, rememberCategory: remember && vpa == null);
+      if (_isNew && _isDebit) {
+        for (final e in friendParts.entries) {
+          try {
+            await widget.data.addShare(id, e.key, e.value);
+          } catch (err) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Saved, but ${e.key}\'s part was not added ($err). Open the payment to add it.'),
+                ),
+              );
+            }
+          }
+        }
+      }
       if (remember && vpa != null) {
         await widget.data.categorizeGroup(
           widget.data.transactions.where((t) => t.payeeVpa == vpa && t.id != txn.id),
@@ -369,6 +404,7 @@ class _TxnEditorState extends State<TxnEditor> {
                 hintText: 'What was it for? Who was with you? Bill no.…',
               ),
             ),
+            if (_isNew && _isDebit && !_isLoan && !_excluded) ...[const SizedBox(height: 16), _splitNew(context)],
             if (existing != null && existing.isDebit && !existing.isLoanTransfer && !_isLoan) ...[
               const SizedBox(height: 16),
               ListenableBuilder(
@@ -455,6 +491,95 @@ class _TxnEditorState extends State<TxnEditor> {
           ],
         ),
       ),
+    );
+  }
+
+  /// Splitting a new payment (udhaar too: you owe the place all of it, friends owe you their parts).
+  Widget _splitNew(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+    final total = double.tryParse(_amount.text.replaceAll(',', '')) ?? 0;
+    final partsTotal = _parts.fold(0.0, (v, p) => v + (double.tryParse(p.amount.text.replaceAll(',', '')) ?? 0));
+    final known = {for (final f in widget.data.friendBalances) f.person}.toList()..sort();
+    void addFriend([String name = '']) =>
+        setState(() => _parts.add((name: TextEditingController(text: name), amount: TextEditingController())));
+    void equally() {
+      final n = _parts.length + 1;
+      final paise = (total * 100).round();
+      for (final p in _parts) {
+        p.amount.text = ((paise ~/ n) / 100).toStringAsFixed(paise ~/ n % 100 == 0 ? 0 : 2);
+      }
+      setState(() {});
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(child: Text('Shared with friends?', style: text.titleSmall)),
+            if (_parts.isNotEmpty && total > 0)
+              TextButton(onPressed: equally, child: Text('Split equally (${_parts.length + 1})')),
+          ],
+        ),
+        for (final (i, p) in _parts.indexed)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: p.name,
+                    textCapitalization: TextCapitalization.words,
+                    decoration: const InputDecoration(labelText: 'Friend', isDense: true),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                SizedBox(
+                  width: 110,
+                  child: TextField(
+                    controller: p.amount,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))],
+                    decoration: const InputDecoration(labelText: 'Their part', prefixText: '₹ ', isDense: true),
+                    onChanged: (_) => setState(() {}),
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Remove',
+                  icon: const Icon(Icons.close),
+                  onPressed: () => setState(() => _parts.removeAt(i)),
+                ),
+              ],
+            ),
+          ),
+        const SizedBox(height: 6),
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: [
+            ActionChip(
+              avatar: const Icon(Icons.person_add_alt, size: 18),
+              label: const Text('Add a friend'),
+              onPressed: addFriend,
+            ),
+            for (final f in known.where((f) => !_parts.any((p) => p.name.text.trim() == f)).take(5))
+              ActionChip(label: Text(f), onPressed: () => addFriend(f)),
+          ],
+        ),
+        if (_parts.isNotEmpty && total > 0)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text(
+              partsTotal > total + 0.005
+                  ? 'Friends\' parts are more than the bill'
+                  : 'Your part ${money(total - partsTotal)} is your spending. Friends owe you ${money(partsTotal)}'
+                        '${_onCredit ? '; you owe ${_merchant.text.trim().isEmpty ? 'the place' : _merchant.text.trim()} all ${money(total)}' : ''}.',
+              style: text.bodySmall?.copyWith(
+                color: partsTotal > total + 0.005 ? Theme.of(context).colorScheme.error : null,
+              ),
+            ),
+          ),
+      ],
     );
   }
 

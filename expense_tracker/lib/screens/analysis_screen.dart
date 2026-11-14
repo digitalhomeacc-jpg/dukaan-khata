@@ -261,7 +261,9 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
                 contentPadding: EdgeInsets.zero,
                 leading: CategoryAvatar(data.category(r.categoryId), size: 28),
                 title: Text(r.name),
-                subtitle: Text('paid in ${r.months} of the last 6 months'),
+                subtitle: Text(
+                  '${data.category(r.categoryId)?.name ?? 'No category'} · paid in ${r.months} of the last 6 months',
+                ),
                 trailing: Text('~${money(r.perMonth.roundToDouble())}/month'),
               ),
           ], note: 'Subscriptions, habits and fixed costs: paid in 3 or more of the last 6 months.'),

@@ -125,7 +125,9 @@ Analysis analyse(
   ]..sort((a, b) => (b.now - b.before).abs().compareTo((a.now - a.before).abs()));
 
   // Recurring: the same payee in 3+ of the last 6 months up to the period's end.
-  final since = DateTime(end.year, end.month - 6, end.day);
+  // Six calendar months: this one and the five before it (a rolling window would touch 7 months).
+  final lastDay = end.subtract(const Duration(microseconds: 1));
+  final since = DateTime(lastDay.year, lastDay.month - 5);
   final monthsOf = <String, Set<int>>{}, totalOf = <String, double>{}, nameOf = <String, String>{};
   final catOf = <String, Map<String?, int>>{};
   for (final t in mine) {
