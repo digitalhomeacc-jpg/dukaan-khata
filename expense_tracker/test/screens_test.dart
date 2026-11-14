@@ -377,11 +377,29 @@ void main() {
     expect(find.text('Its own group'), findsOneWidget);
   });
 
+  testWidgets('a new payment can be on credit (udhaar): no account, you owe the payee', (tester) async {
+    final data = sample();
+    await pump(tester, TxnEditor(data: data));
+    expect(find.text('Paid from'), findsOneWidget);
+    await tester.enterText(find.widgetWithText(TextFormField, 'Paid to'), 'Hotel Sai');
+    await tester.scrollUntilVisible(
+      find.text('On credit (udhaar), pay later'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(find.text('On credit (udhaar), pay later'));
+    await tester.pumpAndSettle();
+    expect(find.text('Paid from'), findsNothing);
+    expect(find.textContaining('You owe Hotel Sai'), findsOneWidget);
+  });
+
   testWidgets('editor for an email transaction', (tester) async {
     final data = sample();
     await pump(tester, TxnEditor(data: data, existing: data.transactions.first));
     expect(find.text('Bank email'), findsOneWidget);
     await tester.scrollUntilVisible(find.byType(CategoryField), 200, scrollable: find.byType(Scrollable).first);
+    await tester.ensureVisible(find.byType(CategoryField));
+    await tester.pumpAndSettle();
     await tester.tap(find.byType(CategoryField));
     await tester.pumpAndSettle();
     // The picker: groups listed, search offers to add a new detail.

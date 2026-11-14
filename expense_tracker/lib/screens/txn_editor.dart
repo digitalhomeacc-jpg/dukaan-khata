@@ -49,6 +49,9 @@ class _TxnEditorState extends State<TxnEditor> {
   late String? _categoryId = _start?.categoryId;
   late String _method = _start?.method ?? (widget.existing == null ? 'cash' : 'other');
   late bool _excluded = _start?.excluded ?? false;
+
+  /// "On credit (udhaar)": nothing paid yet, you owe the payee. Kept as who you owe.
+  late bool _onCredit = _start?.paidBy != null && _start?.paidBy == _start?.merchant;
   late String? _accountId = _start?.accountId ?? (widget.existing == null ? widget.data.cashAccount?.id : null);
   late String? _counterId = _start?.counterAccountId;
 
@@ -93,9 +96,13 @@ class _TxnEditorState extends State<TxnEditor> {
       note: _note.text,
       method: _method,
       categoryId: _categoryId,
-      accountId: _accountId,
+      accountId: _onCredit ? null : _accountId,
       counterAccountId: _counterId == _accountId ? null : _counterId,
       excluded: _excluded,
+      // Kept as it was (a friend paid for you), or the payee you owe when bought on credit.
+      paidBy: _onCredit
+          ? _merchant.text.trim()
+          : (widget.existing?.paidBy == widget.existing?.merchant ? null : widget.existing?.paidBy),
     );
     final categoryChanged = _categoryId != widget.existing?.categoryId;
     try {
@@ -192,7 +199,9 @@ class _TxnEditorState extends State<TxnEditor> {
                           : 'Received = you borrowed or they paid you back')
                     : null,
               ),
-              validator: (v) => _isLoan && (v ?? '').trim().isEmpty ? 'Whose loan is it?' : null,
+              validator: (v) => (_isLoan || _onCredit) && (v ?? '').trim().isEmpty
+                  ? (_onCredit ? 'Who do you owe?' : 'Whose loan is it?')
+                  : null,
               onChanged: (_) => setState(() {}),
             ),
             const SizedBox(height: 12),
@@ -215,17 +224,32 @@ class _TxnEditorState extends State<TxnEditor> {
                   ),
               ],
             ),
-            const SizedBox(height: 20),
-            Text(_isDebit ? 'Paid from' : 'Received in', style: Theme.of(context).textTheme.titleSmall),
-            const SizedBox(height: 8),
-            _AccountChips(
-              data: widget.data,
-              selected: _accountId,
-              onSelected: (id) => setState(() {
-                _accountId = id;
-                if (_isNew && widget.data.account(id)?.kind == AccountKind.cash) _method = 'cash';
-              }),
-            ),
+            if (_isDebit)
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                value: _onCredit,
+                onChanged: (v) => setState(() => _onCredit = v),
+                title: const Text('On credit (udhaar), pay later'),
+                subtitle: Text(
+                  _onCredit
+                      ? 'Counted as your spending now. You owe ${_merchant.text.trim().isEmpty ? 'them' : _merchant.text.trim()}: '
+                            'it shows in Friends until you pay.'
+                      : 'Ate or bought now, paying later (restaurant, shop khata)',
+                ),
+              ),
+            if (!_onCredit || !_isDebit) ...[
+              const SizedBox(height: 20),
+              Text(_isDebit ? 'Paid from' : 'Received in', style: Theme.of(context).textTheme.titleSmall),
+              const SizedBox(height: 8),
+              _AccountChips(
+                data: widget.data,
+                selected: _accountId,
+                onSelected: (id) => setState(() {
+                  _accountId = id;
+                  if (_isNew && widget.data.account(id)?.kind == AccountKind.cash) _method = 'cash';
+                }),
+              ),
+            ],
             const SizedBox(height: 20),
             Text('Category', style: Theme.of(context).textTheme.titleSmall),
             const SizedBox(height: 8),
