@@ -33,17 +33,29 @@ class FriendRow {
 /// Everyone in your Friends list: from your own payments, and connected friends' shared record.
 List<FriendRow> friendRows(AppData data) {
   final rows = <String, FriendRow>{};
+  // "Also known as": every name goes to its main name, so one person is always one row.
+  String canon(String name) => data.aliases[AppData.keyOf(name)] ?? name.trim();
+  FriendLink? linkOf(String name) {
+    final k = AppData.keyOf(canon(name));
+    for (final l in data.links.where((l) => l.active)) {
+      if (data.me != null && AppData.keyOf(canon(l.nameFor(data.me!))) == k) return l;
+    }
+    return null;
+  }
+
   for (final l in data.friendBalances) {
-    final link = data.linkFor(l.person);
-    rows[AppData.keyOf(l.person)] = FriendRow(
-      l.person,
-      link == null || data.me == null ? l.balance : sharedBalance(data.sharedEntries, link.id, data.me!),
-      link,
-    );
+    final name = canon(l.person);
+    final link = linkOf(name);
+    final key = AppData.keyOf(name);
+    final balance = link == null || data.me == null ? l.balance : sharedBalance(data.sharedEntries, link.id, data.me!);
+    final had = rows[key];
+    // Two names already merged into one balance upstream; a connected friend's balance comes from the link.
+    rows[key] = FriendRow(name, link != null ? balance : (had?.balance ?? 0) + balance, link);
   }
   for (final link in data.links.where((l) => l.active)) {
-    final name = data.me == null ? '' : link.nameFor(data.me!);
-    if (name.isEmpty) continue;
+    final raw = data.me == null ? '' : link.nameFor(data.me!);
+    if (raw.isEmpty) continue;
+    final name = canon(raw);
     rows.putIfAbsent(
       AppData.keyOf(name),
       () => FriendRow(name, sharedBalance(data.sharedEntries, link.id, data.me!), link),
@@ -52,10 +64,8 @@ List<FriendRow> friendRows(AppData data) {
   // Friends whose payments are your spends: listed too, with nothing owed.
   for (final MapEntry(:key, :value) in data.people.entries) {
     if (value != 'friend') continue;
-    rows.putIfAbsent(
-      key,
-      () => FriendRow(data.personNames[key] ?? key, 0, data.linkFor(data.personNames[key] ?? key), spendsOnly: true),
-    );
+    final name = canon(data.personNames[key] ?? key);
+    rows.putIfAbsent(AppData.keyOf(name), () => FriendRow(name, 0, linkOf(name), spendsOnly: true));
   }
   final out = rows.values.toList()
     ..sort((a, b) {
