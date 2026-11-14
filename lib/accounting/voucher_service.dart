@@ -1020,7 +1020,7 @@ class VoucherService {
   }
 
   Future<(Voucher, List<ItemLine>)> load(String id) async {
-    final v = Voucher.fromRow(await db.get('SELECT * FROM vouchers WHERE id = ?', [id]));
+    final v = Voucher.fromRow(await db.get('SELECT v.*, ${dayNoSql()} AS day_no FROM vouchers v WHERE v.id = ?', [id]));
     final items = await db.getAll(
         // lines in the order they were typed (ids end in I0, I1 … I10)
         'SELECT item_id, qty, rate, amount, direction FROM inventory_lines WHERE voucher_id = ? AND deleted = 0 ORDER BY LENGTH(id), id',

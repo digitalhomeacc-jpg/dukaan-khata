@@ -299,7 +299,7 @@ class LedgerRepo {
     if (term.isEmpty) return [];
     final amount = double.tryParse(term);
     final rows = await db.getAll(
-      'SELECT v.*, p.name AS party_name, pl.short_code AS pay_code FROM vouchers v '
+      'SELECT v.*, ${dayNoSql()} AS day_no, p.name AS party_name, pl.short_code AS pay_code FROM vouchers v '
       'LEFT JOIN ledgers p ON p.id = v.party_id LEFT JOIN ledgers pl ON pl.id = v.pay_ledger_id '
       'WHERE v.business_id = ? AND v.deleted = 0 AND ('
       '${amount != null ? 'v.amount = ? OR v.paid = ? OR v.vno = ? OR ' : ''}'
@@ -560,7 +560,7 @@ class LedgerRepo {
     final ledger = (await byId(ledgerId))!;
     final opening = from == null ? ledger.openingBalance : await balanceAt(ledgerId, date: from, before: true);
     final rows = await db.getAll(
-      'SELECT v.id, v.vdate, v.vtype, v.vno, v.narration, v.ref_no, pl.short_code AS pay_code, '
+      'SELECT v.id, v.vdate, v.vtype, v.vno, ${dayNoSql()} AS day_no, v.narration, v.ref_no, pl.short_code AS pay_code, '
       'v.hamali, v.transport, v.haste, tr.name AS transporter_name, v.paid, pl.name AS pay_name, '
       // विभागून: part of the money by a second mode (a linked transfer)
       "(SELECT s.amount || '|' || l2.name FROM vouchers s JOIN ledgers l2 ON l2.id = "
@@ -592,7 +592,7 @@ class LedgerRepo {
         if ((r['narration'] as String?)?.isNotEmpty ?? false) r['narration'] as String,
       ];
       out.add(StatementRow(r['id'] as String, r['vdate'] as String, VoucherType.fromCode(r['vtype'] as String),
-          (r['vno'] as int?) ?? 0, parts.join(' · '), d, c, bal, r['pay_code'] as String?,
+          ((r['day_no'] ?? r['vno']) as int?) ?? 0, parts.join(' · '), d, c, bal, r['pay_code'] as String?,
           hamali: (r['hamali'] as int?) ?? 0,
           transport: (r['transport'] as int?) ?? 0,
           transporterName: r['transporter_name'] as String?,
@@ -633,7 +633,7 @@ class LedgerRepo {
   /// arrived incomplete and needs to be opened and saved again.
   Future<List<Voucher>> unbalanced() async {
     final rows = await db.getAll(
-      'SELECT v.*, p.name AS party_name, pl.short_code AS pay_code FROM vouchers v '
+      'SELECT v.*, ${dayNoSql()} AS day_no, p.name AS party_name, pl.short_code AS pay_code FROM vouchers v '
       'LEFT JOIN ledgers p ON p.id = v.party_id LEFT JOIN ledgers pl ON pl.id = v.pay_ledger_id '
       "WHERE v.business_id = ? AND v.deleted = 0 AND v.vtype NOT IN ('stock_adjust', 'opening', 'history', 'promise', 'goods_out', 'goods_in', 'booking', 'recurring', 'recurring_pay') AND ("
       ' COALESCE((SELECT SUM(debit) - SUM(credit) FROM voucher_lines WHERE voucher_id = v.id AND deleted = 0), 0) <> 0'
@@ -659,7 +659,7 @@ class LedgerRepo {
   /// [open] = still waiting; otherwise kept / missed ones, newest first.
   Future<List<(Voucher, Ledger)>> promises({bool open = true, String? partyId}) async {
     final rows = await db.getAll(
-      'SELECT v.*, l.id AS l_id, l.name AS l_name, l.name_en AS l_name_en, l.grp AS l_grp, l.phone AS l_phone, '
+      'SELECT v.*, ${dayNoSql()} AS day_no, l.id AS l_id, l.name AS l_name, l.name_en AS l_name_en, l.grp AS l_grp, l.phone AS l_phone, '
       'l.page_no AS l_page_no, l.opening_balance AS l_ob, '
       '(l.opening_balance + COALESCE((SELECT SUM(debit - credit) FROM voucher_lines WHERE ledger_id = l.id AND deleted = 0), 0)) AS l_balance '
       "FROM vouchers v JOIN ledgers l ON l.id = v.party_id WHERE v.business_id = ? AND v.vtype = 'promise' AND v.deleted = 0 "
@@ -771,7 +771,7 @@ class LedgerRepo {
       [...moneyLedgerIds, date, ...moneyLedgerIds],
     );
     final rows = await db.getAll(
-      'SELECT v.id, v.vtype, v.vno, v.narration, v.gst_bill_needed, ml.short_code AS code, SUM(vl.debit) AS d, SUM(vl.credit) AS c, '
+      'SELECT v.id, v.vtype, v.vno, ${dayNoSql()} AS day_no, v.narration, v.gst_bill_needed, ml.short_code AS code, SUM(vl.debit) AS d, SUM(vl.credit) AS c, '
       '(SELECT GROUP_CONCAT(x.name, \' / \') FROM (SELECT DISTINCT l2.name FROM voucher_lines vl2 JOIN ledgers l2 ON l2.id = vl2.ledger_id '
       ' WHERE vl2.voucher_id = v.id AND vl2.deleted = 0 AND vl2.ledger_id NOT IN ($ph) '
       " AND l2.grp NOT IN ('sales','purchase','sales_return','purchase_return')) x) AS other, "
@@ -809,7 +809,7 @@ class LedgerRepo {
       final net = d - c;
       if (net == 0) continue;
       out.add(CashRow(r['id'] as String, type, particulars, net > 0 ? net : 0, net < 0 ? -net : 0, code, gst, narration,
-          vno: (r['vno'] as num?)?.toInt()));
+          vno: ((r['day_no'] ?? r['vno']) as num?)?.toInt()));
     }
     return CashBook(date, (o['b'] as num).toInt(), out);
   }
@@ -817,7 +817,7 @@ class LedgerRepo {
   /// All vouchers of a day (Day Book).
   Future<List<Voucher>> dayBook(String from, [String? to]) async {
     final rows = await db.getAll(
-      'SELECT v.*, p.name AS party_name, pl.short_code AS pay_code FROM vouchers v '
+      'SELECT v.*, ${dayNoSql()} AS day_no, p.name AS party_name, pl.short_code AS pay_code FROM vouchers v '
       'LEFT JOIN ledgers p ON p.id = v.party_id LEFT JOIN ledgers pl ON pl.id = v.pay_ledger_id '
       "WHERE v.business_id = ? AND v.deleted = 0 AND v.vtype NOT IN ('history', 'promise', 'recurring', 'recurring_pay') AND v.vdate >= ? AND v.vdate <= ? "
       'ORDER BY v.vdate, v.created_at',

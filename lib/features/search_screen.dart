@@ -211,7 +211,7 @@ class VoucherTile extends StatelessWidget {
           maxLines: 1, overflow: TextOverflow.ellipsis),
       subtitle: Text(
         [
-          '${t('vt_${v.type.code}')} #${v.vno}',
+          '${t('vt_${v.type.code}')} #${v.shownNo}',
           shortDate(v.date),
           if (v.payCode != null) v.payCode!,
           if (v.haste != null) '${t('haste')}: ${v.haste}',

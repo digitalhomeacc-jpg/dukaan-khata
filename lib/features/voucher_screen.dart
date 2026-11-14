@@ -411,7 +411,7 @@ class _VoucherScreenState extends State<VoucherScreen> {
 
   String _title(AppController app) {
     if (isHistory) return '${app.t('old_entry')}${editing != null ? ' · ${app.t('edit')}' : ''}';
-    if (editing != null) return '${app.t('edit')} · ${app.t('vt_${type.code}')} #${editing!.vno}';
+    if (editing != null) return '${app.t('edit')} · ${app.t('vt_${type.code}')} #${editing!.shownNo}';
     if (widget.expenseMode) return app.t('expense');
     return app.t(type.code);
   }
@@ -1953,7 +1953,7 @@ class _EntrySheet {
         child: Padding(
           padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
           child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            Text('${t('vt_${v.type.code}')} #${v.vno} · ${shortDate(v.date)}', style: Theme.of(ctx).textTheme.titleMedium),
+            Text('${t('vt_${v.type.code}')} #${v.shownNo} · ${shortDate(v.date)}', style: Theme.of(ctx).textTheme.titleMedium),
             const SizedBox(height: 6),
             if (party != null) Text(party.name, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
             Text('₹${Money.fmt(v.amount)}${v.type == VoucherType.salary ? ' · ${t('salary_hand')} ₹${Money.fmt(v.paid)}' : ''}',

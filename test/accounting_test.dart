@@ -1358,4 +1358,25 @@ void main() {
     expect(c?.$1, 'Staff');
     expect(await lr.countedOn('2026-11-14'), isNull, reason: 'each day separately');
   });
+
+  test('sale numbers restart at 1 each day; stored entry numbers never change', () async {
+    final m = items.values.first;
+    Future<String> sale(String d) =>
+        vs.save(VoucherInput(type: VoucherType.sale, date: d, payLedgerId: vs.sys('cash'), paid: rs(10), items: [ItemLine(m.id, 1, rs(10))]), owner);
+    final a1 = await sale('2026-11-20'), a2 = await sale('2026-11-20'), a3 = await sale('2026-11-20');
+    final b1 = await sale('2026-11-21'), b2 = await sale('2026-11-21');
+    final before = await db.getAll('SELECT id, vno FROM vouchers ORDER BY id');
+    await vs.delete(a2, owner);
+    final late = await sale('2026-11-20'); // typed later, dated back
+    Future<int> day(String id) async => (await vs.load(id)).$1.shownNo;
+    expect([await day(a1), await day(a3), await day(late)], [1, 3, 4], reason: 'a deleted bill keeps its place; a back-dated one comes last');
+    expect([await day(b1), await day(b2)], [1, 2]);
+    final r = await Reports(db, biz, (k) => k).register(VoucherType.sale, '2026-11-20', '2026-11-21');
+    expect(r.rows.map((x) => x[2]).toList(), ['1', '3', '4', '1', '2'], reason: 'day number beside the running number');
+    // nothing stored was changed by numbering
+    final after = {for (final x in await db.getAll('SELECT id, vno FROM vouchers')) x['id']: x['vno']};
+    for (final x in before) {
+      expect(after[x['id']], x['vno']);
+    }
+  });
 }

@@ -72,7 +72,7 @@ class Reports {
         for (final v in vs)
           [
             shortDate(v.date),
-            '${vtypeLabel(v.type, tr)} ${v.vno}',
+            '${vtypeLabel(v.type, tr)} ${v.shownNo}',
             v.partyName ?? v.narration ?? '',
             v.payCode ?? '',
             Money.fmt(v.amount),
@@ -581,7 +581,7 @@ class Reports {
   Future<ReportTable> chargesRegister(String from, String to) async {
     final b = businessId;
     final rows = await db.getAll(
-      'SELECT v.id, v.vdate, v.vtype, v.vno, v.transport, v.transporter_fare, p.name AS party_name, p.page_no, p.grp AS party_grp, '
+      'SELECT v.id, v.vdate, v.vtype, v.vno, ${dayNoSql()} AS day_no, v.transport, v.transporter_fare, p.name AS party_name, p.page_no, p.grp AS party_grp, '
       'tr.name AS transporter_name, '
       "SUM(CASE WHEN vl.ledger_id IN (?, ?) THEN vl.credit - vl.debit ELSE 0 END) AS hamali_in, "
       "SUM(CASE WHEN vl.ledger_id = ? THEN vl.debit - vl.credit ELSE 0 END) AS hamali_out, "
@@ -611,7 +611,7 @@ class Reports {
       out.add([
         shortDate(r['vdate'] as String),
         [
-          '${vtypeLabel(type, tr)}${type == VoucherType.sale ? ' #${r['vno']}' : ''}',
+          '${vtypeLabel(type, tr)}${type == VoucherType.sale ? ' #${r['day_no'] ?? r['vno']}' : ''}',
           if (who.isNotEmpty) who,
         ].join(' · '),
         hi == 0 ? '' : Money.fmt(hi),
@@ -646,7 +646,7 @@ class Reports {
 
   Future<ReportTable> register(VoucherType type, String from, String to) async {
     final rows = await db.getAll(
-      'SELECT v.id, v.vdate, v.vno, v.amount, v.paid, p.name AS party, pl.short_code AS code, '
+      'SELECT v.id, v.vdate, v.vno, ${dayNoSql()} AS day_no, v.amount, v.paid, p.name AS party, pl.short_code AS code, '
       '(SELECT GROUP_CONCAT(COALESCE(i.short_code, i.name) || \' \' || il.qty || \'×\' || (il.rate/100.0), \', \') '
       ' FROM inventory_lines il JOIN items i ON i.id = il.item_id WHERE il.voucher_id = v.id AND il.deleted = 0) AS items '
       'FROM vouchers v LEFT JOIN ledgers p ON p.id = v.party_id LEFT JOIN ledgers pl ON pl.id = v.pay_ledger_id '
@@ -660,6 +660,7 @@ class Reports {
       columns: [
         ReportColumn(tr('date'), flex: 2),
         ReportColumn('#', flex: 1),
+        if (type == VoucherType.sale) ReportColumn(tr('day_no'), flex: 1),
         ReportColumn(tr('party'), flex: 3),
         ReportColumn(tr('items'), flex: 4),
         ReportColumn.num(tr('amount')),
@@ -675,6 +676,7 @@ class Reports {
             return [
               shortDate(r['vdate'] as String),
               '${r['vno']}',
+              if (type == VoucherType.sale) '${r['day_no'] ?? ''}',
               (r['party'] as String?) ?? tr('cash_sale'),
               ((r['items'] as String?) ?? '').replaceAllMapped(RegExp(r'(\d+)\.0\b'), (m) => m[1]!),
               Money.fmt(a),
@@ -683,7 +685,7 @@ class Reports {
           }()
       ],
       rowRefs: [for (final r in rows) r['id'] as String],
-      totals: ['', '', tr('total'), '', Money.fmt(tot), Money.fmt(tot - paid)],
+      totals: ['', '', if (type == VoucherType.sale) '', tr('total'), '', Money.fmt(tot), Money.fmt(tot - paid)],
     );
   }
 
@@ -1033,7 +1035,7 @@ class Reports {
 
   Future<ReportTable> gstBillsNeeded(String from, String to) async {
     final rows = await db.getAll(
-      'SELECT v.*, p.name AS party_name, pl.short_code AS pay_code FROM vouchers v LEFT JOIN ledgers p ON p.id = v.party_id '
+      'SELECT v.*, ${dayNoSql()} AS day_no, p.name AS party_name, pl.short_code AS pay_code FROM vouchers v LEFT JOIN ledgers p ON p.id = v.party_id '
       'LEFT JOIN ledgers pl ON pl.id = v.pay_ledger_id WHERE v.business_id = ? AND v.deleted = 0 AND v.gst_bill_needed = 1 '
       'AND v.vdate BETWEEN ? AND ? ORDER BY v.vdate',
       [businessId, from, to],

@@ -183,7 +183,7 @@ class Exporter {
       List<Ledger> transporters) async {
     await app.loadPdfNames();
     final bytes = await BillPdf.build(app, v, lines, items, party, transporters);
-    final name = _fileName('${party?.name ?? 'bill'}_${v.vno}', 'pdf');
+    final name = _fileName('${party?.name ?? 'bill'}_${v.date}_${v.shownNo}', 'pdf');
     await SharePlus.instance.share(ShareParams(
       files: [XFile.fromData(bytes, mimeType: 'application/pdf', name: name)],
       fileNameOverrides: [name],
@@ -261,7 +261,7 @@ extension BillPdf on Exporter {
             ]),
           ),
           pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.end, children: [
-            pw.Text('No. ${v.vno}', style: const pw.TextStyle(fontSize: 10)),
+            pw.Text('No. ${v.shownNo}', style: const pw.TextStyle(fontSize: 10)),
             pw.Text(shortDate(v.date), style: const pw.TextStyle(fontSize: 10)),
           ]),
         ]),

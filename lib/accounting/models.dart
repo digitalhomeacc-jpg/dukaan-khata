@@ -276,6 +276,12 @@ class Voucher {
   final int gst; // GST amount (paise)
   final String? haste; // हस्ते – person who brought / took it
   final String? status; // promises: open | done | missed
+  /// Sales: the bill's number for its day (1, 2, 3 … from 1 each day), when loaded.
+  final int? dayNo;
+
+  /// The number to show: a sale's number for its day; otherwise the entry number.
+  /// The running total number of sales is shown only in the sales register.
+  int get shownNo => type == VoucherType.sale && dayNo != null && dayNo! > 0 ? dayNo! : vno;
 
   Voucher({
     required this.id,
@@ -303,6 +309,7 @@ class Voucher {
     this.gst = 0,
     this.haste,
     this.status,
+    this.dayNo,
   });
 
   factory Voucher.fromRow(Map<String, Object?> r) => Voucher(
@@ -331,7 +338,16 @@ class Voucher {
         gst: (r['gst'] as int?) ?? 0,
         haste: r['haste'] as String?,
         status: r['status'] as String?,
+        dayNo: (r['day_no'] as num?)?.toInt(),
       );
 
   int get due => amount - paid;
 }
+
+/// SQL for a sale's number on its day, for a vouchers row aliased [v]: its
+/// place among that day's sales in the order they were made. Deleted bills
+/// keep their place, so numbers never shift; a back-dated bill comes last.
+String dayNoSql([String v = 'v']) =>
+    "(CASE WHEN $v.vtype = 'sale' THEN (SELECT COUNT(*) FROM vouchers dn WHERE dn.business_id = $v.business_id "
+    "AND dn.vtype = 'sale' AND dn.vdate = $v.vdate AND (dn.vno < $v.vno OR (dn.vno = $v.vno "
+    "AND COALESCE(dn.created_at, '') <= COALESCE($v.created_at, '')))) END)";
