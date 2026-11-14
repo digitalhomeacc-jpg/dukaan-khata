@@ -10,6 +10,7 @@ import 'analysis_screen.dart';
 import 'budgets_screen.dart';
 import 'category_report_screen.dart';
 import 'places_screen.dart';
+import 'reports_screen.dart';
 
 class InsightsScreen extends StatefulWidget {
   const InsightsScreen({super.key, required this.data});
@@ -183,6 +184,11 @@ class _InsightsScreenState extends State<InsightsScreen> {
         appBar: AppBar(
           title: const Text('Insights'),
           actions: [
+            IconButton(
+              tooltip: 'Reports and Excel',
+              icon: const Icon(Icons.summarize_outlined),
+              onPressed: () => openReports(context, data),
+            ),
             IconButton(
               tooltip: 'Self analysis',
               icon: const Icon(Icons.psychology_outlined),

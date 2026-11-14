@@ -9,6 +9,7 @@ import '../ui/format.dart';
 import '../ui/range.dart';
 import 'import_statement_screen.dart';
 import 'lender_loans.dart';
+import 'reports_screen.dart';
 import 'transactions_screen.dart';
 
 /// Cash, bank accounts, cards and wallets with their balances.
@@ -108,6 +109,11 @@ class _AccountsScreenState extends State<AccountsScreen> {
             tooltip: 'Import bank statement',
             icon: const Icon(Icons.upload_file),
             onPressed: () => openImportStatement(context, data),
+          ),
+          IconButton(
+            tooltip: 'Account statements and Excel',
+            icon: const Icon(Icons.summarize_outlined),
+            onPressed: () => openReports(context, data),
           ),
           IconButton(tooltip: 'Add account', icon: const Icon(Icons.add), onPressed: () => editAccount(context, data)),
         ],
