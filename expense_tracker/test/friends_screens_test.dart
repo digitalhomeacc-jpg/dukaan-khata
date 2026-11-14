@@ -219,6 +219,19 @@ void main() {
     expect(find.text('Category for 3 payments'), findsOneWidget);
   });
 
+  testWidgets('a friend\'s page has Edit with rename, who is this, other names and the full ledger', (tester) async {
+    await pump(tester, FriendDetailScreen(data: sample(), person: 'Rahul Kumar'));
+    await tester.tap(find.byTooltip('Edit'));
+    await tester.pumpAndSettle();
+    expect(find.text('Rename'), findsOneWidget);
+    expect(find.text('Who is this?'), findsOneWidget);
+    expect(find.text('Also known as…'), findsOneWidget);
+    expect(find.text('All payments and category'), findsOneWidget);
+    await tester.tap(find.text('Rename'));
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(TextField, 'Rahul Kumar'), findsOneWidget);
+  });
+
   testWidgets('people review lists people, not shops', (tester) async {
     await pump(tester, PeopleReviewScreen(data: sample()));
     expect(find.text('Shresth Sharma'), findsOneWidget);

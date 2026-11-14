@@ -355,6 +355,128 @@ class FriendDetailScreen extends StatelessWidget {
   final AppData data;
   final String person;
 
+  /// Everything about this person in one place: name, who they are, other names, their full ledger.
+  Future<void> _edit(BuildContext context, double balance) async {
+    final key = AppData.keyOf(person);
+    final role = data.people[key];
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheet) => SafeArea(
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.badge_outlined),
+                title: const Text('Rename'),
+                subtitle: Text(person),
+                onTap: () async {
+                  Navigator.pop(sheet);
+                  await _rename(context);
+                },
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                child: Text('Who is this?', style: Theme.of(sheet).textTheme.titleSmall),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Wrap(
+                  spacing: 8,
+                  children: [
+                    for (final (r, label) in const [
+                      ('friend', 'Friend'),
+                      ('family', 'Family'),
+                      ('shop', 'Shop / service'),
+                      ('me', 'Me'),
+                    ])
+                      ChoiceChip(
+                        label: Text(label),
+                        selected: (role ?? 'friend') == r,
+                        onSelected: (_) async {
+                          Navigator.pop(sheet);
+                          await data.setPersonRole(person, r);
+                          if (r != 'friend' && context.mounted) Navigator.pop(context);
+                        },
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              ListTile(
+                leading: const Icon(Icons.person_add_alt),
+                title: const Text('Also known as…'),
+                subtitle: const Text('Another name the bank uses for them (a parent\'s account)'),
+                onTap: () async {
+                  Navigator.pop(sheet);
+                  await _alias(context);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.tune),
+                title: const Text('Opening balance'),
+                subtitle: const Text('What is owed, starting fresh from today'),
+                onTap: () async {
+                  Navigator.pop(sheet);
+                  await _correct(context, balance);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.receipt_long_outlined),
+                title: const Text('All payments and category'),
+                subtitle: const Text('Their full ledger: every payment, its category, running balance'),
+                onTap: () {
+                  Navigator.pop(sheet);
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => ListenableBuilder(
+                        listenable: data,
+                        builder: (_, _) => PlaceDetailScreen(data: data, keys: {key}),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _rename(BuildContext context) async {
+    final ctl = TextEditingController(text: person);
+    final name = await showDialog<String>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('Rename'),
+        content: TextField(
+          controller: ctl,
+          autofocus: true,
+          textCapitalization: TextCapitalization.words,
+          decoration: const InputDecoration(labelText: 'Name'),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(c, ctl.text.trim()), child: const Text('Save')),
+        ],
+      ),
+    );
+    if (name == null || name.isEmpty || name == person) return;
+    final key = AppData.keyOf(person);
+    // All their payments, by UPI ID and by name, now and later.
+    final vpas = {
+      for (final t in data.transactions)
+        if (t.payeeVpa != null && t.merchant != null && AppData.keyOf(t.merchant!) == key) t.payeeVpa!,
+    };
+    await data.renamePlace(vpas: vpas, names: {key}, nickname: name);
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Renamed to $name')));
+      Navigator.pop(context);
+    }
+  }
+
   Future<void> _settle(BuildContext context, double balance) async {
     final iPaid = balance > 0;
     final amount = TextEditingController(
@@ -489,6 +611,7 @@ class FriendDetailScreen extends StatelessWidget {
       appBar: AppBar(
         title: Text(person),
         actions: [
+          IconButton(tooltip: 'Edit', icon: const Icon(Icons.edit_outlined), onPressed: () => _edit(context, balance)),
           PopupMenuButton<String>(
             onSelected: (v) async {
               switch (v) {
