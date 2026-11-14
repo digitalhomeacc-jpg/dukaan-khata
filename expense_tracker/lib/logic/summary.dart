@@ -808,10 +808,17 @@ List<PayeeGroup> payeeGroups(
   for (final (t, k, _) in rows) {
     if (t.payeeVpa != null) (vpasOf[canon[k]!] ??= {})[t.payeeVpa!] = ((vpasOf[canon[k]!] ?? {})[t.payeeVpa!] ?? 0) + 1;
   }
+  // Written exactly the same on every UPI ID (e.g. you renamed them all "Bhai Pan Stall"): one place.
+  // Different spellings ("Hotel Vijay" and "HOTEL VIJAY") on different UPI IDs stay apart.
+  final spellingsOf = <String, Set<String>>{};
+  for (final (t, k, _) in rows) {
+    (spellingsOf[canon[k]!] ??= {}).add(t.merchant!.trim().replaceAll(RegExp(r'\s+'), ' '));
+  }
   String groupKey(Txn t, String k) {
     final c = canon[k]!, seen = vpasOf[c];
     // A person pays from several UPI IDs and stays one; only businesses are split by UPI ID.
     if (seen == null || seen.length < 2 || looksLikePerson(t.merchant)) return c;
+    if (spellingsOf[c]!.length < 2) return c;
     final v = t.payeeVpa ?? (seen.entries.toList()..sort((a, b) => b.value.compareTo(a.value))).first.key;
     return '$c|$v';
   }

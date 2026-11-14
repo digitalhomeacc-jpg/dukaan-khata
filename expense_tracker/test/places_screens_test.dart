@@ -1,11 +1,23 @@
 // ignore_for_file: invalid_use_of_visible_for_testing_member
 import 'package:expense_tracker/data/app_data.dart';
+import 'package:expense_tracker/logic/summary.dart';
 import 'package:expense_tracker/models.dart';
 import 'package:expense_tracker/screens/insights_screen.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 
 void main() {
+  test('a place renamed the same on several UPI IDs is one place', () {
+    final now = DateTime.now();
+    final groups = payeeGroups([
+      for (final (i, v) in const ['6835@y', '8806@y', '7506@y', '1611@y'].indexed)
+        Txn(id: '$i', amount: 50, isDebit: true, txnAt: now, merchant: 'Bhai Pan Stall', payeeVpa: v),
+    ]);
+    expect(groups, hasLength(1));
+    expect(groups.single.count, 4);
+    expect(groups.single.vpas, hasLength(4));
+  });
+
   testWidgets('Insights → Places groups repeated payees; a place shows its details', (tester) async {
     tester.view.physicalSize = const Size(360, 780) * 3;
     tester.view.devicePixelRatio = 3;
