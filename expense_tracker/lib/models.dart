@@ -457,6 +457,7 @@ class SharedEntry {
     this.changedBy,
     this.removeRequestedBy,
     this.rejectedBy,
+    this.mergedInto,
   });
 
   final String id;
@@ -482,6 +483,9 @@ class SharedEntry {
   final String? removeRequestedBy;
   final String? rejectedBy;
 
+  /// A duplicate record of the same money, folded into this other record.
+  final String? mergedInto;
+
   bool get deleted => deletedAt != null;
 
   /// A new entry, a changed amount or a removal that the other person has not answered yet.
@@ -506,6 +510,7 @@ class SharedEntry {
     changedBy: m['changed_by'] as String?,
     removeRequestedBy: m['remove_requested_by'] as String?,
     rejectedBy: m['rejected_by'] as String?,
+    mergedInto: m['merged_into'] as String?,
   );
 }
 

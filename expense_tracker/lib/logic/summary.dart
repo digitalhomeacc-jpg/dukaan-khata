@@ -1435,3 +1435,26 @@ Map<String, double> allocateSettle({
   if (left > 0) out[other] = (out[other] ?? 0) + left;
   return {for (final e in out.entries) e.key: e.value / 100};
 }
+
+/// Where a shared record with a connected friend is backed: both banks, only one, or neither (added by hand).
+enum Backing { both, mine, theirs, none }
+
+Backing backingOf(SharedEntry e, String me) {
+  final mine = e.creditor == me ? e.creditorTxn : e.debtorTxn;
+  final theirs = e.creditor == me ? e.debtorTxn : e.creditorTxn;
+  if (mine != null && theirs != null) return Backing.both;
+  if (mine != null) return Backing.mine;
+  if (theirs != null) return Backing.theirs;
+  return Backing.none;
+}
+
+/// "Check with banks" for one friend: how many counted records each bank backs, and their amounts.
+Map<Backing, ({int count, double amount})> bankCheck(Iterable<SharedEntry> entries, String linkId, String me) {
+  final out = {for (final b in Backing.values) b: (count: 0, amount: 0.0)};
+  for (final e in entries) {
+    if (e.linkId != linkId || e.deleted || e.kind == 'expense') continue;
+    final b = backingOf(e, me);
+    out[b] = (count: out[b]!.count + 1, amount: _round(out[b]!.amount + e.amount));
+  }
+  return out;
+}

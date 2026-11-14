@@ -772,8 +772,9 @@ class FriendDetailScreen extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 8),
+          if (link != null && me != null) _BankCheckCard(data: data, linkId: link.id, me: me, person: person),
           if (link != null && me != null)
-            for (final e in entries)
+            for (final e in entries.where((e) => e.mergedInto == null))
               ListTile(
                 leading: Icon(
                   e.waiting
@@ -801,7 +802,15 @@ class FriendDetailScreen extends StatelessWidget {
                               : 'removed by ${e.deletedBy == me ? 'you' : person}'
                         else
                           'added by ${e.createdBy == me ? 'you' : person}',
-                        if (!e.deleted && (e.creditor == me ? e.creditorTxn : e.debtorTxn) != null) 'in your bank',
+                        if (e.mergedInto != null)
+                          'same money as another record: merged'
+                        else if (!e.deleted && e.kind != 'expense')
+                          switch (backingOf(e, me)) {
+                            Backing.both => 'in both banks ✓',
+                            Backing.mine => 'only in your bank',
+                            Backing.theirs => 'only in ${person.split(' ').first}\'s bank',
+                            Backing.none => 'added by hand, not in a bank',
+                          },
                       ].join(' · '),
                     ),
                     if (e.waiting) _WaitingLine(data: data, entry: e, person: person),
@@ -1176,6 +1185,62 @@ class WaitingForYouCard extends StatelessWidget {
                   ],
                 ),
               ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Each counted record with a connected friend, by the banks that show it: the same transfer is in both banks
+/// when both of you import; "only in one bank" or "by hand" is where a difference with the bank comes from.
+class _BankCheckCard extends StatelessWidget {
+  const _BankCheckCard({required this.data, required this.linkId, required this.me, required this.person});
+
+  final AppData data;
+  final String linkId;
+  final String me;
+  final String person;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+    final c = bankCheck(data.sharedEntries, linkId, me);
+    final first = person.split(' ').first;
+    final total = c.values.fold(0, (v, x) => v + x.count);
+    if (total == 0) return const SizedBox.shrink();
+    Widget line(IconData icon, Color? color, String label, ({int count, double amount}) v) => v.count == 0
+        ? const SizedBox.shrink()
+        : Padding(
+            padding: const EdgeInsets.symmetric(vertical: 2),
+            child: Row(
+              children: [
+                Icon(icon, size: 18, color: color),
+                const SizedBox(width: 8),
+                Expanded(child: Text('$label (${v.count})')),
+                Text(money(v.amount), style: const TextStyle(fontWeight: FontWeight.w600)),
+              ],
+            ),
+          );
+    return Card.outlined(
+      margin: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Check with banks', style: text.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
+            const SizedBox(height: 6),
+            line(Icons.verified_outlined, Colors.green.shade700, 'In both banks', c[Backing.both]!),
+            line(Icons.account_balance_outlined, null, 'Only in your bank', c[Backing.mine]!),
+            line(Icons.account_balance_outlined, null, 'Only in $first\'s bank', c[Backing.theirs]!),
+            line(Icons.edit_note, null, 'Added by hand', c[Backing.none]!),
+            const SizedBox(height: 6),
+            Text(
+              'The same transfer is matched in both banks by its UPI reference. "Only in one bank" is normal for cash, '
+              'a parent\'s account or a bank not imported yet; anything else there is worth a look.',
+              style: text.bodySmall,
+            ),
           ],
         ),
       ),
