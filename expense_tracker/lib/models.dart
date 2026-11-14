@@ -444,6 +444,11 @@ class SharedEntry {
     this.debtorTxn,
     this.deletedBy,
     this.deletedAt,
+    this.confirmedAmount,
+    this.confirmedAt,
+    this.changedBy,
+    this.removeRequestedBy,
+    this.rejectedBy,
   });
 
   final String id;
@@ -460,7 +465,19 @@ class SharedEntry {
   final String? deletedBy;
   final DateTime? deletedAt;
 
+  /// The amount both agreed to; null until the other person says OK. Balances use only this.
+  final double? confirmedAmount;
+  final DateTime? confirmedAt;
+
+  /// Who made the change that is waiting for the other's OK.
+  final String? changedBy;
+  final String? removeRequestedBy;
+  final String? rejectedBy;
+
   bool get deleted => deletedAt != null;
+
+  /// A new entry, a changed amount or a removal that the other person has not answered yet.
+  bool get waiting => !deleted && (confirmedAt == null || removeRequestedBy != null);
 
   factory SharedEntry.fromMap(Map<String, dynamic> m) => SharedEntry(
     id: m['id'] as String,
@@ -476,6 +493,11 @@ class SharedEntry {
     debtorTxn: m['debtor_txn'] as String?,
     deletedBy: m['deleted_by'] as String?,
     deletedAt: m['deleted_at'] == null ? null : DateTime.parse(m['deleted_at'] as String).toLocal(),
+    confirmedAmount: m['confirmed_amount'] == null ? null : _num(m['confirmed_amount']),
+    confirmedAt: m['confirmed_at'] == null ? null : DateTime.parse(m['confirmed_at'] as String).toLocal(),
+    changedBy: m['changed_by'] as String?,
+    removeRequestedBy: m['remove_requested_by'] as String?,
+    rejectedBy: m['rejected_by'] as String?,
   );
 }
 

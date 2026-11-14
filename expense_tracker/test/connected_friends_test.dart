@@ -28,6 +28,8 @@ AppData sample() {
         kind: 'payment',
         at: now,
         createdBy: me,
+        confirmedAmount: 500,
+        confirmedAt: now,
       ),
       SharedEntry(
         id: 'e2',
@@ -38,6 +40,8 @@ AppData sample() {
         kind: 'payment',
         at: now,
         createdBy: ravi,
+        confirmedAmount: 200,
+        confirmedAt: now,
       ),
       SharedEntry(
         id: 'e3',
@@ -48,6 +52,8 @@ AppData sample() {
         kind: 'expense',
         at: now,
         createdBy: me,
+        confirmedAmount: 300,
+        confirmedAt: now,
         description: 'Pizza',
       ),
       SharedEntry(
@@ -61,6 +67,30 @@ AppData sample() {
         createdBy: ravi,
         deletedAt: now,
         deletedBy: ravi,
+      ),
+      // Waiting: Ravi added ₹150 you owe (not agreed yet); you asked him to OK ₹80.
+      SharedEntry(
+        id: 'w1',
+        linkId: 'L',
+        creditor: ravi,
+        debtor: me,
+        amount: 150,
+        kind: 'expense',
+        at: now,
+        createdBy: ravi,
+        changedBy: ravi,
+        description: 'Chai',
+      ),
+      SharedEntry(
+        id: 'w2',
+        linkId: 'L',
+        creditor: me,
+        debtor: ravi,
+        amount: 80,
+        kind: 'payment',
+        at: now,
+        createdBy: me,
+        changedBy: me,
       ),
     ],
     questions: const [MatchQuestion(id: 'q', entryId: 'e2', txnId: 't9')],
@@ -104,8 +134,11 @@ void main() {
 
   testWidgets('friends list uses the shared balance and shows the question', (tester) async {
     await pump(tester, FriendsScreen(data: sample()));
-    expect(find.text('₹600'), findsWidgets);
+    await tester.scrollUntilVisible(find.text('₹600'), 200, scrollable: find.byType(Scrollable).first);
+    expect(find.text('₹600'), findsWidgets); // agreed balance only: the ₹150 waiting is not in it
+    await tester.scrollUntilVisible(find.textContaining('connected'), 200, scrollable: find.byType(Scrollable).first);
     expect(find.textContaining('connected'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('Same payment?'), -200, scrollable: find.byType(Scrollable).first);
     expect(find.text('Same payment?'), findsOneWidget);
     expect(find.textContaining('Kiran Shah'), findsWidgets);
   });
@@ -134,5 +167,43 @@ void main() {
   testWidgets('not connected friend page offers an invite', (tester) async {
     await pump(tester, FriendDetailScreen(data: sample(), person: 'Priya Desai'));
     expect(find.textContaining('Invite sent · code xyz'), findsOneWidget);
+  });
+
+  test('a shared balance moves only on what both agreed', () {
+    final d = sample();
+    final me = d.me!;
+    // 500 + 300 − 200 agreed; the ₹150 and ₹80 waiting for an OK do not count yet.
+    expect(sharedBalance(d.sharedEntries, 'L', me), -600);
+    final changed = SharedEntry(
+      id: 'c',
+      linkId: 'L',
+      creditor: me,
+      debtor: 'x',
+      amount: 900,
+      kind: 'payment',
+      at: DateTime(2026),
+      createdBy: me,
+      confirmedAmount: 700,
+      changedBy: me,
+    );
+    // A changed amount waiting for OK: the agreed 700 counts, not 900.
+    expect(sharedBalance([changed], 'L', me), -700);
+    expect(changed.waiting, isTrue);
+  });
+
+  testWidgets('changes from a friend wait for your OK, with a badge-worthy card', (tester) async {
+    final d = sample();
+    expect(d.waitingForMe.map((e) => e.id), ['w1']);
+    await pump(tester, FriendsScreen(data: d));
+    expect(find.text('1 change waiting for your OK'), findsOneWidget);
+    expect(find.text('OK'), findsWidgets);
+    expect(find.text('No'), findsWidgets);
+    await pump(tester, FriendDetailScreen(data: d, person: 'Ravi Kumar'));
+    await tester.scrollUntilVisible(
+      find.textContaining("Waiting for Ravi Kumar's OK"),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.textContaining("Waiting for Ravi Kumar's OK"), findsOneWidget);
   });
 }

@@ -81,9 +81,14 @@ class _HomeShellState extends State<HomeShell> {
               selectedIcon: Icon(Icons.account_balance),
               label: 'Accounts',
             ),
-            const NavigationDestination(
-              icon: Icon(Icons.group_outlined),
-              selectedIcon: Icon(Icons.group),
+            NavigationDestination(
+              // Changes friends made between you, waiting for your OK.
+              icon: Badge(
+                isLabelVisible: data.waitingForMe.isNotEmpty,
+                label: Text('${data.waitingForMe.length}'),
+                child: const Icon(Icons.group_outlined),
+              ),
+              selectedIcon: const Icon(Icons.group),
               label: 'Friends',
             ),
             const NavigationDestination(

@@ -814,10 +814,12 @@ List<PayeeSummary> peopleToReview(Iterable<Txn> txns, {Set<String> decided = con
 }
 
 /// Balance with a connected friend from the shared record: positive = you owe them.
+/// Only what both people agreed to counts: a new entry or a changed amount waits for the other's OK
+/// (the last agreed amount stands meanwhile), so a balance never moves on one person's say.
 double sharedBalance(Iterable<SharedEntry> entries, String linkId, String me) => _round(
   entries
-      .where((e) => e.linkId == linkId && !e.deleted)
-      .fold(0.0, (s, e) => s + (e.debtor == me ? e.amount : (e.creditor == me ? -e.amount : 0))),
+      .where((e) => e.linkId == linkId && !e.deleted && e.confirmedAmount != null)
+      .fold(0.0, (s, e) => s + (e.debtor == me ? e.confirmedAmount! : (e.creditor == me ? -e.confirmedAmount! : 0))),
 );
 
 // --------------------------------------------------------------------- places

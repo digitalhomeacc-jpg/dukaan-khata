@@ -109,13 +109,23 @@ class FriendsScreen extends StatelessWidget {
             tooltip: 'Start everyone fresh',
             icon: const Icon(Icons.restart_alt),
             onPressed: () async {
+              // Connected friends are left out: a balance you share changes only with both OKs.
+              final local = rows.where((r) => r.link == null).toList();
+              final owed = local.where((r) => !r.settled).toList();
               final yes = await showDialog<bool>(
                 context: context,
                 builder: (c) => AlertDialog(
                   title: const Text('Start everyone fresh from today?'),
-                  content: const Text(
-                    'Everything with friends before today counts as settled. Older entries stay as history. '
-                    'Then open a friend and set their opening balance if something is still owed.',
+                  content: SingleChildScrollView(
+                    child: Text(
+                      [
+                        'All ${local.length} friends who are not connected start from ₹0 today. Older entries stay '
+                            'as history.',
+                        if (owed.isNotEmpty)
+                          'These balances go to ₹0: ${owed.map((r) => '${r.person} ${money(r.balance.abs())}').join(', ')}.',
+                        'Connected friends are not changed. You can undo this in Settings → Change history.',
+                      ].join('\n\n'),
+                    ),
                   ),
                   actions: [
                     TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancel')),
@@ -124,7 +134,7 @@ class FriendsScreen extends StatelessWidget {
                 ),
               );
               if (yes == true) {
-                await data.startFresh({for (final r in rows) AppData.keyOf(r.person): r.person}, DateTime.now());
+                await data.startFresh({for (final r in local) AppData.keyOf(r.person): r.person}, DateTime.now());
               }
             },
           ),
@@ -158,6 +168,7 @@ class FriendsScreen extends StatelessWidget {
               ),
             ),
           ),
+          WaitingForYouCard(data: data),
           for (final q in data.questions) _QuestionCard(data: data, question: q),
           if (toReview > 0)
             Padding(
@@ -729,38 +740,65 @@ class FriendDetailScreen extends StatelessWidget {
             for (final e in entries)
               ListTile(
                 leading: Icon(
-                  e.kind == 'expense' ? Icons.call_split : (e.creditor == me ? Icons.call_made : Icons.call_received),
-                  color: e.deleted ? scheme.outline : (e.creditor == me ? Colors.green.shade700 : scheme.error),
+                  e.waiting
+                      ? Icons.hourglass_top
+                      : (e.kind == 'expense'
+                            ? Icons.call_split
+                            : (e.creditor == me ? Icons.call_made : Icons.call_received)),
+                  color: e.deleted || e.waiting
+                      ? scheme.outline
+                      : (e.creditor == me ? Colors.green.shade700 : scheme.error),
                 ),
                 title: Text(
                   _entryText(e, me),
                   style: TextStyle(decoration: e.deleted ? TextDecoration.lineThrough : null),
                 ),
-                subtitle: Text(
-                  [
-                    dayLabel(e.at),
-                    if (e.deleted)
-                      'removed by ${e.deletedBy == me ? 'you' : person}'
-                    else
-                      'added by ${e.createdBy == me ? 'you' : person}',
-                    if (!e.deleted && (e.creditor == me ? e.creditorTxn : e.debtorTxn) != null) 'in your bank',
-                  ].join(' · '),
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      [
+                        dayLabel(e.at),
+                        if (e.deleted)
+                          e.rejectedBy != null
+                              ? 'turned down by ${e.rejectedBy == me ? 'you' : person}'
+                              : 'removed by ${e.deletedBy == me ? 'you' : person}'
+                        else
+                          'added by ${e.createdBy == me ? 'you' : person}',
+                        if (!e.deleted && (e.creditor == me ? e.creditorTxn : e.debtorTxn) != null) 'in your bank',
+                      ].join(' · '),
+                    ),
+                    if (e.waiting) _WaitingLine(data: data, entry: e, person: person),
+                  ],
                 ),
-                trailing: Text(
-                  money(e.amount),
-                  style: TextStyle(fontWeight: FontWeight.w600, color: e.deleted ? scheme.outline : null),
+                trailing: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      money(e.amount),
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        color: e.deleted || e.waiting ? scheme.outline : null,
+                      ),
+                    ),
+                    if (!e.deleted && e.confirmedAmount != null && e.confirmedAmount != e.amount)
+                      Text('agreed ${money(e.confirmedAmount!)}', style: Theme.of(context).textTheme.bodySmall),
+                  ],
                 ),
-                onLongPress: e.deleted
+                onLongPress: e.deleted || e.waiting
                     ? null
                     : () async {
                         final yes = await showDialog<bool>(
                           context: context,
                           builder: (c) => AlertDialog(
-                            title: const Text('Remove this entry?'),
-                            content: Text('It is removed for $person too; they see that you removed it.'),
+                            title: const Text('Ask to remove this entry?'),
+                            content: Text(
+                              '$person is asked to OK it. Until then it still counts; if they say no, it stays.',
+                            ),
                             actions: [
                               TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancel')),
-                              FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Remove')),
+                              FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Ask')),
                             ],
                           ),
                         );
@@ -984,6 +1022,102 @@ class _CorrectBalanceDialogState extends State<_CorrectBalanceDialog> {
           child: const Text('Save'),
         ),
       ],
+    );
+  }
+}
+
+/// Under an entry waiting for an answer: OK / No for the person asked, Cancel for whoever asked.
+class _WaitingLine extends StatelessWidget {
+  const _WaitingLine({required this.data, required this.entry, required this.person});
+
+  final AppData data;
+  final SharedEntry entry;
+  final String person;
+
+  @override
+  Widget build(BuildContext context) {
+    final e = entry;
+    final mine = e.changedBy == data.me;
+    final what = e.removeRequestedBy != null
+        ? 'remove it'
+        : (e.confirmedAmount == null ? 'add it' : 'change ${money(e.confirmedAmount!)} → ${money(e.amount)}');
+    final scheme = Theme.of(context).colorScheme;
+    if (mine) {
+      return Row(
+        children: [
+          Expanded(
+            child: Text(
+              'Waiting for $person\'s OK to $what',
+              style: TextStyle(color: scheme.primary, fontWeight: FontWeight.w600),
+            ),
+          ),
+          if (e.confirmedAmount == null && e.removeRequestedBy == null)
+            TextButton(onPressed: () => data.deleteSharedEntry(e.id), child: const Text('Cancel')),
+        ],
+      );
+    }
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            '$person wants to $what',
+            style: TextStyle(color: scheme.error, fontWeight: FontWeight.w600),
+          ),
+        ),
+        TextButton(onPressed: () => data.answerShared(e.id, ok: false), child: const Text('No')),
+        FilledButton.tonal(onPressed: () => data.answerShared(e.id, ok: true), child: const Text('OK')),
+      ],
+    );
+  }
+}
+
+/// On the Friends tab: every change friends made between you that needs your OK.
+class WaitingForYouCard extends StatelessWidget {
+  const WaitingForYouCard({super.key, required this.data});
+
+  final AppData data;
+
+  @override
+  Widget build(BuildContext context) {
+    final list = data.waitingForMe;
+    if (list.isEmpty || data.me == null) return const SizedBox.shrink();
+    final text = Theme.of(context).textTheme;
+    String nameOf(SharedEntry e) {
+      final link = data.links.where((l) => l.id == e.linkId).firstOrNull;
+      return link == null ? 'Your friend' : link.nameFor(data.me!);
+    }
+
+    return Card(
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      color: Theme.of(context).colorScheme.errorContainer,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '${list.length} change${list.length == 1 ? '' : 's'} waiting for your OK',
+              style: text.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+            ),
+            Text('Nothing changes your balance until you say OK.', style: text.bodySmall),
+            for (final e in list)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${nameOf(e)}: ${e.description ?? (e.kind == 'expense' ? 'Shared expense' : 'Payment')} · '
+                      '${money(e.amount)} · ${e.creditor == data.me ? 'owed to you' : 'you owe'}',
+                      style: text.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+                    ),
+                    _WaitingLine(data: data, entry: e, person: nameOf(e)),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
     );
   }
 }

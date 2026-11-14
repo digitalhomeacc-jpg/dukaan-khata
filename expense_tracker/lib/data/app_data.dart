@@ -655,11 +655,18 @@ class AppData extends ChangeNotifier {
   Future<void> answerMatch(String questionId, bool yes) =>
       _db.rpc('answer_match', params: {'p_question': questionId, 'p_yes': yes});
 
-  /// Removes a shared entry for both of you (the other person sees who removed it).
-  Future<void> deleteSharedEntry(String id) => _db
-      .from('shared_entries')
-      .update({'deleted_at': DateTime.now().toUtc().toIso8601String(), 'deleted_by': me})
-      .eq('id', id);
+  /// Asks to remove a shared entry: it goes once the other person says OK (one not yet agreed goes at once).
+  Future<void> deleteSharedEntry(String id) => _db.rpc('request_remove_shared', params: {'p_entry': id});
+
+  /// OK or no to a change a connected friend made to an entry between you.
+  Future<void> answerShared(String id, {required bool ok}) =>
+      _db.rpc('answer_shared', params: {'p_entry': id, 'p_ok': ok});
+
+  /// Changes by friends waiting for your OK.
+  List<SharedEntry> get waitingForMe => [
+    for (final e in sharedEntries)
+      if (e.waiting && e.changedBy != null && e.changedBy != me) e,
+  ];
 
   /// "Also known as": payments from this payee name count as that friend.
   /// Payee names you said are not the same person as a friend.

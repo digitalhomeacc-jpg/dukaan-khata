@@ -25,7 +25,7 @@ begin
     values (who, 'shared_entries', lower(tg_op), jsonb_build_object('id', r -> 'id'), nullif(b, '{}'), nullif(a, '{}'),
       jsonb_build_object('amount', r -> 'amount', 'kind', r -> 'kind', 'description', r -> 'description',
         'txn_at', r -> 'at', 'creditor', r -> 'creditor', 'debtor', r -> 'debtor', 'link_id', r -> 'link_id'),
-      auth.uid() = who, auth.uid());
+      coalesce(auth.uid() = who, false), auth.uid());
   end loop;
   return null;
 end $$;
