@@ -7,7 +7,8 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../config.dart';
-import '../logic/summary.dart' show LoanBalance, ShareTotals, loanBalances, samePersonCandidates, shareTotals;
+import '../logic/summary.dart'
+    show LoanBalance, ShareTotals, allocateSettle, groupPairwise, loanBalances, samePersonCandidates, shareTotals;
 import '../models.dart';
 
 /// Live copy of the signed-in user's data, kept up to date by Supabase Realtime.
@@ -38,6 +39,14 @@ class AppData extends ChangeNotifier {
       }, onError: _onError),
       db.from('balance_readings').stream(primaryKey: ['id']).order('as_of').listen((rows) {
         balanceReadings = rows.map(BalanceReading.fromMap).toList();
+        notifyListeners();
+      }, onError: _onError),
+      db.from('groups').stream(primaryKey: ['id']).order('created_at').listen((rows) {
+        groups = rows.map(Group.fromMap).toList();
+        notifyListeners();
+      }, onError: _onError),
+      db.from('group_expenses').stream(primaryKey: ['id']).order('at').listen((rows) {
+        groupExpenses = rows.map(GroupExpense.fromMap).toList();
         notifyListeners();
       }, onError: _onError),
       db.from('txn_parts').stream(primaryKey: ['id']).listen((rows) {
@@ -196,6 +205,199 @@ class AppData extends ChangeNotifier {
 
   /// Friends' parts of group payments, for the totals.
   ShareTotals get shareTotalsNow => _shareTotals ??= shareTotals(shares, parts: parts);
+
+  // ------------------------------------------------------------------ groups
+
+  List<Group> groups = const [];
+  List<GroupExpense> groupExpenses = const [];
+  Group? group(String id) => groups.where((g) => g.id == id).firstOrNull;
+  List<GroupExpense> expensesOf(String groupId) =>
+      groupExpenses.where((e) => e.groupId == groupId).toList()..sort((a, b) => b.at.compareTo(a.at));
+
+  Future<String> saveGroup({String? id, required String name, String? emoji, required List<String> members}) async {
+    final row = {'name': name.trim(), 'emoji': emoji, 'members': members.map((m) => m.trim()).toSet().toList()};
+    if (id != null) {
+      await _db.from('groups').update(row).eq('id', id);
+      return id;
+    }
+    final r = await _db.from('groups').insert(row).select('id').single();
+    return r['id'] as String;
+  }
+
+  Future<void> archiveGroup(String id, {bool archived = true}) =>
+      _db.from('groups').update({'archived': archived}).eq('id', id);
+
+  /// A group expense, and your own side of it in your records: your payment with the others' shares (so only
+  /// your part is your spending and they owe you theirs), or "[paidBy] paid, you owe your part".
+  Future<void> addGroupExpense({
+    required Group group,
+    required String description,
+    required double amount,
+    required String paidBy,
+    required Map<String, double> shares,
+    required DateTime at,
+    String? categoryId,
+    String? accountId,
+    String? linkTxnId,
+  }) async {
+    String? txnId;
+    var created = false;
+    final others = {
+      for (final e in shares.entries)
+        if (e.key != 'me' && e.value > 0) e.key: e.value,
+    };
+    if (paidBy == 'me') {
+      if (linkTxnId != null) {
+        txnId = linkTxnId;
+        if (categoryId != null) {
+          await _db.from('transactions').update({'category_id': categoryId, 'needs_review': false}).eq('id', txnId);
+        }
+      } else {
+        final r = await _db
+            .from('transactions')
+            .insert({
+              'amount': amount,
+              'direction': 'debit',
+              'merchant': description,
+              'method': 'other',
+              'txn_at': at.toUtc().toIso8601String(),
+              'category_id': categoryId,
+              'account_id': accountId,
+              'source': 'manual',
+              'note': '${group.name} (group)',
+            })
+            .select('id')
+            .single();
+        txnId = r['id'] as String;
+        created = true;
+      }
+      final existing = sharesOf(txnId).map((s) => keyOf(s.person)).toSet();
+      for (final e in others.entries) {
+        if (!existing.contains(keyOf(e.key))) await addShare(txnId, e.key, e.value);
+      }
+    } else if ((shares['me'] ?? 0) > 0) {
+      final r = await _db
+          .from('transactions')
+          .insert({
+            'amount': shares['me'],
+            'direction': 'debit',
+            'merchant': description,
+            'method': 'other',
+            'txn_at': at.toUtc().toIso8601String(),
+            'category_id': categoryId,
+            'source': 'manual',
+            'paid_by': paidBy,
+            'note': '$paidBy paid ${money0(amount)} · ${group.name} (group)',
+          })
+          .select('id')
+          .single();
+      txnId = r['id'] as String;
+      created = true;
+    }
+    await _db.from('group_expenses').insert({
+      'group_id': group.id,
+      'kind': 'expense',
+      'description': description,
+      'amount': amount,
+      'paid_by': paidBy,
+      'shares': shares,
+      'at': at.toUtc().toIso8601String(),
+      'category_id': categoryId,
+      'txn_id': txnId,
+      'txn_created': created,
+    });
+  }
+
+  /// Someone paid someone back in the group. When you are one of them it also goes into your Friends ledger,
+  /// counted for the right friends (see [allocateSettle]). [byCash]: the money moved in cash, so your cash
+  /// changes; otherwise it went through the bank and that payment comes in by itself from the bank email.
+  Future<void> addGroupSettle({
+    required Group group,
+    required String from,
+    required String to,
+    required double amount,
+    required DateTime at,
+    bool byCash = false,
+  }) async {
+    final ids = <String>[];
+    var counted = <String, double>{};
+    if (from == 'me' || to == 'me') {
+      final other = from == 'me' ? to : from;
+      final toMe = to == 'me';
+      counted = allocateSettle(
+        pairwise: groupPairwise(expensesOf(group.id), group.members),
+        other: other,
+        toMe: toMe,
+        amount: amount,
+      );
+      final cat = friendsCategory?.id ?? (await ensureLoanCategory()).id;
+      Future<void> add(String person, double v, {required bool credit, String? accountId, required String note}) async {
+        final r = await _db
+            .from('transactions')
+            .insert({
+              'amount': v,
+              'direction': credit ? 'credit' : 'debit',
+              'merchant': person,
+              'method': accountId == null ? 'other' : 'cash',
+              'txn_at': at.toUtc().toIso8601String(),
+              'category_id': cat,
+              'account_id': accountId,
+              'source': 'manual',
+              'note': note,
+            })
+            .select('id')
+            .single();
+        ids.add(r['id'] as String);
+      }
+
+      if (byCash) {
+        await add(other, amount, credit: toMe, accountId: cashAccount?.id, note: 'Settle up');
+      }
+      // Money routed through [other] for someone else: move it to whom it was really for.
+      for (final e in counted.entries.where((e) => e.key != other)) {
+        final v = e.value;
+        await add(other, v, credit: !toMe, note: '${money0(v)} of it was for ${e.key} · ${group.name}');
+        await add(
+          e.key,
+          v,
+          credit: toMe,
+          note: toMe
+              ? '$other paid ${money0(v)} for you · ${group.name}'
+              : 'You paid ${money0(v)} to $other for them · ${group.name}',
+        );
+      }
+    }
+    await _db.from('group_expenses').insert({
+      'group_id': group.id,
+      'kind': 'settle',
+      'description': byCash ? 'Settle up (cash)' : 'Settle up',
+      'amount': amount,
+      'paid_by': from,
+      'paid_to': to,
+      'shares': counted,
+      'at': at.toUtc().toIso8601String(),
+      'txn_ids': ids,
+    });
+  }
+
+  /// Removes a group expense and what it added to your records (never a bank payment it was linked to).
+  Future<void> deleteGroupExpense(GroupExpense e) async {
+    if (e.txnIds.isNotEmpty) await _db.from('transactions').delete().inFilter('id', e.txnIds);
+    if (e.txnId != null) {
+      if (e.txnCreated) {
+        await _db.from('transactions').delete().eq('id', e.txnId!);
+      } else {
+        final people = {
+          for (final k in e.shares.keys)
+            if (k != 'me') keyOf(k),
+        };
+        for (final sh in sharesOf(e.txnId!)) {
+          if (people.contains(keyOf(sh.person))) await deleteShare(sh.id);
+        }
+      }
+    }
+    await _db.from('group_expenses').delete().eq('id', e.id);
+  }
 
   /// Payments split across your own categories.
   List<TxnPart> parts = const [];
@@ -994,3 +1196,6 @@ class AppData extends ChangeNotifier {
     super.dispose();
   }
 }
+
+/// "₹900" / "₹900.50" for notes.
+String money0(double v) => '₹${v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toStringAsFixed(2)}';

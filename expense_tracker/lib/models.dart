@@ -531,3 +531,75 @@ class TxnPart {
     note: m['note'] as String?,
   );
 }
+
+/// A group of friends sharing costs (a trip, the flat). You are always a member ("me").
+class Group {
+  const Group({required this.id, required this.name, this.emoji, this.members = const [], this.archived = false});
+
+  final String id;
+  final String name;
+  final String? emoji;
+  final List<String> members;
+  final bool archived;
+
+  factory Group.fromMap(Map<String, dynamic> m) => Group(
+    id: m['id'] as String,
+    name: m['name'] as String,
+    emoji: m['emoji'] as String?,
+    members: ((m['members'] as List?) ?? const []).cast<String>(),
+    archived: m['archived'] == true,
+  );
+}
+
+/// One expense or settlement in a group. [shares] says who owes what of it ("me" is you).
+class GroupExpense {
+  const GroupExpense({
+    required this.id,
+    required this.groupId,
+    required this.amount,
+    required this.paidBy,
+    required this.at,
+    this.kind = 'expense',
+    this.description,
+    this.paidTo,
+    this.shares = const {},
+    this.categoryId,
+    this.txnId,
+    this.txnCreated = false,
+    this.txnIds = const [],
+  });
+
+  final String id;
+  final String groupId;
+  final String kind;
+  final String? description;
+  final double amount;
+  final String paidBy;
+  final String? paidTo;
+  final Map<String, double> shares;
+  final DateTime at;
+  final String? categoryId;
+  final String? txnId;
+  final bool txnCreated;
+
+  /// Every Friends-ledger entry a settle-up added (one per friend it counted for).
+  final List<String> txnIds;
+
+  bool get isSettle => kind == 'settle';
+
+  factory GroupExpense.fromMap(Map<String, dynamic> m) => GroupExpense(
+    id: m['id'] as String,
+    groupId: m['group_id'] as String,
+    kind: (m['kind'] as String?) ?? 'expense',
+    description: m['description'] as String?,
+    amount: _num(m['amount']),
+    paidBy: m['paid_by'] as String,
+    paidTo: m['paid_to'] as String?,
+    shares: {for (final e in ((m['shares'] as Map?) ?? const {}).entries) e.key as String: _num(e.value)},
+    at: DateTime.parse(m['at'] as String).toLocal(),
+    categoryId: m['category_id'] as String?,
+    txnId: m['txn_id'] as String?,
+    txnCreated: m['txn_created'] == true,
+    txnIds: [for (final x in (m['txn_ids'] as List?) ?? const []) x as String],
+  );
+}

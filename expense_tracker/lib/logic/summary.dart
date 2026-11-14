@@ -1326,3 +1326,112 @@ bool matchesAmount(Txn t, String query) {
   final whole = t.amount.truncate().toString();
   return q.contains('.') ? t.amount.toStringAsFixed(2).startsWith(q) : whole == q;
 }
+
+// ------------------------------------------------------------------ groups
+
+/// Everyone's net in a group: positive = they are owed, negative = they owe. Always adds up to zero.
+Map<String, double> groupBalances(Iterable<GroupExpense> items, List<String> members) {
+  final net = {'me': 0.0, for (final m in members) m: 0.0};
+  for (final e in items) {
+    if (e.isSettle) {
+      // The payer has paid off that much; the receiver is owed that much less.
+      net[e.paidBy] = (net[e.paidBy] ?? 0) + e.amount;
+      if (e.paidTo != null) net[e.paidTo!] = (net[e.paidTo!] ?? 0) - e.amount;
+      continue;
+    }
+    net[e.paidBy] = (net[e.paidBy] ?? 0) + e.amount;
+    for (final s in e.shares.entries) {
+      net[s.key] = (net[s.key] ?? 0) - s.value;
+    }
+  }
+  return {for (final e in net.entries) e.key: _round(e.value)};
+}
+
+/// The fewest payments that settle everyone: the biggest debtor pays the biggest creditor, repeat.
+List<({String from, String to, double amount})> simplifyDebts(Map<String, double> balances) {
+  final owe = [
+    for (final e in balances.entries)
+      if (e.value < -0.004) MapEntry(e.key, -e.value),
+  ];
+  final owed = [
+    for (final e in balances.entries)
+      if (e.value > 0.004) MapEntry(e.key, e.value),
+  ];
+  final out = <({String from, String to, double amount})>[];
+  while (owe.isNotEmpty && owed.isNotEmpty) {
+    owe.sort((a, b) => b.value.compareTo(a.value));
+    owed.sort((a, b) => b.value.compareTo(a.value));
+    final d = owe.first, c = owed.first;
+    final pay = _round(math.min(d.value, c.value));
+    out.add((from: d.key, to: c.key, amount: pay));
+    owe[0] = MapEntry(d.key, d.value - pay);
+    owed[0] = MapEntry(c.key, c.value - pay);
+    owe.removeWhere((e) => e.value < 0.005);
+    owed.removeWhere((e) => e.value < 0.005);
+  }
+  return out;
+}
+
+/// Splits [total] equally among [people], in paise, the leftover paise going to the first ones, so the parts
+/// always add up to the total exactly.
+Map<String, double> splitEqually(double total, List<String> people) {
+  if (people.isEmpty) return const {};
+  final paise = (total * 100).round();
+  final base = paise ~/ people.length, extra = paise % people.length;
+  return {for (final (i, p) in people.indexed) p: (base + (i < extra ? 1 : 0)) / 100};
+}
+
+/// What each member owes you directly in a group (negative: you owe them), the way your Friends ledger
+/// counts it: your payments they share, their payments you share, and settle-ups as they were credited.
+Map<String, double> groupPairwise(Iterable<GroupExpense> items, List<String> members) {
+  final p = {for (final m in members) m: 0.0};
+  void add(String who, double v) => p[who] = (p[who] ?? 0) + v;
+  for (final e in items) {
+    if (e.isSettle) {
+      if (e.paidTo != 'me' && e.paidBy != 'me') continue;
+      final sign = e.paidTo == 'me' ? -1 : 1;
+      final counted = e.shares.isEmpty ? {(e.paidTo == 'me' ? e.paidBy : e.paidTo!): e.amount} : e.shares;
+      for (final c in counted.entries) {
+        add(c.key, sign * c.value);
+      }
+    } else if (e.paidBy == 'me') {
+      for (final s in e.shares.entries) {
+        if (s.key != 'me') add(s.key, s.value);
+      }
+    } else {
+      add(e.paidBy, -(e.shares['me'] ?? 0));
+    }
+  }
+  return {for (final e in p.entries) e.key: _round(e.value)};
+}
+
+/// Who a settle-up between you and [other] really counts for in your Friends ledger. When the fewest-payments
+/// plan routes money through [other] (e.g. Ravi pays you what Asha owed you, because Ravi owed Asha), the
+/// extra is counted for the friends whose debt it clears, so no one's balance with you shifts. Always adds up
+/// to [amount]; anything beyond all debts stays with [other].
+Map<String, double> allocateSettle({
+  required Map<String, double> pairwise,
+  required String other,
+  required bool toMe,
+  required double amount,
+}) {
+  // How much each friend's debt in this direction is: owes you (toMe) or you owe them (from you).
+  double open(String m) => math.max(0, toMe ? (pairwise[m] ?? 0) : -(pairwise[m] ?? 0));
+  var left = (amount * 100).round();
+  final out = <String, int>{};
+  final first = math.min(left, (open(other) * 100).round());
+  if (first > 0) out[other] = first;
+  left -= first;
+  final rest = [
+    for (final m in pairwise.keys)
+      if (m != other && open(m) > 0.004) m,
+  ]..sort((a, b) => open(b).compareTo(open(a)));
+  for (final m in rest) {
+    if (left <= 0) break;
+    final take = math.min(left, (open(m) * 100).round());
+    out[m] = take;
+    left -= take;
+  }
+  if (left > 0) out[other] = (out[other] ?? 0) + left;
+  return {for (final e in out.entries) e.key: e.value / 100};
+}

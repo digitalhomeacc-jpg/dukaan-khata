@@ -7,6 +7,7 @@ import '../logic/summary.dart';
 import '../models.dart';
 import '../ui/format.dart';
 import '../ui/same_person_card.dart';
+import 'groups_screen.dart';
 import 'people_review_screen.dart';
 import 'places_screen.dart';
 import 'shared_expense_screen.dart';
@@ -169,6 +170,7 @@ class FriendsScreen extends StatelessWidget {
             ),
           ),
           WaitingForYouCard(data: data),
+          GroupsSection(data: data),
           for (final q in data.questions) _QuestionCard(data: data, question: q),
           if (toReview > 0)
             Padding(
