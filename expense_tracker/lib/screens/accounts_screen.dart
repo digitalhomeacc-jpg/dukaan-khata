@@ -171,6 +171,7 @@ class _AccountsScreenState extends State<AccountsScreen> {
             ),
           LoansSummaryCard(data: data),
           for (final l in data.loans.where((l) => !l.closed)) LenderLoanCard(data: data, loan: l),
+          if (data.loans.any((l) => l.closed)) _ClosedLoans(data: data),
           if (archived.isNotEmpty)
             ExpansionTile(
               title: Text('Hidden accounts (${archived.length})'),
@@ -410,6 +411,57 @@ class _AccountFormState extends State<_AccountForm> {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Loans that are fully repaid: what came in, what went back, and every payment, kept as history.
+class _ClosedLoans extends StatelessWidget {
+  const _ClosedLoans({required this.data});
+
+  final AppData data;
+
+  @override
+  Widget build(BuildContext context) {
+    final closed = data.loans.where((l) => l.closed).toList()
+      ..sort((a, b) => (b.startedOn ?? DateTime(2000)).compareTo(a.startedOn ?? DateTime(2000)));
+    return ExpansionTile(
+      title: Text('Closed loans (${closed.length})'),
+      subtitle: const Text('Repaid. Their money is not income or spending.'),
+      children: [
+        for (final l in closed)
+          Builder(
+            builder: (context) {
+              final txns = data.transactions.where((t) => t.loanId == l.id).toList()
+                ..sort((a, b) => a.txnAt.compareTo(b.txnAt));
+              final got = txns.where((t) => !t.isDebit).fold(0.0, (v, t) => v + t.amount);
+              final paid = txns.where((t) => t.isDebit).fold(0.0, (v, t) => v + t.amount);
+              final cameIn = got > 0 ? got : (l.principal ?? 0);
+              return ExpansionTile(
+                title: Text(l.name),
+                subtitle: Text(
+                  [
+                    if (l.startedOn != null) '${dayLabel(l.startedOn!)} – ${l.endedOn == null ? '?' : dayLabel(l.endedOn!)}',
+                    'got ${money(cameIn)}',
+                    'repaid ${money(paid)}',
+                    if (paid > cameIn) 'cost ${money(paid - cameIn)}',
+                  ].join(' · '),
+                ),
+                children: [
+                  if (txns.isEmpty)
+                    const ListTile(dense: true, title: Text('No payments in the app yet: they link when imported.')),
+                  for (final t in txns)
+                    ListTile(
+                      dense: true,
+                      title: Text(t.isDebit ? 'Repaid' : 'Paid out to you'),
+                      subtitle: Text('${dayLabel(t.txnAt)} · ${data.account(t.accountId)?.name ?? ''}'),
+                      trailing: Text('${t.isDebit ? '−' : '+'}${money(t.amount)}'),
+                    ),
+                ],
+              );
+            },
+          ),
+      ],
     );
   }
 }

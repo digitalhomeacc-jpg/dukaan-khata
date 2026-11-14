@@ -201,3 +201,11 @@ test("payee from a UPI ID alone", () => {
   assert.equal(federalPayee("borrowrepayments@slc"), "Slice borrow repayment");
   assert.equal(federalPayee("7020000000@axl"), "7020000000@axl");
 });
+
+test("Slice newer narrations: the payee, not the word Debit", () => {
+  const d = readNarration("UPI-Debit-600000000011-ROHAN DESAI-9600000000@ybl-Payment from slice");
+  assert.equal(d.merchant, "Rohan Desai");
+  assert.equal(d.rrn, "600000000011");
+  assert.equal(readNarration("UPI-Credit-600000000012-slice-NESF-sliceborrow@slc-BW1e9122246fb491ec49").merchant, "slice");
+  assert.equal(readNarration("UPI-Reversal-600000000013-RAVI  SHOP-YESB0YBLUPI-Q900000000@ybl-Payment from slice").merchant, "Ravi Shop");
+});

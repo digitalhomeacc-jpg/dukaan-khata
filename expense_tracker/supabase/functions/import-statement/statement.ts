@@ -73,6 +73,10 @@ export function readNarration(n: string): { merchant: string | null; method: Met
   // Slice: "BW…" is a slice borrow order paid into the account; "Repayment" pays it back.
   if (/^BW[0-9a-z]*\b/i.test(s)) return { merchant: "Slice borrow", method: "other", rrn, atm: false };
   if (/^repayment\b/i.test(s)) return { merchant: "Slice borrow repayment", method: "other", rrn, atm: false };
+  // Slice (newer): "UPI-Debit-<ref>-NAME-<upi id>-…", "UPI-Credit-<ref>-slice-NESF-sliceborrow@slc-BW…",
+  // "UPI-Reversal-<ref>-NAME-<IFSC>-<upi id>-…" (money back for a failed payment).
+  const sl = s.match(/^UPI-(Debit|Credit|Reversal)-(\d{12})-(.+?)-/i);
+  if (sl) return { merchant: cleanMerchant(sl[3]), method: "upi", rrn: sl[2], atm: false };
   // Slice / other banks: "UPI Debit-NAME-VPA-…", "UPI Credit-NAME-VPA-…", "IMPS Credit-NAME-…"
   let w = s.match(/^UPI\s+(?:Debit|Credit|Dr|Cr)\s*-\s*([^-]+?)\s*-\s*([^\s]*@[^-\s]+)?/i);
   if (w) return { merchant: cleanMerchant(w[1]), method: "upi", rrn, atm: false };

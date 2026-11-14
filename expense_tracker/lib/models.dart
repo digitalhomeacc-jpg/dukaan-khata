@@ -242,6 +242,8 @@ class Loan {
     this.schedule = const [],
     this.availableCredit,
     this.availableAt,
+    this.startedOn,
+    this.endedOn,
   });
 
   final String id;
@@ -272,6 +274,10 @@ class Loan {
   final double? availableCredit;
   final DateTime? availableAt;
 
+  /// When the money came and when the loan was fully repaid: payments link to the loan running on their date.
+  final DateTime? startedOn;
+  final DateTime? endedOn;
+
   factory Loan.fromMap(Map<String, dynamic> m) {
     double? n(Object? v) => v == null ? null : _num(v);
     return Loan(
@@ -295,6 +301,8 @@ class Loan {
       createdAt: m['created_at'] == null ? null : DateTime.parse(m['created_at'] as String).toLocal(),
       availableCredit: (m['available_credit'] as num?)?.toDouble(),
       availableAt: m['available_at'] == null ? null : DateTime.parse(m['available_at'] as String).toLocal(),
+      startedOn: m['started_on'] == null ? null : DateTime.parse(m['started_on'] as String),
+      endedOn: m['ended_on'] == null ? null : DateTime.parse(m['ended_on'] as String),
       schedule: [
         for (final e in (m['schedule'] as List?) ?? const [])
           (date: DateTime.parse((e as Map)['date'] as String), amount: (e['amount'] as num).toDouble()),
