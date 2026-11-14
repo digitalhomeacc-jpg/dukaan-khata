@@ -1103,8 +1103,11 @@ class AppData extends ChangeNotifier {
     await _reloadFriendsData();
   }
 
-  /// Whether this payment is in one of your accounts (not added by hand without one).
-  bool inAnAccount(String txnId) => txn(txnId)?.accountId != null;
+  /// Whether this payment is in one of your accounts: false only for one known to have none (added by hand).
+  bool inAnAccount(String txnId) {
+    final t = txn(txnId);
+    return t == null || t.accountId != null;
+  }
 
   Future<void> correctFriendBalance(String person, double change, String reason) async {
     final cat = friendsCategory?.id ?? (await ensureLoanCategory()).id;
