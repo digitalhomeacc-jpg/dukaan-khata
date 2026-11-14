@@ -272,6 +272,27 @@ void main() {
         'undone': false,
       },
       {
+        'id': 5,
+        'batch': 60,
+        'at': '2026-11-14T06:00:00Z',
+        'tbl': 'shared_entries',
+        'op': 'insert',
+        'row_key': {'id': 's1'},
+        'before': null,
+        'after': {'amount': 600},
+        'context': {
+          'amount': 600,
+          'kind': 'expense',
+          'description': 'Pizza',
+          'creditor': 'friend-id',
+          'debtor': 'me',
+          'link_id': 'x',
+        },
+        'by_user': false,
+        'undone': false,
+        'actor': 'friend-id',
+      },
+      {
         'id': 0,
         'batch': 50,
         'at': '2026-11-14T05:00:00Z',
@@ -293,6 +314,13 @@ void main() {
     expect(find.text('Undo this'), findsOneWidget);
     expect(find.text('Category: No category → Shopping'), findsOneWidget);
     expect(find.textContaining('Category rule for UPI ••upta@n'), findsOneWidget);
+    // A friend's change to an entry between you shows under "My changes" too.
+    await tester.scrollUntilVisible(
+      find.textContaining('Added with your friend'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.textContaining('Added with your friend: Shared expense “Pizza” ₹600 · you owe'), findsOneWidget);
     await tester.tap(find.text('All, incl. automatic'));
     await tester.pumpAndSettle();
     expect(find.textContaining('Added 1 payment'), findsOneWidget);

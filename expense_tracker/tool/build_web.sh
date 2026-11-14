@@ -16,6 +16,8 @@ rm -rf "$TMP"/canvaskit/skwasm* "$TMP"/canvaskit/wimp* "$TMP"/canvaskit/webparag
 sed -i "s#\"mainJsPath\":\"main.dart.js\"#\"mainJsPath\":\"main.dart.js?v=$BUILD\"#" "$TMP/flutter_bootstrap.js"
 sed -i "s#src=\"flutter_bootstrap.js\"#src=\"flutter_bootstrap.js?v=$BUILD\"#" "$TMP/index.html"
 grep -q "main.dart.js?v=$BUILD" "$TMP/flutter_bootstrap.js" || { echo "cache-busting failed: mainJsPath not found"; exit 1; }
+sed -i "s#var BUILD = '__BUILD__';#var BUILD = '$BUILD';#" "$TMP/index.html"
+echo "$BUILD" > "$TMP/version.txt"
 touch "$TMP/.nojekyll"
 mkdir -p "$OUT"
 find "$OUT" -mindepth 1 -maxdepth 1 ! -name .git ! -name README.md -exec rm -rf {} +

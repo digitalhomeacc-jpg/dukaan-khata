@@ -61,6 +61,22 @@
       navigator.serviceWorker.getRegistrations().then(function (rs) { rs.forEach(function (r) { r.unregister(); }); });
       if (window.caches) caches.keys().then(function (ks) { ks.forEach(function (k) { caches.delete(k); }); });
     }
+    // A newer version published? Load it (iPhone home-screen apps otherwise keep running the old one).
+    var BUILD = '__BUILD__';
+    function checkVersion() {
+      if (BUILD.indexOf('__') === 0) return;
+      fetch('version.txt?t=' + Date.now(), { cache: 'no-store' })
+        .then(function (r) { return r.ok ? r.text() : ''; })
+        .then(function (v) {
+          v = (v || '').trim();
+          if (!v || v === BUILD) return;
+          try { if (sessionStorage.getItem('updated-to-' + v)) return; sessionStorage.setItem('updated-to-' + v, '1'); } catch (e) {}
+          location.replace(location.pathname + '?v=' + v + location.hash);
+        })
+        .catch(function () {});
+    }
+    checkVersion();
+    document.addEventListener('visibilitychange', function () { if (!document.hidden) checkVersion(); });
     var started = false;
     window.addEventListener('flutter-first-frame', function () {
       started = true;

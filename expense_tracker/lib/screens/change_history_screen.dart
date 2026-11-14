@@ -24,6 +24,12 @@ class _Batch {
 
   DateTime get at => DateTime.parse(rows.first['at'] as String).toLocal();
   bool get byUser => rows.any((r) => r['by_user'] == true);
+
+  /// Someone else changed an entry between the two of you (in their app).
+  String? friendActor(String? me) => rows
+      .where((r) => r['tbl'] == 'shared_entries' && r['actor'] != null && r['actor'] != me)
+      .map((r) => r['actor'] as String)
+      .firstOrNull;
   bool get undone => rows.every((r) => r['undone'] == true);
 }
 
@@ -42,6 +48,12 @@ const _fieldNames = {
   'loan_role': 'Loan role',
   'bank_name': 'Bank name',
   'payee_vpa': 'UPI ID',
+  'description': 'What',
+  'at': 'Date',
+  'deleted_at': 'Removed',
+  'deleted_by': 'Removed by',
+  'creditor_txn': 'Your payment (owed to you)',
+  'debtor_txn': 'Your payment (you owe)',
 };
 
 class _ChangeHistoryScreenState extends State<ChangeHistoryScreen> {
@@ -86,7 +98,11 @@ class _ChangeHistoryScreenState extends State<ChangeHistoryScreen> {
         return data.account(v as String)?.name ?? 'an account';
       case 'amount':
         return money((v as num).toDouble());
-      case 'txn_at':
+      case 'deleted_by' || 'created_by':
+        return v == data.me ? 'You' : 'Your friend';
+      case 'creditor_txn' || 'debtor_txn':
+        return 'linked to a bank payment';
+      case 'txn_at' || 'at' || 'deleted_at':
         final d = DateTime.parse(v as String).toLocal();
         return '${dayLabel(d)}, ${timeLabel(d)}';
       case 'excluded':
@@ -96,6 +112,36 @@ class _ChangeHistoryScreenState extends State<ChangeHistoryScreen> {
       default:
         return '$v';
     }
+  }
+
+  String _friendName(Map<String, dynamic> r) {
+    final link = data.links.where((l) => l.id == ((r['context'] as Map?)?['link_id'])).firstOrNull;
+    return link == null || data.me == null ? 'your friend' : link.nameFor(data.me!);
+  }
+
+  String _who(_Batch b) {
+    final f = b.friendActor(data.me);
+    if (f != null) return '${_friendName(b.rows.first)} (in their app)';
+    return b.byUser ? 'You' : 'Automatic (bank email, import)';
+  }
+
+  /// "Ravi added: Pizza ₹600 (you owe ₹300)".
+  String _sharedLine(Map<String, dynamic> r) {
+    final c = (r['context'] as Map?) ?? const {};
+    final amount = money(((c['amount'] as num?) ?? 0).toDouble());
+    final what = (c['description'] as String?)?.isNotEmpty == true ? ' “${c['description']}”' : '';
+    final iAmOwed = c['creditor'] == data.me;
+    final kind = switch (c['kind']) {
+      'expense' => 'Shared expense',
+      'settle' => 'Settle up',
+      _ => 'Payment',
+    };
+    final verb = switch (r['op']) {
+      'insert' => 'Added',
+      'delete' => 'Deleted',
+      _ => ((r['after'] as Map?)?['deleted_at'] != null) ? 'Removed' : 'Changed',
+    };
+    return '$verb with ${_friendName(r)}: $kind$what $amount · ${iAmOwed ? 'owed to you' : 'you owe'}';
   }
 
   /// "Category → Stuff · 7 payments".
@@ -120,7 +166,10 @@ class _ChangeHistoryScreenState extends State<ChangeHistoryScreen> {
     if (added > 0) parts.add('Added $added payment${added == 1 ? '' : 's'}');
     final deleted = b.rows.where((r) => r['tbl'] == 'transactions' && r['op'] == 'delete').length;
     if (deleted > 0) parts.add('Deleted $deleted payment${deleted == 1 ? '' : 's'}');
-    final rules = b.rows.where((r) => r['tbl'] != 'transactions').length;
+    for (final r in b.rows.where((r) => r['tbl'] == 'shared_entries')) {
+      parts.add(_sharedLine(r));
+    }
+    final rules = b.rows.where((r) => r['tbl'] != 'transactions' && r['tbl'] != 'shared_entries').length;
     if (rules > 0) parts.add('$rules rule${rules == 1 ? '' : 's'} (${_ruleKinds(b)})');
     return parts.join(' · ');
   }
@@ -162,6 +211,7 @@ class _ChangeHistoryScreenState extends State<ChangeHistoryScreen> {
       'delete' => 'Deleted',
       _ => 'Changed',
     };
+    if (r['tbl'] == 'shared_entries') return _sharedLine(r);
     if (r['tbl'] == 'transactions') {
       final amount = c['amount'] == null ? '' : ' · ${money((c['amount'] as num).toDouble())}';
       final date = c['txn_at'] == null ? '' : ' · ${dayLabel(DateTime.parse(c['txn_at'] as String).toLocal())}';
@@ -190,7 +240,7 @@ class _ChangeHistoryScreenState extends State<ChangeHistoryScreen> {
       ];
     }
     final row = r['op'] == 'insert' ? after : before;
-    if (r['tbl'] == 'transactions') return [];
+    if (r['tbl'] == 'transactions' || r['tbl'] == 'shared_entries') return [];
     return [
       for (final f in row.keys.cast<String>())
         if (f != 'user_id') '${_fieldNames[f] ?? f.replaceAll('_', ' ')}: ${show(f, row[f])}',
@@ -227,7 +277,9 @@ class _ChangeHistoryScreenState extends State<ChangeHistoryScreen> {
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
     final scheme = Theme.of(context).colorScheme;
-    final batches = (_batches ?? const <_Batch>[]).where((b) => !_mineOnly || b.byUser).toList();
+    final batches = (_batches ?? const <_Batch>[])
+        .where((b) => !_mineOnly || b.byUser || b.friendActor(data.me) != null)
+        .toList();
     return Scaffold(
       appBar: AppBar(
         title: const Text('Change history'),
@@ -263,7 +315,11 @@ class _ChangeHistoryScreenState extends State<ChangeHistoryScreen> {
                   ExpansionTile(
                     tilePadding: const EdgeInsets.symmetric(horizontal: 16),
                     leading: Icon(
-                      b.undone ? Icons.undo : (b.byUser ? Icons.person_outline : Icons.sync),
+                      b.undone
+                          ? Icons.undo
+                          : (b.friendActor(data.me) != null
+                                ? Icons.people_outline
+                                : (b.byUser ? Icons.person_outline : Icons.sync)),
                       color: b.undone ? scheme.outline : null,
                     ),
                     title: Text(
@@ -271,7 +327,7 @@ class _ChangeHistoryScreenState extends State<ChangeHistoryScreen> {
                       style: TextStyle(decoration: b.undone ? TextDecoration.lineThrough : null),
                     ),
                     subtitle: Text(
-                      '${dayLabel(b.at)}, ${timeLabel(b.at)} · ${b.byUser ? 'You' : 'Automatic (bank email, import)'}'
+                      '${dayLabel(b.at)}, ${timeLabel(b.at)} · ${_who(b)}'
                       '${b.undone ? ' · undone' : ''}',
                       style: text.bodySmall,
                     ),
