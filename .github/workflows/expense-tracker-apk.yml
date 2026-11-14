@@ -1,7 +1,9 @@
 # Builds the Expense Tracker Android app (expense_tracker/ only).
 # It never builds or deploys the Dukaan Khata shop app.
 #
-# Download: GitHub → Actions → "Expense Tracker APK" → latest run → Artifacts.
+# Download (no GitHub account needed), always the newest build:
+#   https://github.com/digitalhomeacc-jpg/dukaan-khata/releases/download/expense-tracker-latest/expense-tracker.apk
+# Also: GitHub → Actions → "Expense Tracker APK" → latest run → Artifacts.
 name: Expense Tracker APK
 
 on:
@@ -12,7 +14,8 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  # write: to publish the APK as a download (release "expense-tracker-latest"); nothing else is changed.
+  contents: write
 
 concurrency:
   group: expense-tracker-apk-${{ github.ref }}
@@ -84,3 +87,16 @@ jobs:
           name: expense-tracker-apk-${{ github.run_number }}
           path: expense_tracker/build/expense-tracker-${{ github.run_number }}.apk
           retention-days: 30
+
+      # A public, permanent download link for friends: the release is replaced on every build.
+      # Marked as a pre-release so it never shows as the shop app's "latest release".
+      - name: Publish the download link
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp build/expense-tracker-${{ github.run_number }}.apk build/expense-tracker.apk
+          gh release delete expense-tracker-latest --yes --cleanup-tag || true
+          gh release create expense-tracker-latest build/expense-tracker.apk \
+            --target ${{ github.sha }} --prerelease \
+            --title "Expense Tracker for Android (build ${{ github.run_number }})" \
+            --notes "Install: download expense-tracker.apk on the Android phone, open it, allow installing from this source. Updates install over the old version; your data stays (it is in your account, not on the phone)."
