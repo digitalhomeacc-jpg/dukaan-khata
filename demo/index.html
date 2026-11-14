@@ -83,7 +83,7 @@
       window.dkRegisterSw = function () {
         if (window.dkSwDone) return;
         window.dkSwDone = true;
-        navigator.serviceWorker.register('app_sw.js?v=202611140540').catch(function () {});
+        navigator.serviceWorker.register('app_sw.js?v=202611141823').catch(function () {});
       };
       setTimeout(window.dkRegisterSw, 60000); // in case the app never says it opened
       window.addEventListener('load', function () {
@@ -110,7 +110,7 @@
       });
     }
   </script>
-  <script src="pdf_text.js?v=202611140540" defer></script>
-  <script src="flutter_bootstrap.js?v=202611140540" async></script>
+  <script src="pdf_text.js?v=202611141823" defer></script>
+  <script src="flutter_bootstrap.js?v=202611141823" async></script>
 </body>
 </html>
