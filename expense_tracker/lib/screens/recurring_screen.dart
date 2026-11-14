@@ -6,6 +6,7 @@ import '../data/app_data.dart';
 import '../logic/recurring.dart';
 import '../logic/summary.dart';
 import '../models.dart';
+import '../ui/save_button.dart';
 import '../ui/category_picker.dart';
 import '../ui/category_style.dart';
 import '../ui/format.dart';
@@ -341,6 +342,7 @@ class _RecurringEditorState extends State<RecurringEditor> {
   bool get _cash => _accountId != null && _accountId == data.cashAccount?.id;
 
   Future<void> _save() async {
+    if (_busy) return;
     final amount = double.tryParse(_amount.text.replaceAll(',', ''));
     if (_name.text.trim().isEmpty || amount == null || amount <= 0) {
       return setState(() => _error = 'Enter a name and the amount');
@@ -393,10 +395,7 @@ class _RecurringEditorState extends State<RecurringEditor> {
                 if (context.mounted) Navigator.pop(context);
               },
             ),
-          Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: FilledButton(onPressed: _busy ? null : _save, child: const Text('Save')),
-          ),
+          SaveButton(onSave: _save),
         ],
       ),
       body: ListView(

@@ -209,3 +209,11 @@ test("Slice newer narrations: the payee, not the word Debit", () => {
   assert.equal(readNarration("UPI-Credit-600000000012-slice-NESF-sliceborrow@slc-BW1e9122246fb491ec49").merchant, "slice");
   assert.equal(readNarration("UPI-Reversal-600000000013-RAVI  SHOP-YESB0YBLUPI-Q900000000@ybl-Payment from slice").merchant, "Ravi Shop");
 });
+
+test("Slice IMPS: borrow paid in, and transfers out by name", () => {
+  const b = readNarration("IMPS-Credit-REF 600000000021-TO NORTH EAST SMALL FIN-XXXXXXXXXXXXXXXX6403-NESF0SLCUPI-BW37a8c6c6116ace8803");
+  assert.equal(b.merchant, "slice");
+  assert.equal(b.rrn, "600000000021");
+  const t = readNarration("IMPS-Debit-REF 600000000022-TO ASHA RAVI KUMAR-XXXXXXXXXX1234-fdrl0005555-IMPS");
+  assert.equal(t.merchant, "Asha Ravi Kumar");
+});

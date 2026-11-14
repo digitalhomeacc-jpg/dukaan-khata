@@ -5,6 +5,7 @@ import 'package:material_ui/material_ui.dart';
 import '../data/app_data.dart';
 import '../logic/goals.dart';
 import '../models.dart';
+import '../ui/save_button.dart';
 import '../ui/category_picker.dart';
 import '../ui/format.dart';
 
@@ -268,10 +269,7 @@ class _GoalEditorState extends State<GoalEditor> {
                 if (context.mounted) Navigator.pop(context);
               },
             ),
-          Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: FilledButton(onPressed: _save, child: const Text('Save')),
-          ),
+          SaveButton(onSave: _save),
         ],
       ),
       body: ListView(

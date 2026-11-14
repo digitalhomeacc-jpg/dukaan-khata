@@ -5,6 +5,7 @@ import 'package:material_ui/material_ui.dart';
 import '../data/app_data.dart';
 import '../logic/summary.dart';
 import '../models.dart';
+import '../ui/save_button.dart';
 import '../ui/category_style.dart';
 import '../ui/format.dart';
 
@@ -619,6 +620,7 @@ class _LoanFormState extends State<_LoanForm> {
   int? _i(TextEditingController c) => c.text.trim().isEmpty ? null : int.tryParse(c.text.trim());
 
   Future<void> _save() async {
+    if (_busy) return;
     if (!_form.currentState!.validate()) return;
     setState(() => _busy = true);
     final name = _name.text.trim();
@@ -700,10 +702,7 @@ class _LoanFormState extends State<_LoanForm> {
         title: Text(_isNew ? 'Add a loan' : 'Edit loan'),
         actions: [
           if (!_isNew) IconButton(tooltip: 'Delete', icon: const Icon(Icons.delete_outline), onPressed: _delete),
-          Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: FilledButton(onPressed: _busy ? null : _save, child: const Text('Save')),
-          ),
+          SaveButton(onSave: _save),
         ],
       ),
       body: Form(

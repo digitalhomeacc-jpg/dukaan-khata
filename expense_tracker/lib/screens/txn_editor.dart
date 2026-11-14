@@ -4,6 +4,7 @@ import 'package:material_ui/material_ui.dart';
 import '../data/app_data.dart';
 import '../logic/summary.dart';
 import '../models.dart';
+import '../ui/save_button.dart';
 import '../ui/category_picker.dart';
 import '../ui/category_style.dart';
 import '../ui/entry_history.dart';
@@ -90,7 +91,13 @@ class _TxnEditorState extends State<TxnEditor> {
   }
 
   Future<void> _save() async {
-    if (!_form.currentState!.validate()) return;
+    if (_busy) return;
+    if (!_form.currentState!.validate()) {
+      // Never fail silently: the field in red may be scrolled out of sight.
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Not saved yet: fill in the field marked in red (the amount?)')));
+      return;
+    }
     setState(() => _busy = true);
     final txn = Txn(
       id: widget.existing?.id ?? '',
@@ -159,10 +166,7 @@ class _TxnEditorState extends State<TxnEditor> {
         title: Text(_isNew ? 'Add transaction' : 'Payment details'),
         actions: [
           if (!_isNew) IconButton(tooltip: 'Delete', icon: const Icon(Icons.delete_outline), onPressed: _delete),
-          Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: FilledButton(onPressed: _busy ? null : _save, child: const Text('Save')),
-          ),
+          SaveButton(onSave: _save),
         ],
       ),
       body: Form(

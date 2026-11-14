@@ -199,8 +199,13 @@ Deno.serve(async (req) => {
     user_id: user.id, account_id: account!.id, balance, as_of: new Date(`${date}T23:59:00${IST_OFFSET}`).toISOString(),
     email_id: `stmtbal:${last4}:${date}`,
   }));
-  if (readings.length) {
-    await supabase.from("balance_readings").upsert(readings, { onConflict: "user_id,email_id", ignoreDuplicates: true });
+  // A statement's last day can be cut short (downloaded mid-day): it never replaces what another statement
+  // says for that day. Every other day is complete, so it does.
+  const lastDay = `stmtbal:${last4}:${periodTo}`;
+  const full = readings.filter((r) => r.email_id !== lastDay), partial = readings.filter((r) => r.email_id === lastDay);
+  if (full.length) await supabase.from("balance_readings").upsert(full, { onConflict: "user_id,email_id" });
+  if (partial.length) {
+    await supabase.from("balance_readings").upsert(partial, { onConflict: "user_id,email_id", ignoreDuplicates: true });
   }
 
   if (body.matchExactly) {

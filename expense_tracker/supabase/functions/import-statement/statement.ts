@@ -75,6 +75,15 @@ export function readNarration(n: string): { merchant: string | null; method: Met
   if (/^repayment\b/i.test(s)) return { merchant: "Slice borrow repayment", method: "other", rrn, atm: false };
   // Slice (newer): "UPI-Debit-<ref>-NAME-<upi id>-…", "UPI-Credit-<ref>-slice-NESF-sliceborrow@slc-BW…",
   // "UPI-Reversal-<ref>-NAME-<IFSC>-<upi id>-…" (money back for a failed payment).
+  // Slice IMPS: "IMPS-Credit-REF <ref>-TO NORTH EAST SMALL FIN-…-BW…" is a slice borrow paid in;
+  // "IMPS-Debit-REF <ref>-TO NAME-XXXX1234-<IFSC>-IMPS" a transfer out to NAME.
+  const imps = s.match(/^IMPS-(Debit|Credit)-REF (\d{12})-TO (.+?)-/i);
+  if (imps) {
+    if (/NORTH EAST SMALL FIN/i.test(imps[3]) && /\bBW[0-9a-f]+/i.test(s)) {
+      return { merchant: "slice", method: "netbanking", rrn: imps[2], atm: false };
+    }
+    return { merchant: cleanMerchant(imps[3]), method: "netbanking", rrn: imps[2], atm: false };
+  }
   const sl = s.match(/^UPI-(Debit|Credit|Reversal)-(\d{12})-(.+?)-/i);
   if (sl) return { merchant: cleanMerchant(sl[3]), method: "upi", rrn: sl[2], atm: false };
   // Slice / other banks: "UPI Debit-NAME-VPA-…", "UPI Credit-NAME-VPA-…", "IMPS Credit-NAME-…"

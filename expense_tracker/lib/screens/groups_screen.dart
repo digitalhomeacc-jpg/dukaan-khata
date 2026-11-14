@@ -4,6 +4,7 @@ import 'package:material_ui/material_ui.dart';
 import '../data/app_data.dart';
 import '../logic/summary.dart';
 import '../models.dart';
+import '../ui/save_button.dart';
 import '../ui/category_picker.dart';
 import '../ui/category_style.dart';
 import '../ui/format.dart';
@@ -463,6 +464,7 @@ class _GroupExpenseEditorState extends State<GroupExpenseEditor> {
   }
 
   Future<void> _save() async {
+    if (_busy) return;
     final shares = _shares;
     final sum = shares.values.fold(0.0, (v, x) => v + x);
     if (_what.text.trim().isEmpty || _total <= 0) return setState(() => _error = 'Enter what it was and the amount');
@@ -501,12 +503,7 @@ class _GroupExpenseEditorState extends State<GroupExpenseEditor> {
     return Scaffold(
       appBar: AppBar(
         title: Text('Add to ${widget.group.name}'),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: FilledButton(onPressed: _busy ? null : _save, child: const Text('Save')),
-          ),
-        ],
+        actions: [SaveButton(onSave: _save)],
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),

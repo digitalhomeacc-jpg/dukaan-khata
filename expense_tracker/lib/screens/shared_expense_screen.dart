@@ -2,6 +2,7 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../data/app_data.dart';
+import '../ui/save_button.dart';
 import '../ui/category_style.dart';
 import '../ui/format.dart';
 
@@ -70,6 +71,7 @@ class _SharedExpenseScreenState extends State<SharedExpenseScreen> {
   }
 
   Future<void> _save() async {
+    if (_busy) return;
     final parts = _parts;
     final total = _totalValue;
     String? err;
@@ -111,12 +113,7 @@ class _SharedExpenseScreenState extends State<SharedExpenseScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Shared expense'),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: FilledButton(onPressed: _busy ? null : _save, child: const Text('Save')),
-          ),
-        ],
+        actions: [SaveButton(onSave: _save)],
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
