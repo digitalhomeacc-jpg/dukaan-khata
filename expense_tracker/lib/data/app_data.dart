@@ -695,9 +695,27 @@ class AppData extends ChangeNotifier {
   }
 
   /// The latest changes to payments and rules, newest first (see change_log).
-  Future<List<Map<String, dynamic>>> loadHistory({int limit = 1500}) async {
-    final rows = await _db.from('change_log').select().order('id', ascending: false).limit(limit);
+  /// The change log, newest first, a page at a time ([beforeId]: older than that row). [mineOnly]: your and your
+  /// friends' changes, not automatic ones (bank emails, imports).
+  Future<List<Map<String, dynamic>>> loadHistory({int limit = 800, int? beforeId, bool mineOnly = false}) async {
+    var q = _db.from('change_log').select();
+    if (beforeId != null) q = q.lt('id', beforeId);
+    if (mineOnly) q = q.or('by_user.eq.true,actor.not.is.null');
+    final rows = await q.order('id', ascending: false).limit(limit);
     return rows.cast<Map<String, dynamic>>();
+  }
+
+  /// Everything that ever happened to one payment: its own changes, its splits with friends and into
+  /// categories, and its group expense.
+  Future<List<Map<String, dynamic>>> loadEntryHistory(String txnId) async {
+    final rows = await _db.from('change_log').select().eq('txn_id', txnId).order('id', ascending: false).limit(300);
+    return rows.cast<Map<String, dynamic>>();
+  }
+
+  /// Puts back single changes (not the rest of the action they were part of). Later changes are kept.
+  Future<int> undoChangeRows(List<int> ids) async {
+    final n = await _db.rpc('undo_change_rows', params: {'p_ids': ids});
+    return (n as num?)?.toInt() ?? 0;
   }
 
   /// Puts back everything one action changed. Returns how many rows changed back.

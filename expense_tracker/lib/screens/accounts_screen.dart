@@ -441,7 +441,8 @@ class _ClosedLoans extends StatelessWidget {
                 title: Text(l.name),
                 subtitle: Text(
                   [
-                    if (l.startedOn != null) '${dayLabel(l.startedOn!)} – ${l.endedOn == null ? '?' : dayLabel(l.endedOn!)}',
+                    if (l.startedOn != null)
+                      '${dayLabel(l.startedOn!)} – ${l.endedOn == null ? '?' : dayLabel(l.endedOn!)}',
                     'got ${money(cameIn)}',
                     'repaid ${money(paid)}',
                     if (paid > cameIn) 'cost ${money(paid - cameIn)}',

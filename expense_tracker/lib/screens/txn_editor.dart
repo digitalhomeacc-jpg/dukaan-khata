@@ -6,6 +6,7 @@ import '../logic/summary.dart';
 import '../models.dart';
 import '../ui/category_picker.dart';
 import '../ui/category_style.dart';
+import '../ui/entry_history.dart';
 import '../ui/format.dart';
 import 'quick_add.dart';
 import 'split_section.dart';
@@ -404,8 +405,28 @@ class _TxnEditorState extends State<TxnEditor> {
                 onSelected: (id) => setState(() => _counterId = id),
               ),
             ],
+            if (existing != null) ...[
+              const SizedBox(height: 16),
+              EntryHistorySection(data: widget.data, txnId: existing.id, onUndone: () => _reopen(existing.id)),
+            ],
           ],
         ),
+      ),
+    );
+  }
+
+  /// After a change was put back: show the payment as it is now (once the app has the new values).
+  Future<void> _reopen(String id) async {
+    final before = widget.data.txn(id);
+    for (var i = 0; i < 30 && identical(widget.data.txn(id), before); i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    }
+    final now = widget.data.txn(id);
+    if (!mounted || now == null) return;
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute<void>(
+        fullscreenDialog: true,
+        builder: (_) => TxnEditor(data: widget.data, existing: now),
       ),
     );
   }
