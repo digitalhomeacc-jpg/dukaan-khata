@@ -306,6 +306,7 @@ class PlaceDetailScreen extends StatelessWidget {
                     ],
                   ),
                 ),
+                LinkedNamesCard(data: data, person: g.name),
                 if (looksLikePerson(g.name)) SamePersonCard(data: data, person: g.name),
                 const SizedBox(height: 16),
                 // Who is this?

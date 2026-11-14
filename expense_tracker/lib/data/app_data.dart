@@ -415,10 +415,70 @@ class AppData extends ChangeNotifier {
     required Iterable<String> vpas,
     required Iterable<String> names,
     required String nickname,
-  }) => _db.rpc(
-    'rename_place',
-    params: {'p_vpas': vpas.toList(), 'p_names': names.toList(), 'p_nickname': nickname.trim()},
-  );
+  }) async {
+    // "Also known as" links follow the new name (the server does the same).
+    final olds = {for (final n in names) keyOf(n)};
+    final nk = keyOf(nickname);
+    aliases = {
+      for (final e in aliases.entries)
+        if (e.key != nk) e.key: (olds.contains(keyOf(e.value)) ? nickname.trim() : e.value),
+    };
+    notifyListeners();
+    await _db.rpc(
+      'rename_place',
+      params: {'p_vpas': vpas.toList(), 'p_names': names.toList(), 'p_nickname': nickname.trim()},
+    );
+  }
+
+  /// Names linked to [person] with "Also known as", and names the bank used for their payments.
+  List<String> linkedNamesOf(String person) {
+    final k = keyOf(person);
+    final out = <String>{};
+    for (final e in aliases.entries) {
+      if (keyOf(e.value) == k) {
+        final shown = transactions.where((t) => t.bankName != null && keyOf(t.bankName!) == e.key).firstOrNull;
+        out.add(shown?.bankName ?? e.key);
+      }
+    }
+    return out.toList()..sort();
+  }
+
+  /// Undoes "Also known as": that name's payments show under it again.
+  Future<void> removeAlias(String name) async {
+    final k = keyOf(name);
+    aliases = {...aliases}..remove(k);
+    transactions = [
+      for (final t in transactions)
+        t.bankName != null && keyOf(t.bankName!) == k
+            ? Txn(
+                id: t.id,
+                amount: t.amount,
+                isDebit: t.isDebit,
+                txnAt: t.txnAt,
+                merchant: t.bankName,
+                note: t.note,
+                bank: t.bank,
+                accountLast4: t.accountLast4,
+                method: t.method,
+                categoryId: t.categoryId,
+                accountId: t.accountId,
+                counterAccountId: t.counterAccountId,
+                source: t.source,
+                emailSubject: t.emailSubject,
+                excluded: t.excluded,
+                needsReview: t.needsReview,
+                loanId: t.loanId,
+                loanRole: t.loanRole,
+                emailBody: t.emailBody,
+                paidBy: t.paidBy,
+                payeeVpa: t.payeeVpa,
+                details: t.details,
+              )
+            : t,
+    ];
+    notifyListeners();
+    await _db.rpc('remove_friend_alias', params: {'p_alias': name});
+  }
 
   /// Marks a payee as a friend (or not): their money then goes to your balance with them.
   Future<void> markFriend(String name, {bool friend = true}) async {

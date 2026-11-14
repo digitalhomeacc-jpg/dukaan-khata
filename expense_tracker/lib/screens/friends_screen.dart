@@ -477,7 +477,6 @@ class FriendDetailScreen extends StatelessWidget {
     final balance = link != null && me != null ? sharedBalance(data.sharedEntries, link.id, me) : (l?.balance ?? 0);
     final open = data.shares.where((s) => !s.paid && AppData.keyOf(s.person) == key).toList();
     final paidForMe = data.transactions.where((t) => t.paidBy != null && AppData.keyOf(t.paidBy!) == key).toList();
-    final otherNames = data.aliases.entries.where((e) => AppData.keyOf(e.value) == key).map((e) => e.key).toList();
     final scheme = Theme.of(context).colorScheme;
     final settled = balance.abs() < 0.005;
     final entries = link == null
@@ -530,16 +529,17 @@ class FriendDetailScreen extends StatelessWidget {
                   style: Theme.of(context).textTheme.headlineMedium
                       ?.copyWith(color: settled ? null : (balance > 0 ? scheme.error : Colors.green.shade700)),
                 ),
-                if (otherNames.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text('Also: ${otherNames.join(', ')}', style: Theme.of(context).textTheme.bodySmall),
-                ],
               ],
             ),
           ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: SamePersonCard(data: data, person: person),
+            child: Column(
+              children: [
+                LinkedNamesCard(data: data, person: person),
+                SamePersonCard(data: data, person: person),
+              ],
+            ),
           ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),

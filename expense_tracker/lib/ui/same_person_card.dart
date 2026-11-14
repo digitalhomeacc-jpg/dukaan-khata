@@ -71,6 +71,54 @@ class SamePersonCard extends StatelessWidget {
   }
 }
 
+/// The names joined to [person] with "Also known as": choose which one to show, or separate them again.
+class LinkedNamesCard extends StatelessWidget {
+  const LinkedNamesCard({super.key, required this.data, required this.person});
+
+  final AppData data;
+  final String person;
+
+  @override
+  Widget build(BuildContext context) {
+    final names = data.linkedNamesOf(person);
+    if (names.isEmpty) return const SizedBox.shrink();
+    final text = Theme.of(context).textTheme;
+    return Card.outlined(
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 8, 4),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Also known as', style: text.titleSmall),
+            Text('Shown here as $person.', style: text.bodySmall),
+            for (final n in names)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 4,
+                  children: [
+                    Text(n, style: text.bodyLarge?.copyWith(fontWeight: FontWeight.w600)),
+                    TextButton(
+                      onPressed: () async {
+                        await data.removeAlias(n);
+                        await data.addAlias(person, n);
+                        if (context.mounted) Navigator.of(context).maybePop();
+                      },
+                      child: const Text('Show as this name'),
+                    ),
+                    TextButton(onPressed: () => data.removeAlias(n), child: const Text('Separate')),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// Pick another name the bank uses for [person] (e.g. a parent's account): its payments then count as theirs.
 Future<void> showAlsoKnownAs(BuildContext context, AppData data, String person) async {
   final suggested = [for (final c in data.otherNamesOf(person)) c.name];

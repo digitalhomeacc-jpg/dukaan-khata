@@ -114,9 +114,21 @@ void main() {
     await pump(tester, FriendDetailScreen(data: sample(), person: 'Ravi Kumar'));
     expect(find.text('Ravi Kumar owes you'), findsOneWidget);
     expect(find.text('Connected'), findsOneWidget);
+    expect(find.text('Also known as'), findsOneWidget);
+    expect(find.text('vijay kumar'), findsOneWidget);
+    expect(find.text('Show as this name'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.textContaining("Ravi Kumar's share · Pizza"),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.textContaining("Ravi Kumar's share · Pizza"), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.textContaining('removed by Ravi Kumar'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.textContaining('removed by Ravi Kumar'), findsOneWidget);
-    expect(find.textContaining('Also: vijay kumar'), findsOneWidget);
   });
 
   testWidgets('not connected friend page offers an invite', (tester) async {
