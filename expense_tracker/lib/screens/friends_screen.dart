@@ -235,9 +235,8 @@ class FriendsScreen extends StatelessWidget {
                 MaterialPageRoute<void>(
                   builder: (_) => ListenableBuilder(
                     listenable: data,
-                    builder: (_, _) => r.spendsOnly && r.settled && r.link == null && groupOf(r.person) != null
-                        ? PlaceDetailScreen(data: data, keys: groupOf(r.person)!.keys)
-                        : FriendDetailScreen(data: data, person: r.person),
+                    // Always the friend's page: balance, Connect, Edit, and from there all their payments.
+                    builder: (_, _) => FriendDetailScreen(data: data, person: r.person),
                   ),
                 ),
               ),
@@ -743,6 +742,22 @@ class FriendDetailScreen extends StatelessWidget {
                       onTap: () => _invite(context),
                     ),
                   ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+            child: OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(44)),
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => ListenableBuilder(
+                    listenable: data,
+                    builder: (_, _) => PlaceDetailScreen(data: data, keys: {key}),
+                  ),
+                ),
+              ),
+              icon: const Icon(Icons.receipt_long_outlined),
+              label: Text('All payments with ${person.split(' ').first}'),
+            ),
           ),
           const SizedBox(height: 8),
           if (link != null && me != null)
