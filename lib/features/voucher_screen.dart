@@ -721,7 +721,16 @@ class _VoucherScreenState extends State<VoucherScreen> {
         msg += ' · ${party!.name}: ${t('new_balance')} ₹${Money.fmt(bal, abs: true)} ${bal >= 0 ? t('they_owe') : t('we_owe')}';
       }
       if (!mounted) return;
-      toast(context, msg);
+      if (_receiptTypes.contains(input.type)) {
+        // saved: offer the पावती straight away (the snackbar outlives this screen)
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(msg),
+          duration: const Duration(seconds: 6),
+          action: SnackBarAction(label: t('receipt_print'), onPressed: () => _printReceipt(app, savedId)),
+        ));
+      } else {
+        toast(context, msg);
+      }
       if (andNew) {
         setState(() {
           lines.clear();
@@ -796,6 +805,14 @@ class _VoucherScreenState extends State<VoucherScreen> {
               icon: const Icon(Icons.history),
               tooltip: t('history'),
               onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => AuditScreen(voucherId: editing!.id))),
+            ),
+          // 80 mm thermal पावती
+          if (editing != null && _receiptTypes.contains(type))
+            IconButton(
+              key: const Key('print_receipt'),
+              icon: const Icon(Icons.print_outlined),
+              tooltip: t('receipt_print'),
+              onPressed: () => _printReceipt(app, editing!.id),
             ),
           if (editing != null && (type == VoucherType.sale || type == VoucherType.purchase))
             IconButton(
@@ -1779,6 +1796,21 @@ class _VoucherScreenState extends State<VoucherScreen> {
       },
     ),
     );
+  }
+
+  static const _receiptTypes = {
+    VoucherType.sale, VoucherType.purchase, VoucherType.salesReturn, VoucherType.purchaseReturn,
+    VoucherType.receipt, VoucherType.payment,
+  };
+
+  /// 80 mm पावती: the print dialog (pick the thermal printer), or – if that
+  /// is not possible on this device – share it to a printer app.
+  static Future<void> _printReceipt(AppController app, String id) async {
+    try {
+      await ReceiptPdf.print(app, id);
+    } catch (_) {
+      await ReceiptPdf.share(app, id);
+    }
   }
 
   final _quickKey = GlobalKey();

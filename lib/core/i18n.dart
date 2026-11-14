@@ -122,6 +122,7 @@ const Map<String, (String, String)> _s = {
   'change': ('बदला', 'Change'),
   'hamal_set': ('हमाल किती?', 'How many hamals?'),
   'day_no': ('दिवसाचा क्र.', 'No. of day'),
+  'receipt_print': ('पावती प्रिंट', 'Print receipt'),
   'bills': ('बिले', 'bills'),
   'bill': ('बिल', 'Bill'),
   'tap_to_see': ('प्रत्येक बिल पाहण्यासाठी दाबा', 'Tap to see each bill'),

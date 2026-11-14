@@ -335,3 +335,137 @@ class WhatsApp {
 
   static Future<bool> call(String phone) => launchUrl(Uri.parse('tel:$phone'));
 }
+
+/// पावती for an 80 mm thermal printer (3-inch roll): sale, purchase, जमा,
+/// payment and returns. Printed through the phone's / laptop's print dialog
+/// (or shared to a printer app). English, like every printed bill.
+extension ReceiptPdf on Exporter {
+  static Future<Uint8List> build(AppController app, String voucherId) async {
+    final (v, lines) = await app.vouchers.load(voucherId);
+    // every item, hidden ones too (an old bill may use one)
+    final items = [for (final r in await app.db.getAll('SELECT * FROM items WHERE business_id = ?', [app.businessId])) Item.fromRow(r)];
+    final party = v.partyId == null ? null : await app.ledgers.byId(v.partyId!);
+    final pay = v.payLedgerId == null ? null : await app.ledgers.byId(v.payLedgerId!);
+    final balance = party != null && party.group.isParty ? await app.ledgers.balanceAt(party.id) : null;
+    return render(
+        shop: app.pdfShopName, address: app.shopAddress, phone: app.shopPhone, gstin: app.shopGstin,
+        v: v, lines: lines, items: items, party: party, pay: pay, balance: balance);
+  }
+
+  /// The receipt itself, from the entry's data (no database needed).
+  static Future<Uint8List> render({
+    required String shop,
+    String address = '',
+    String phone = '',
+    String gstin = '',
+    required Voucher v,
+    required List<ItemLine> lines,
+    required List<Item> items,
+    Ledger? party,
+    Ledger? pay,
+    int? balance,
+  }) async {
+    await Exporter._fonts();
+    String t(String k) => const Strings(true).t(k);
+    final l = Exporter.latin;
+    String name(Ledger x) => l(x.nameEn ?? x.name);
+    String itemName(String id) => items.where((i) => i.id == id).map((i) => l(i.display(true))).firstOrNull ?? '?';
+    String unit(String id) => items.where((i) => i.id == id).map((i) => t('unit_${i.unit}')).firstOrNull ?? '';
+    final bill = const {VoucherType.sale, VoucherType.purchase, VoucherType.salesReturn, VoucherType.purchaseReturn}.contains(v.type);
+    final goods = lines.fold<int>(0, (s, x) => s + x.amount);
+    final isGst = v.gst > 0;
+    final time = DateTime.tryParse(v.createdAt ?? '')?.toLocal();
+    final title = switch (v.type) {
+      VoucherType.sale => isGst ? 'TAX INVOICE' : 'SALE RECEIPT',
+      VoucherType.purchase => 'PURCHASE',
+      VoucherType.salesReturn => 'SALES RETURN',
+      VoucherType.purchaseReturn => 'PURCHASE RETURN',
+      VoucherType.receipt => 'PAYMENT RECEIVED',
+      VoucherType.payment => 'PAYMENT GIVEN',
+      _ => l(t('vt_${v.type.code}')).toUpperCase(),
+    };
+
+    const small = pw.TextStyle(fontSize: 8);
+    const normal = pw.TextStyle(fontSize: 9);
+    final bold = pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold);
+    pw.Widget dash() => pw.Divider(height: 8, thickness: 0.6, borderStyle: pw.BorderStyle.dashed);
+    pw.Widget two(String a, String b, {pw.TextStyle? style}) => pw.Row(children: [
+          pw.Expanded(child: pw.Text(a, style: style ?? normal)),
+          pw.Text(b, style: style ?? normal),
+        ]);
+
+    final doc = pw.Document(theme: pw.ThemeData.withFont(base: Exporter._regular, bold: Exporter._bold));
+    doc.addPage(pw.Page(
+      // 80 mm roll: about 72 mm printable; the page is as long as the receipt
+      pageFormat: const PdfPageFormat(80 * PdfPageFormat.mm, double.infinity, marginAll: 4 * PdfPageFormat.mm),
+      build: (_) => pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.stretch, children: [
+        pw.Text(l(shop), style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold), textAlign: pw.TextAlign.center),
+        if (address.isNotEmpty) pw.Text(l(address), style: small, textAlign: pw.TextAlign.center),
+        if (phone.isNotEmpty || (isGst && gstin.isNotEmpty))
+          pw.Text([if (phone.isNotEmpty) 'Ph ${phone}', if (isGst && gstin.isNotEmpty) 'GSTIN ${gstin}'].join('  '),
+              style: small, textAlign: pw.TextAlign.center),
+        pw.SizedBox(height: 3),
+        pw.Text(title, style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold), textAlign: pw.TextAlign.center),
+        dash(),
+        two('No. ${v.shownNo}', '${shortDate(v.date)}${time == null ? '' : '  ${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}'}'),
+        pw.Text(party == null ? (v.type == VoucherType.purchase ? t('cash_purchase') : t('cash_sale')) : name(party), style: bold),
+        if (party?.phone != null) pw.Text(party!.phone!, style: small),
+        if (isGst && party?.gstin != null) pw.Text('GSTIN ${party!.gstin}', style: small),
+        dash(),
+        if (bill) ...[
+          for (final x in lines) ...[
+            pw.Text(itemName(x.itemId), style: normal),
+            two('  ${fmtQty(x.qty)} ${unit(x.itemId)} x ${Money.fmt(x.rate)}', Money.fmt(x.amount)),
+          ],
+          if (lines.isNotEmpty) dash(),
+          if (lines.isNotEmpty && (isGst || v.hamali != 0 || v.transport != 0)) two(t('goods_total'), Money.fmt(goods)),
+          if (isGst) ...[
+            two('CGST ${v.gstRate / 200}%', Money.fmt(v.gst ~/ 2)),
+            two('SGST ${v.gstRate / 200}%', Money.fmt(v.gst - v.gst ~/ 2)),
+          ],
+          if (v.hamali != 0) two(t('hamali'), Money.fmt(v.hamali)),
+          // the customer's copy never says whose vehicle went
+          if (v.transport != 0) two(t('transport'), Money.fmt(v.transport)),
+          if (lines.isNotEmpty && v.amount - goods - v.hamali - v.transport - v.gst != 0)
+            two(t('round_off'), Money.fmt(v.amount - goods - v.hamali - v.transport - v.gst)),
+          two('TOTAL', 'Rs ${Money.fmt(v.amount)}', style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold)),
+          if (v.paid != 0) two('${t('paid')}${pay == null ? '' : ' (${name(pay)})'}', Money.fmt(v.paid)),
+          if (v.amount - v.paid != 0) two(t('due'), Money.fmt(v.amount - v.paid), style: bold),
+        ] else ...[
+          two('AMOUNT', 'Rs ${Money.fmt(v.amount)}', style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold)),
+          if (pay != null) two(t('pay_mode'), name(pay)),
+        ],
+        if (balance != null) ...[
+          dash(),
+          // where the account stands now, from this customer's / supplier's side
+          two(balance >= 0 ? 'Total due from you' : 'Total due to you', 'Rs ${Money.fmt(balance, abs: true)}', style: bold),
+        ],
+        if (v.haste != null) pw.Text('${t('haste')}: ${l(v.haste!)}', style: small),
+        if ((v.narration ?? '').isNotEmpty) pw.Text(l(v.narration!), style: small),
+        dash(),
+        pw.Text('Thank you!', style: normal, textAlign: pw.TextAlign.center),
+        pw.SizedBox(height: 10),
+      ]),
+    ));
+    return doc.save();
+  }
+
+  /// Opens the print dialog with the 80 mm receipt (choose the thermal printer).
+  static Future<void> print(AppController app, String voucherId) async {
+    final bytes = await build(app, voucherId);
+    await Printing.layoutPdf(
+      onLayout: (_) async => bytes,
+      format: const PdfPageFormat(80 * PdfPageFormat.mm, double.infinity, marginAll: 4 * PdfPageFormat.mm),
+      name: 'receipt',
+    );
+  }
+
+  /// Sends the receipt to another app (e.g. a Bluetooth printer app).
+  static Future<void> share(AppController app, String voucherId) async {
+    final bytes = await build(app, voucherId);
+    await SharePlus.instance.share(ShareParams(
+      files: [XFile.fromData(bytes, mimeType: 'application/pdf', name: 'receipt.pdf')],
+      fileNameOverrides: ['receipt.pdf'],
+    ));
+  }
+}
