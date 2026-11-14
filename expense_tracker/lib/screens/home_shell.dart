@@ -84,8 +84,8 @@ class _HomeShellState extends State<HomeShell> {
             NavigationDestination(
               // Changes friends made between you, waiting for your OK.
               icon: Badge(
-                isLabelVisible: data.waitingForMe.isNotEmpty,
-                label: Text('${data.waitingForMe.length}'),
+                isLabelVisible: data.waitingForMe.isNotEmpty || data.openingsWaitingForMe.isNotEmpty,
+                label: Text('${(data.waitingForMe.length + data.openingsWaitingForMe.length)}'),
                 child: const Icon(Icons.group_outlined),
               ),
               selectedIcon: const Icon(Icons.group),

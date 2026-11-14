@@ -755,3 +755,50 @@ class Goal {
     archived: m['archived'] == true,
   );
 }
+
+/// An agreed opening balance with a connected friend: what [owedBy] owed at the end of [asOf]. Entries after
+/// that day count on top of it; entries on or before it are history only.
+class FriendOpening {
+  const FriendOpening({
+    required this.id,
+    required this.linkId,
+    required this.asOf,
+    required this.amount,
+    required this.createdBy,
+    this.owedBy,
+    this.note,
+    this.confirmedAt,
+    this.deletedAt,
+    this.rejectedBy,
+  });
+
+  final String id;
+  final String linkId;
+  final DateTime asOf;
+  final String? owedBy;
+  final double amount;
+  final String? note;
+  final String createdBy;
+  final DateTime? confirmedAt;
+  final DateTime? deletedAt;
+  final String? rejectedBy;
+
+  bool get agreed => confirmedAt != null && deletedAt == null;
+  bool get waiting => confirmedAt == null && deletedAt == null;
+
+  /// Positive: [me] owes; negative: owed to [me].
+  double signedFor(String me) => owedBy == null ? 0 : (owedBy == me ? amount : -amount);
+
+  factory FriendOpening.fromMap(Map<String, dynamic> m) => FriendOpening(
+    id: m['id'] as String,
+    linkId: m['link_id'] as String,
+    asOf: DateTime.parse(m['as_of'] as String),
+    owedBy: m['owed_by'] as String?,
+    amount: (m['amount'] as num).toDouble(),
+    note: m['note'] as String?,
+    createdBy: m['created_by'] as String,
+    confirmedAt: m['confirmed_at'] == null ? null : DateTime.parse(m['confirmed_at'] as String),
+    deletedAt: m['deleted_at'] == null ? null : DateTime.parse(m['deleted_at'] as String),
+    rejectedBy: m['rejected_by'] as String?,
+  );
+}

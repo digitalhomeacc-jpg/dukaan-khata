@@ -67,7 +67,7 @@ class HomeScreen extends StatelessWidget {
     ).where((d) => d.date.difference(at).inDays <= 7 && !d.date.isBefore(DateTime(at.year, at.month, at.day))).toList();
     final frequent = frequentEntries(data.transactions).take(6).toList();
     final toSort = data.transactions.where((t) => t.categoryId == null && !t.excluded && !t.isLoanTransfer).length;
-    final waiting = data.waitingForMe.length;
+    final waiting = data.waitingForMe.length + data.openingsWaitingForMe.length;
     final late = plan.due.where((d) => d.state == DueState.overdue).length;
     final goals = data.goals.where((g) => !g.archived).toList();
     final recent = data.transactions.take(6).toList();

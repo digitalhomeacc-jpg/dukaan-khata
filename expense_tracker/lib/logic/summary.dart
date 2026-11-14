@@ -878,11 +878,29 @@ List<PayeeSummary> peopleToReview(Iterable<Txn> txns, {Set<String> decided = con
 /// Balance with a connected friend from the shared record: positive = you owe them.
 /// Only what both people agreed to counts: a new entry or a changed amount waits for the other's OK
 /// (the last agreed amount stands meanwhile), so a balance never moves on one person's say.
-double sharedBalance(Iterable<SharedEntry> entries, String linkId, String me) => _round(
-  entries
-      .where((e) => e.linkId == linkId && !e.deleted && e.confirmedAmount != null)
-      .fold(0.0, (s, e) => s + (e.debtor == me ? e.confirmedAmount! : (e.creditor == me ? -e.confirmedAmount! : 0))),
+/// The balance with a connected friend (positive: you owe). With an agreed [opening]: that amount, plus only the
+/// entries after its day; earlier entries (even ones a bank import adds later) are history and never count.
+double sharedBalance(Iterable<SharedEntry> entries, String linkId, String me, {FriendOpening? opening}) => _round(
+  (opening?.signedFor(me) ?? 0) +
+      entries
+          .where(
+            (e) =>
+                e.linkId == linkId &&
+                !e.deleted &&
+                e.confirmedAmount != null &&
+                (opening == null || !beforeOpening(e, opening)),
+          )
+          .fold(
+            0.0,
+            (s, e) => s + (e.debtor == me ? e.confirmedAmount! : (e.creditor == me ? -e.confirmedAmount! : 0)),
+          ),
 );
+
+/// Dated on or before the opening balance's day: history only.
+bool beforeOpening(SharedEntry e, FriendOpening o) {
+  final d = DateTime(e.at.year, e.at.month, e.at.day);
+  return !d.isAfter(DateTime(o.asOf.year, o.asOf.month, o.asOf.day));
+}
 
 // --------------------------------------------------------------------- places
 

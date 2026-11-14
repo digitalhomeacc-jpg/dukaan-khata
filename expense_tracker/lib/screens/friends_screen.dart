@@ -47,7 +47,7 @@ List<FriendRow> friendRows(AppData data) {
     final name = canon(l.person);
     final link = linkOf(name);
     final key = AppData.keyOf(name);
-    final balance = link == null || data.me == null ? l.balance : sharedBalance(data.sharedEntries, link.id, data.me!);
+    final balance = link == null || data.me == null ? l.balance : data.balanceWith(link);
     final had = rows[key];
     // Two names already merged into one balance upstream; a connected friend's balance comes from the link.
     rows[key] = FriendRow(name, link != null ? balance : (had?.balance ?? 0) + balance, link);
@@ -56,10 +56,7 @@ List<FriendRow> friendRows(AppData data) {
     final raw = data.me == null ? '' : link.nameFor(data.me!);
     if (raw.isEmpty) continue;
     final name = canon(raw);
-    rows.putIfAbsent(
-      AppData.keyOf(name),
-      () => FriendRow(name, sharedBalance(data.sharedEntries, link.id, data.me!), link),
-    );
+    rows.putIfAbsent(AppData.keyOf(name), () => FriendRow(name, data.balanceWith(link), link));
   }
   // Friends whose payments are your spends: listed too, with nothing owed.
   for (final MapEntry(:key, :value) in data.people.entries) {
@@ -557,8 +554,16 @@ class FriendDetailScreen extends StatelessWidget {
     final link = data.linkFor(person);
     final me = data.me;
     if (link != null && me != null) {
-      final friendId = link.a == me ? link.b! : link.a;
-      await data.setSharedBalance(link, friendId, balance, result.owed, result.reason);
+      if (!context.mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
+      try {
+        await data.proposeOpening(link, DateTime.now(), result.owed, result.reason);
+        messenger.showSnackBar(
+          SnackBar(content: Text('Sent to ${person.split(' ').first}: it counts once they say OK')),
+        );
+      } catch (e) {
+        messenger.showSnackBar(SnackBar(content: Text('Not sent: $e')));
+      }
       return;
     }
     if (result.fresh) {
@@ -638,7 +643,7 @@ class FriendDetailScreen extends StatelessWidget {
               )
               .toList()
             ..sort((a, b) => b.txnAt.compareTo(a.txnAt)));
-    final balance = link != null && me != null ? sharedBalance(data.sharedEntries, link.id, me) : (l?.balance ?? 0);
+    final balance = link != null && me != null ? data.balanceWith(link) : (l?.balance ?? 0);
     final open = data.shares.where((s) => !s.paid && AppData.keyOf(s.person) == key).toList();
     final paidForMe = data.transactions.where((t) => t.paidBy != null && AppData.keyOf(t.paidBy!) == key).toList();
     final scheme = Theme.of(context).colorScheme;
@@ -791,6 +796,7 @@ class FriendDetailScreen extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 8),
+          if (link != null && me != null) _OpeningCard(data: data, link: link, me: me, person: person),
           if (link != null && me != null) _BankCheckCard(data: data, linkId: link.id, me: me, person: person),
           if (link != null && me != null)
             for (final e in entries.where((e) => e.mergedInto == null))
@@ -807,7 +813,12 @@ class FriendDetailScreen extends StatelessWidget {
                 ),
                 title: Text(
                   _entryText(e, me),
-                  style: TextStyle(decoration: e.deleted ? TextDecoration.lineThrough : null),
+                  style: TextStyle(
+                    decoration: e.deleted ? TextDecoration.lineThrough : null,
+                    color: data.openingFor(link.id) != null && beforeOpening(e, data.openingFor(link.id)!)
+                        ? scheme.outline
+                        : null,
+                  ),
                 ),
                 subtitle: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -821,7 +832,11 @@ class FriendDetailScreen extends StatelessWidget {
                               : 'removed by ${e.deletedBy == me ? 'you' : person}'
                         else
                           'added by ${e.createdBy == me ? 'you' : person}',
-                        if (e.mergedInto != null)
+                        if (!e.deleted &&
+                            data.openingFor(link.id) != null &&
+                            beforeOpening(e, data.openingFor(link.id)!))
+                          'before the opening balance · history only'
+                        else if (e.mergedInto != null)
                           'same money as another record: merged'
                         else if (!e.deleted && e.kind != 'expense')
                           switch (backingOf(e, me, inMyBank: data.inAnAccount)) {
@@ -1051,8 +1066,9 @@ class _CorrectBalanceDialogState extends State<_CorrectBalanceDialog> {
               Padding(
                 padding: const EdgeInsets.only(top: 8),
                 child: Text(
-                  '${widget.person.split(' ').first} sees the same balance, so this is sent as one entry '
-                  '"Balance set" for their OK. Until they say OK, the balance stays as it is.',
+                  'This becomes the opening balance at the end of today, sent to ${widget.person.split(' ').first} '
+                  'for their OK. Then only entries after today count; older ones, even ones a bank import brings in '
+                  'later, are kept as history only.',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               )
@@ -1334,6 +1350,81 @@ class _NotInBankCard extends StatelessWidget {
               ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+/// The agreed opening balance with a connected friend, or one waiting for an answer.
+class _OpeningCard extends StatelessWidget {
+  const _OpeningCard({required this.data, required this.link, required this.me, required this.person});
+
+  final AppData data;
+  final FriendLink link;
+  final String me;
+  final String person;
+
+  String _owed(FriendOpening o) => o.owedBy == null
+      ? 'all square'
+      : (o.owedBy == me ? 'you owed ${money(o.amount)}' : '${person.split(' ').first} owed you ${money(o.amount)}');
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+    final scheme = Theme.of(context).colorScheme;
+    final agreed = data.openingFor(link.id);
+    final pending = data.pendingOpening(link.id);
+    if (agreed == null && pending == null) return const SizedBox.shrink();
+    final first = person.split(' ').first;
+    Future<void> answer(bool ok) async {
+      final messenger = ScaffoldMessenger.of(context);
+      try {
+        await data.answerOpening(pending!.id, ok: ok);
+      } catch (e) {
+        messenger.showSnackBar(SnackBar(content: Text('Not saved: $e')));
+      }
+    }
+
+    return Card.outlined(
+      margin: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Opening balance', style: text.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
+            if (agreed != null)
+              Text(
+                'End of ${dayLabel(agreed.asOf)}: ${_owed(agreed)}. Agreed by both. Only entries after it count; '
+                'earlier ones are history.',
+              ),
+            if (pending != null) ...[
+              const SizedBox(height: 6),
+              Text(
+                '${pending.createdBy == me ? 'You proposed' : '$first proposed'}: end of ${dayLabel(pending.asOf)}, '
+                '${_owed(pending)}${pending.note == null ? '' : ' (${pending.note})'}.',
+                style: text.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+              ),
+              Text(
+                pending.createdBy == me
+                    ? 'Waiting for $first to say OK. Nothing changes until then.'
+                    : 'If you say OK, the balance becomes this and everything before is history.',
+                style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+              ),
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  if (pending.createdBy != me) ...[
+                    FilledButton(onPressed: () => answer(true), child: const Text('OK')),
+                    const SizedBox(width: 8),
+                    OutlinedButton(onPressed: () => answer(false), child: const Text('No')),
+                  ] else
+                    TextButton(onPressed: () => answer(false), child: const Text('Take it back')),
+                ],
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }

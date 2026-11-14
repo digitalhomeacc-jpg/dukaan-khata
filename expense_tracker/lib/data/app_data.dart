@@ -18,6 +18,7 @@ import '../logic/summary.dart'
         loanBalances,
         samePersonCandidates,
         shareTotals,
+        sharedBalance,
         splitEqually;
 import '../models.dart';
 
@@ -97,6 +98,11 @@ class AppData extends ChangeNotifier {
         sharedEntries = rows.map(SharedEntry.fromMap).toList();
         notifyListeners();
       }, onError: _onError),
+      // Opening balances with connected friends (ignored quietly until the database has the table).
+      db.from('friend_openings').stream(primaryKey: ['id']).listen((rows) {
+        openings = rows.map(FriendOpening.fromMap).toList();
+        notifyListeners();
+      }, onError: (_) {}),
       db.from('match_questions').stream(primaryKey: ['id']).listen((rows) {
         questions = rows.map(MatchQuestion.fromMap).toList();
         notifyListeners();
@@ -148,6 +154,7 @@ class AppData extends ChangeNotifier {
     this.recurring = const [],
     this.recurringRuns = const [],
     this.goals = const [],
+    this.openings = const [],
   }) : _client = null,
        loaded = true {
     _subs = [];
@@ -1082,25 +1089,59 @@ class AppData extends ChangeNotifier {
 
   /// Changes what you owe a friend (positive: you owe more) without touching any account, e.g. part of the
   /// money they sent was for things you bought for them.
-  /// A connected friend: the balance you both see changes only by an entry they OK. Sets it from [current] to
-  /// [target] (positive: you owe them) with one clearly named entry, never a made-up payment.
-  Future<void> setSharedBalance(FriendLink link, String friendId, double current, double target, String reason) async {
-    final change = double.parse((target - current).toStringAsFixed(2)); // positive: you owe more
-    if (change.abs() < 0.005) return;
-    String m(double v) =>
-        '${v < 0 ? 'they owe you' : 'you owe'} ₹${v.abs().toStringAsFixed(v == v.roundToDouble() ? 0 : 2)}';
-    await _db.from('shared_entries').insert({
-      'link_id': link.id,
-      'creditor': change > 0 ? friendId : me,
-      'debtor': change > 0 ? me : friendId,
-      'amount': change.abs(),
-      'kind': 'settle',
-      'description':
-          'Balance set: ${m(target)} (was ${m(current)})${reason.trim().isEmpty ? '' : ' · ${reason.trim()}'}',
-      'at': DateTime.now().toUtc().toIso8601String(),
-      'created_by': me,
-    });
-    await _reloadFriendsData();
+  // ------------------------------------------------------------ opening balances with connected friends
+
+  List<FriendOpening> openings = const [];
+
+  /// The agreed opening balance in force (the latest day), if any.
+  FriendOpening? openingFor(String linkId) {
+    final agreed = openings.where((o) => o.linkId == linkId && o.agreed).toList()
+      ..sort((a, b) {
+        final c = b.asOf.compareTo(a.asOf);
+        return c != 0 ? c : b.confirmedAt!.compareTo(a.confirmedAt!);
+      });
+    return agreed.firstOrNull;
+  }
+
+  /// A proposal waiting for an answer, if any.
+  FriendOpening? pendingOpening(String linkId) => openings.where((o) => o.linkId == linkId && o.waiting).firstOrNull;
+
+  /// Proposals from friends waiting for your OK.
+  List<FriendOpening> get openingsWaitingForMe => [
+    for (final o in openings)
+      if (o.waiting && o.createdBy != me) o,
+  ];
+
+  /// The balance with a connected friend that you both see (positive: you owe).
+  double balanceWith(FriendLink link) =>
+      me == null ? 0 : sharedBalance(sharedEntries, link.id, me!, opening: openingFor(link.id));
+
+  /// Proposes what was owed at the end of [asOf] (positive [owed]: you owe them). It counts once they OK it.
+  Future<void> proposeOpening(FriendLink link, DateTime asOf, double owed, String note) async {
+    final friendId = link.a == me ? link.b! : link.a;
+    final d = '${asOf.year}-${asOf.month.toString().padLeft(2, '0')}-${asOf.day.toString().padLeft(2, '0')}';
+    try {
+      await _db.rpc(
+        'propose_friend_opening',
+        params: {
+          'p_link': link.id,
+          'p_as_of': d,
+          'p_owed_by': owed.abs() < 0.005 ? null : (owed > 0 ? me : friendId),
+          'p_amount': double.parse(owed.abs().toStringAsFixed(2)),
+          'p_note': note,
+        },
+      );
+    } on PostgrestException catch (e) {
+      if (e.code == 'PGRST202' || (e.message).contains('propose_friend_opening')) {
+        throw StateError('The database needs the opening-balance update first (0038_friend_openings.sql).');
+      }
+      rethrow;
+    }
+  }
+
+  Future<void> answerOpening(String id, {required bool ok}) async {
+    final done = await _db.rpc('answer_friend_opening', params: {'p_id': id, 'p_ok': ok});
+    if (done != true) throw StateError('not saved, please try again');
   }
 
   /// Whether this payment is in one of your accounts: false only for one known to have none (added by hand).
