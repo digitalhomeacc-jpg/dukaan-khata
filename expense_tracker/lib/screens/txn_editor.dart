@@ -51,7 +51,9 @@ class _TxnEditorState extends State<TxnEditor> {
   late bool _excluded = _start?.excluded ?? false;
   late String? _accountId = _start?.accountId ?? (widget.existing == null ? widget.data.cashAccount?.id : null);
   late String? _counterId = _start?.counterAccountId;
-  var _remember = true;
+
+  /// Off by default: changing one payment changes only that payment unless you ask for more.
+  var _remember = false;
   var _busy = false;
 
   bool get _isNew => widget.existing == null;
@@ -247,17 +249,27 @@ class _TxnEditorState extends State<TxnEditor> {
               CheckboxListTile(
                 contentPadding: EdgeInsets.zero,
                 value: _remember,
-                onChanged: (v) => setState(() => _remember = v ?? true),
+                onChanged: (v) => setState(() => _remember = v ?? false),
                 title: Text(
                   existing?.payeeVpa != null
                       ? 'Use it for every payment to UPI ••${existing!.payeeVpa}'
                       : 'Always use this category for “${_merchant.text.trim()}”',
                 ),
-                subtitle: Text(
-                  existing?.payeeVpa != null
-                      ? 'Past and new payments to this UPI ID (not other UPI IDs with the same name)'
-                      : 'Also fills in its other payments that have no category',
-                ),
+                subtitle: Text(() {
+                  final others = existing?.payeeVpa != null
+                      ? widget.data.transactions.where((t) => t.payeeVpa == existing!.payeeVpa && t.id != existing.id)
+                      : widget.data.transactions.where(
+                          (t) =>
+                              t.id != existing?.id &&
+                              t.categoryId == null &&
+                              t.merchant != null &&
+                              AppData.keyOf(t.merchant!) == AppData.keyOf(_merchant.text),
+                        );
+                  final n = others.length;
+                  return existing?.payeeVpa != null
+                      ? 'Also changes $n other payment${n == 1 ? '' : 's'} to this UPI ID, and new ones. Undo in Settings → Change history.'
+                      : 'Also fills in $n other payment${n == 1 ? '' : 's'} with no category, and new ones.';
+                }()),
               ),
             const SizedBox(height: 12),
             TextFormField(

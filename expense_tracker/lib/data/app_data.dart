@@ -443,6 +443,18 @@ class AppData extends ChangeNotifier {
     return out.toList()..sort();
   }
 
+  /// The latest changes to payments and rules, newest first (see change_log).
+  Future<List<Map<String, dynamic>>> loadHistory({int limit = 1500}) async {
+    final rows = await _db.from('change_log').select().order('id', ascending: false).limit(limit);
+    return rows.cast<Map<String, dynamic>>();
+  }
+
+  /// Puts back everything one action changed. Returns how many rows changed back.
+  Future<int> undoChange(int batch) async {
+    final n = await _db.rpc('undo_change', params: {'p_batch': batch});
+    return (n as num?)?.toInt() ?? 0;
+  }
+
   /// Undoes "Also known as": that name's payments show under it again.
   Future<void> removeAlias(String name) async {
     final k = keyOf(name);

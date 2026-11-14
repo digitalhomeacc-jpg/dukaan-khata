@@ -5,6 +5,7 @@ import '../data/app_data.dart';
 import '../ui/format.dart';
 import 'budgets_screen.dart';
 import 'categories_screen.dart';
+import 'change_history_screen.dart';
 import 'gmail_setup_screen.dart';
 import 'unread_emails_screen.dart';
 
@@ -126,6 +127,14 @@ class SettingsScreen extends StatelessWidget {
             leading: const Icon(Icons.password),
             title: const Text('Change password'),
             onTap: () => _changePassword(context),
+          ),
+          ListTile(
+            leading: const Icon(Icons.history),
+            title: const Text('Change history'),
+            subtitle: const Text('Every change, before and after. Undo any of them'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () =>
+                Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => ChangeHistoryScreen(data: data))),
           ),
           ListTile(leading: const Icon(Icons.logout), title: const Text('Sign out'), onTap: data.signOut),
           Padding(

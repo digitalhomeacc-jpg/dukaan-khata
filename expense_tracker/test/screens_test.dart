@@ -4,6 +4,7 @@ import 'package:expense_tracker/screens/accounts_screen.dart';
 import 'package:expense_tracker/logic/summary.dart';
 import 'package:expense_tracker/screens/categories_screen.dart';
 import 'package:expense_tracker/screens/category_report_screen.dart';
+import 'package:expense_tracker/screens/change_history_screen.dart';
 import 'package:expense_tracker/screens/friends_screen.dart';
 import 'package:expense_tracker/screens/gmail_setup_screen.dart';
 import 'package:expense_tracker/screens/insights_screen.dart';
@@ -139,6 +140,7 @@ void main() {
     final data = sample();
     await pump(tester, SettingsScreen(data: data));
     expect(find.text('Asha'), findsOneWidget);
+    expect(find.text('Change history'), findsOneWidget);
     await pump(tester, GmailSetupScreen(data: data));
     expect(find.text('Connected'), findsOneWidget);
     await pump(tester, CategoriesScreen(data: data));
@@ -237,6 +239,63 @@ void main() {
     expect(out.map((l) => (l.id, l.total, l.count)), [('f', 150.0, 2), (null, 30.0, 1)]);
     final into = categoryReport(t, DateTime(2026, 1, 1), DateTime(2026, 2, 1), debits: false);
     expect(into.single.total, 500);
+  });
+
+  testWidgets('change history: one action, its before and after, and undo', (tester) async {
+    final data = sample();
+    final cat = data.categories.firstWhere((c) => c.name == 'Shopping');
+    final rows = [
+      {
+        'id': 2,
+        'batch': 77,
+        'at': '2026-11-14T06:50:00Z',
+        'tbl': 'vpa_rules',
+        'op': 'insert',
+        'row_key': {'user_id': 'u', 'vpa': 'upta@n'},
+        'before': null,
+        'after': {'user_id': 'u', 'vpa': 'upta@n', 'category_id': cat.id},
+        'context': null,
+        'by_user': true,
+        'undone': false,
+      },
+      {
+        'id': 1,
+        'batch': 77,
+        'at': '2026-11-14T06:50:00Z',
+        'tbl': 'transactions',
+        'op': 'update',
+        'row_key': {'id': 't1'},
+        'before': {'category_id': null},
+        'after': {'category_id': cat.id},
+        'context': {'merchant': 'Ravi Kumar', 'amount': 2000, 'txn_at': '2026-09-12T00:41:00Z'},
+        'by_user': true,
+        'undone': false,
+      },
+      {
+        'id': 0,
+        'batch': 50,
+        'at': '2026-11-14T05:00:00Z',
+        'tbl': 'transactions',
+        'op': 'insert',
+        'row_key': {'id': 't9'},
+        'before': null,
+        'after': {'amount': 10},
+        'context': {'merchant': 'Zomato'},
+        'by_user': false,
+        'undone': false,
+      },
+    ];
+    await pump(tester, ChangeHistoryScreen(data: data, loader: () async => rows));
+    expect(find.textContaining('Category → Shopping · 1 payment'), findsOneWidget);
+    expect(find.textContaining('Added 1 payment'), findsNothing); // automatic, hidden under "My changes"
+    await tester.tap(find.textContaining('Category → Shopping'));
+    await tester.pumpAndSettle();
+    expect(find.text('Undo this'), findsOneWidget);
+    expect(find.text('Category: No category → Shopping'), findsOneWidget);
+    expect(find.textContaining('Category rule for UPI ••upta@n'), findsOneWidget);
+    await tester.tap(find.text('All, incl. automatic'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Added 1 payment'), findsOneWidget);
   });
 
   testWidgets('editor for an email transaction', (tester) async {
