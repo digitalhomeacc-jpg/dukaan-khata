@@ -33,6 +33,9 @@ class _ImportStatementScreenState extends State<ImportStatementScreen> {
   Map<String, dynamic>? _done;
   var _busy = false;
   var _setOpening = true;
+
+  /// The statement is the truth for its dates: add what is missing, remove what the bank does not have.
+  var _matchExactly = false;
   String? _error;
 
   String _message(Object e) {
@@ -87,6 +90,7 @@ class _ImportStatementScreenState extends State<ImportStatementScreen> {
         accountId: widget.account?.id,
         dryRun: false,
         setOpening: _setOpening,
+        matchExactly: _matchExactly,
       );
       if (mounted) setState(() => _done = r);
     } catch (e) {
@@ -177,11 +181,57 @@ class _ImportStatementScreenState extends State<ImportStatementScreen> {
                 title: Text('Start this account from ${_date(p['from'])} at ${money(_num(p['openingBalance'])!)}'),
                 subtitle: const Text('Earlier transactions stay as history but do not change the balance'),
               ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              value: _matchExactly,
+              onChanged: (v) => setState(() => _matchExactly = v),
+              title: const Text('Make the app match this statement exactly'),
+              subtitle: Text(
+                'For ${_date(p['from'])} – ${_date(p['to'])}: adds what is missing, removes entries on this account '
+                'the bank does not have, and starts the balance where the bank does. Your categories and notes on '
+                'matching entries stay. Undo in Settings → Change history.',
+              ),
+            ),
+            if (_matchExactly) ...[
+              if ((p['extra'] as num? ?? 0) == 0)
+                const Text('Nothing to remove: every entry in the app is in the statement.')
+              else ...[
+                Text(
+                  'These ${p['extra']} entries are not in the bank statement and will be removed:',
+                  style: text.titleSmall?.copyWith(color: Theme.of(context).colorScheme.error),
+                ),
+                for (final e in (p['extraList'] as List? ?? const []).cast<Map>())
+                  ListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.remove_circle_outline),
+                    title: Text(
+                      '${e['merchant'] ?? 'Entry'} · ${e['direction'] == 'debit' ? '−' : '+'}'
+                      '${money(_num(e['amount']) ?? 0)}',
+                    ),
+                    subtitle: Text(
+                      '${_date(e['date'])} · ${e['source'] == 'email'
+                          ? 'from an email'
+                          : e['source'] == 'statement'
+                          ? 'from a statement'
+                          : 'added by hand'}',
+                    ),
+                  ),
+                if ((p['extra'] as num? ?? 0) > 30) Text('…and ${(p['extra'] as num) - 30} more'),
+              ],
+            ],
             const SizedBox(height: 8),
             FilledButton(
-              onPressed: (p['new'] as num? ?? 0) == 0 && !_setOpening ? null : _import,
+              onPressed:
+                  (p['new'] as num? ?? 0) == 0 && !_setOpening && !(_matchExactly && (p['extra'] as num? ?? 0) > 0)
+                  ? null
+                  : _import,
               child: Text(
-                (p['new'] as num? ?? 0) == 0 ? 'Nothing new: just set the balance' : 'Import ${p['new']} transactions',
+                _matchExactly
+                    ? 'Match the bank: add ${p['new']}, remove ${p['extra'] ?? 0}'
+                    : (p['new'] as num? ?? 0) == 0
+                    ? 'Nothing new: just set the balance'
+                    : 'Import ${p['new']} transactions',
               ),
             ),
           ],
@@ -190,7 +240,8 @@ class _ImportStatementScreenState extends State<ImportStatementScreen> {
             Icon(Icons.check_circle, color: Colors.green.shade700, size: 56),
             const SizedBox(height: 8),
             Text(
-              '${done['added']} transactions added to ${done['account']}',
+              '${done['added']} transactions added to ${done['account']}'
+              '${_matchExactly && (done['extra'] as num? ?? 0) > 0 ? ', ${done['extra']} removed' : ''}',
               textAlign: TextAlign.center,
               style: text.titleMedium,
             ),

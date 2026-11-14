@@ -189,3 +189,55 @@ export function readStatement(rows: string[][]): Statement {
   st.to ??= st.txns.at(-1)?.date ?? null;
   return st;
 }
+
+/** An entry the app already has on the account (from an email, a statement or by hand). */
+export interface ExistingRow {
+  id: string;
+  amount: number | string;
+  direction: string;
+  txn_at: string;
+  email_body: string | null;
+  email_id: string | null;
+  merchant?: string | null;
+  source?: string;
+}
+
+const stmtDay = (iso: string) => new Date(new Date(iso).getTime() + 330 * 60_000).toISOString().slice(0, 10);
+
+/**
+ * Matches statement lines to what the app has. A line is "already there" only if an unused entry of the same
+ * amount and direction exists on the same day (an email: within a day); the same reference can repeat across
+ * refunds, so it only breaks ties. Returns the new lines, and the app's entries within the statement's days
+ * that the bank does not have.
+ */
+export function planImport(txns: StatementTxn[], existing: ExistingRow[], last4: string, periodFrom: string, periodTo: string) {
+  const used = new Set<string>();
+  const occurrence = new Map<string, number>();
+  const keyOf = (t: StatementTxn) => {
+    const base = `stmt2:${last4}:${t.date}:${t.rrn ?? "-"}:${t.direction}:${t.amount}`;
+    const n = (occurrence.get(base) ?? 0) + 1;
+    occurrence.set(base, n);
+    return n === 1 ? base : `${base}#${n}`;
+  };
+  const dayDiff = (a: string, b: string) =>
+    Math.abs(new Date(`${a}T12:00:00Z`).getTime() - new Date(`${b}T12:00:00Z`).getTime()) / 86_400_000;
+  const fresh: Array<StatementTxn & { key: string }> = [];
+  let already = 0, fromEmails = 0;
+  for (const t of txns) {
+    const key = keyOf(t);
+    const candidates = existing.filter((e) =>
+      !used.has(e.id) && Number(e.amount) === t.amount && e.direction === t.direction &&
+      (e.email_id?.startsWith("stmt") ? stmtDay(e.txn_at) === t.date : dayDiff(stmtDay(e.txn_at), t.date) <= 1));
+    const byRef = t.rrn ? candidates.find((e) => e.email_body?.includes(t.rrn!) || e.email_id?.includes(t.rrn!)) : undefined;
+    const sameDay = candidates.find((e) => stmtDay(e.txn_at) === t.date);
+    const match = byRef ?? sameDay ?? candidates[0];
+    if (match) {
+      used.add(match.id);
+      if (match.email_id?.startsWith("stmt")) already++; else fromEmails++;
+      continue;
+    }
+    fresh.push({ ...t, key });
+  }
+  const extras = existing.filter((e) => !used.has(e.id) && stmtDay(e.txn_at) >= periodFrom && stmtDay(e.txn_at) <= periodTo);
+  return { fresh, already, fromEmails, extras };
+}

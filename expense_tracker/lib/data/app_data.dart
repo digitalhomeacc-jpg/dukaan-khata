@@ -640,6 +640,7 @@ class AppData extends ChangeNotifier {
     String? accountId,
     required bool dryRun,
     bool setOpening = false,
+    bool matchExactly = false,
   }) async {
     final res = await _db.functions.invoke(
       'import-statement',
@@ -649,6 +650,7 @@ class AppData extends ChangeNotifier {
         'accountId': accountId,
         'dryRun': dryRun,
         'setOpening': setOpening,
+        'matchExactly': matchExactly,
       },
     );
     final data = res.data;

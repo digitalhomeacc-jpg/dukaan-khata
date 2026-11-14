@@ -9,7 +9,7 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import * as XLSX from "npm:xlsx@0.18.5";
 import { defaultCategoryName, merchantKey } from "../ingest-email/parsers.ts";
-import { readStatement, type StatementTxn } from "./statement.ts";
+import { planImport, readStatement, type StatementTxn } from "./statement.ts";
 
 const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, {
   auth: { persistSession: false },
@@ -38,7 +38,7 @@ Deno.serve(async (req) => {
   const user = auth?.user;
   if (!user) return json(401, { error: "Please sign in again." });
 
-  let body: { file?: string; fileName?: string; accountId?: string; dryRun?: boolean; setOpening?: boolean };
+  let body: { file?: string; fileName?: string; accountId?: string; dryRun?: boolean; setOpening?: boolean; matchExactly?: boolean };
   try {
     body = await req.json();
   } catch {
@@ -95,43 +95,22 @@ Deno.serve(async (req) => {
   // What the app already has for this account in the statement's period.
   const from = shift(st.from ?? st.txns[0].date, -2), to = shift(st.to ?? st.txns.at(-1)!.date, 2);
   const { data: existingRows } = account
-    ? await supabase.from("transactions").select("id, amount, direction, txn_at, email_body, email_id")
+    ? await supabase.from("transactions").select("id, amount, direction, txn_at, email_body, email_id, merchant, source")
       .eq("user_id", user.id).eq("account_id", account.id)
       .gte("txn_at", `${from}T00:00:00${IST_OFFSET}`).lte("txn_at", `${to}T23:59:59${IST_OFFSET}`)
     : { data: [] };
-  const existing = (existingRows ?? []) as Array<{ id: string; amount: number; direction: string; txn_at: string; email_body: string | null; email_id: string | null }>;
-  // Each statement line is "already there" only if an unused entry of the same day, amount and
-  // direction exists (bank emails may be a day off). The same refund reference can repeat across
-  // several refunds, so a reference is only a tie-breaker, never enough on its own.
-  const used = new Set<string>();
-  const occurrence = new Map<string, number>();
-  const keyOf = (t: StatementTxn) => {
-    const base = `stmt2:${last4}:${t.date}:${t.rrn ?? "-"}:${t.direction}:${t.amount}`;
-    const n = (occurrence.get(base) ?? 0) + 1;
-    occurrence.set(base, n);
-    return n === 1 ? base : `${base}#${n}`;
-  };
-  const dayDiff = (a: string, b: string) => Math.abs(new Date(`${a}T12:00:00Z`).getTime() - new Date(`${b}T12:00:00Z`).getTime()) / 86_400_000;
-  const fresh: Array<StatementTxn & { key: string }> = [];
-  let already = 0, fromEmails = 0;
-  for (const t of st.txns) {
-    const key = keyOf(t);
-    const candidates = existing.filter((e) =>
-      !used.has(e.id) && Number(e.amount) === t.amount && e.direction === t.direction &&
-      (e.email_id?.startsWith("stmt") ? dayOf(e.txn_at) === t.date : dayDiff(dayOf(e.txn_at), t.date) <= 1));
-    const byRef = t.rrn ? candidates.find((e) => e.email_body?.includes(t.rrn!) || e.email_id?.includes(t.rrn!)) : undefined;
-    const sameDay = candidates.find((e) => dayOf(e.txn_at) === t.date);
-    const match = byRef ?? sameDay ?? candidates[0];
-    if (match) {
-      used.add(match.id);
-      if (match.email_id?.startsWith("stmt")) already++; else fromEmails++;
-      continue;
-    }
-    fresh.push({ ...t, key });
-  }
+  const existing = (existingRows ?? []) as Array<{ id: string; amount: number; direction: string; txn_at: string; email_body: string | null; email_id: string | null; merchant: string | null; source: string }>;
+  // Which statement lines are new, which the app already has, and (for "match exactly") which app entries
+  // on this account the bank does not have.
+  const periodFrom = st.from ?? st.txns[0].date, periodTo = st.to ?? st.txns.at(-1)!.date;
+  const { fresh, already, fromEmails, extras } = planImport(st.txns, existing, last4, periodFrom, periodTo);
 
   const summary = {
     ok: true,
+    extra: extras.length,
+    extraList: extras.slice(0, 30).map((e) => ({
+      date: dayOf(e.txn_at), amount: Number(e.amount), direction: e.direction, merchant: e.merchant, source: e.source,
+    })),
     account: accountName,
     bank: st.bank,
     from: st.from,
@@ -205,6 +184,26 @@ Deno.serve(async (req) => {
     await supabase.from("balance_readings").upsert(readings, { onConflict: "user_id,email_id", ignoreDuplicates: true });
   }
 
+  if (body.matchExactly) {
+    // As the user (not the service): the removal shows in their change history as theirs, with Undo.
+    if (extras.length) {
+      const asUser = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, {
+        global: { headers: { Authorization: `Bearer ${jwt}` } },
+        auth: { persistSession: false },
+      });
+      const ids = extras.map((e) => e.id);
+      for (let i = 0; i < ids.length; i += 100) {
+        const { error } = await asUser.from("transactions").delete().in("id", ids.slice(i, i + 100));
+        if (error) return json(500, { error: `Could not remove entries the bank does not have: ${error.message}` });
+      }
+    }
+    // The statement's own starting balance, when the account's history starts on or after this statement's
+    // first day (older history before it is left alone).
+    if (st.openingBalance != null && (!account!.opening_date || account!.opening_date >= periodFrom)) {
+      await supabase.from("accounts").update({ opening_balance: st.openingBalance, opening_date: periodFrom })
+        .eq("id", account!.id);
+    }
+  }
   // Only ever move the starting point earlier: a later file must not hide older months.
   if (body.setOpening && st.openingBalance != null && st.from && (!account!.opening_date || st.from < account!.opening_date)) {
     await supabase.from("accounts").update({ opening_balance: st.openingBalance, opening_date: st.from }).eq("id", account!.id);

@@ -1,7 +1,7 @@
 // Run with: node --test supabase/functions/import-statement/statement.test.ts
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readNarration, readStatement, statementDate } from "./statement.ts";
+import { planImport, readNarration, readStatement, statementDate, type StatementTxn } from "./statement.ts";
 
 // HDFC layout with made-up people and numbers.
 const ROWS: string[][] = [
@@ -114,4 +114,26 @@ test("ATM fees are bank charges, withdrawals are cash", () => {
   assert.equal(readNarration("ATM FEES INTL W/D INCL ST 200626-EPR2717360302657").merchant, "ATM fees");
   assert.equal(readNarration("ATW-416021XXXXXX7523-4972B001-BANGKOK").atm, true);
   assert.equal(readNarration("NWD-416021XXXXXX7523-00484020-AHMADNAGAR").atm, true);
+});
+
+test("match exactly: a withdrawal the bank put back is fixed, a manual guess on the account is removed", () => {
+  const line = (seq: number, direction: "debit" | "credit", amount: number, narration: string): StatementTxn => ({
+    date: "2026-07-08", seq, narration, ref: null, rrn: null, amount, direction, closingBalance: null,
+    merchant: "ATM cash", vpa: null, method: "atm", atm: direction === "debit",
+  });
+  // The bank: one withdrawal, then the same amount put back.
+  const bank = [line(0, "debit", 3500, "ATW-…-AHMADNAGAR"), line(1, "credit", 3500, "ATW REV-…-LONI")];
+  // The app: two withdrawals (one wrong), and a manual entry on the account that day.
+  const app = [
+    { id: "w1", amount: "3500.00", direction: "debit", txn_at: "2026-07-08T00:40:46+00:00", email_body: null, email_id: "stmt2:3191:2026-07-08:a:debit:3500" },
+    { id: "w2", amount: "3500.00", direction: "debit", txn_at: "2026-07-08T00:40:47+00:00", email_body: null, email_id: "stmt2:3191:2026-07-08:b:debit:3500" },
+    { id: "m1", amount: "45.00", direction: "debit", txn_at: "2026-07-08T06:30:00+00:00", email_body: null, email_id: null },
+    { id: "out", amount: "99.00", direction: "debit", txn_at: "2026-07-20T06:30:00+00:00", email_body: null, email_id: null },
+  ];
+  const plan = planImport(bank, app, "3191", "2026-07-01", "2026-07-15");
+  assert.deepEqual(plan.fresh.map((t) => [t.direction, t.amount]), [["credit", 3500]]); // the put-back is added
+  assert.deepEqual(plan.extras.map((e) => e.id).sort(), ["m1", "w2"]); // the wrong withdrawal and the guess go
+  assert.equal(plan.already, 1);
+  // Outside the statement's days nothing is touched.
+  assert.ok(!plan.extras.some((e) => e.id === "out"));
 });
