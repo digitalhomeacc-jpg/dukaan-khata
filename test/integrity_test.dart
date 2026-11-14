@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:dukaan_khata/accounting/health.dart';
 import 'package:dukaan_khata/accounting/ledger_repo.dart';
 import 'package:dukaan_khata/accounting/models.dart';
+import 'package:dukaan_khata/accounting/stock_pnl.dart';
 import 'package:dukaan_khata/accounting/voucher_service.dart';
 import 'package:dukaan_khata/core/money.dart';
 import 'package:dukaan_khata/inventory/stock_repo.dart';
@@ -314,6 +315,11 @@ void main() {
       // the full health check must stay silent on books made the normal way
       final health = await HealthCheck(db, biz, vs, lr, sr).run();
       expect(health.map((i) => '${i.kind} ${i.title}: ${i.detail}').toList(), isEmpty);
+      // item-wise profit adds up to the accounts to the paise
+      final pnl = await StockPnlEngine(db, biz).compute(todayIso());
+      expect(pnl.salesGap, 0);
+      expect(pnl.purchaseGap, 0);
+      expect(pnl.accountsProfit, pnl.netProfit);
     }, timeout: const Timeout(Duration(minutes: 5)));
   }
 

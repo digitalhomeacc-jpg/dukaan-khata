@@ -204,7 +204,9 @@ class VoucherService {
         }
       case VoucherType.salesReturn:
         final party = v.partyId ?? pay;
-        dr(sys('sales_return'), total);
+        // a service taken back reverses service income, not goods sales
+        dr(sys('sales_return'), total - serviceValue);
+        dr(sys('service_income'), serviceValue);
         cr(party, total);
         if (v.paid > 0 && party != pay) {
           dr(party, v.paid);
@@ -230,7 +232,8 @@ class VoucherService {
       case VoucherType.purchaseReturn:
         final party = v.partyId ?? pay;
         dr(party, total);
-        cr(sys('purchase_return'), total);
+        cr(sys('purchase_return'), total - serviceValue);
+        cr(sys('service_cost'), serviceValue);
         if (v.paid > 0 && party != pay) {
           dr(pay, v.paid);
           cr(party, v.paid);

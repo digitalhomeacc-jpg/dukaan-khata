@@ -4,6 +4,7 @@ import '../core/money.dart';
 import '../inventory/stock_repo.dart';
 import 'ledger_repo.dart';
 import 'models.dart';
+import 'stock_pnl.dart';
 
 enum ColAlign { left, right }
 
@@ -687,38 +688,138 @@ class Reports {
   }
 
   /// Item-wise sales with profit using weighted-average cost.
+  String _pnlRange(StockPnl r) => '${shortDate(r.from)} – ${shortDate(r.to)}';
+  String _pct(int profit, int sales) => sales == 0 ? '' : '${(profit * 100 / sales).toStringAsFixed(1)}%';
+  String _flags(ItemPnl i) => i.flags.isEmpty ? '' : '  ⚠ ${i.flags.map((f) => tr('pnl_flag_$f')).join(', ')}';
+
+  /// माल-निहाय नफा: each item's sales, the real cost of what was sold, profit.
   Future<ReportTable> itemProfit(String from, String to) async {
-    final avg = await stock.averageCosts(date: to);
-    final rows = await db.getAll(
-      'SELECT i.id, i.name, i.unit, SUM(il.qty) AS q, SUM(il.amount) AS a FROM inventory_lines il '
-      'JOIN items i ON i.id = il.item_id JOIN vouchers v ON v.id = il.voucher_id '
-      "WHERE il.business_id = ? AND il.deleted = 0 AND v.vtype = 'sale' AND il.vdate BETWEEN ? AND ? "
-      'GROUP BY i.id ORDER BY a DESC',
-      [businessId, from, to],
-    );
-    var ts = 0, tp = 0;
+    final r = await StockPnlEngine(db, businessId).compute(to);
+    // only items that sold or cost something (stock just lying there: see stock costing)
+    final list = [...r.items.where((i) => i.sales != 0 || i.cost != 0 || i.flags.isNotEmpty)]
+      ..sort((a, b) => b.profit.compareTo(a.profit));
+    String pr(int p, int s) => '${Money.fmt(p)}${s == 0 ? '' : '\n${_pct(p, s)}'}';
     return ReportTable(
       title: tr('r_item_profit'),
-      subtitle: _range(from, to),
+      subtitle: '${_pnlRange(r)} · ${tr('pnl_note')}',
       columns: [
-        ReportColumn(tr('item'), flex: 4),
-        ReportColumn.num(tr('qty')),
+        ReportColumn(tr('item'), flex: 3),
+        ReportColumn.num(tr('pnl_sold')),
         ReportColumn.num(tr('sales')),
-        ReportColumn.num(tr('cost')),
+        ReportColumn.num(tr('pnl_cost')),
         ReportColumn.num(tr('profit')),
       ],
       rows: [
-        for (final r in rows)
-          () {
-            final q = (r['q'] as num).toDouble();
-            final a = (r['a'] as num).toInt();
-            final c = (q * (avg[r['id']] ?? 0)).round();
-            ts += a;
-            tp += a - c;
-            return [r['name'] as String, '${fmtQty(q)} ${tr('unit_${r['unit']}')}', Money.fmt(a), Money.fmt(c), Money.fmt(a - c)];
-          }()
+        for (final i in list)
+          [
+            '${i.item.name}${_flags(i)}',
+            '${fmtQty(i.saleQty)} ${tr('unit_${i.item.unit}')}',
+            Money.fmt(i.sales),
+            Money.fmt(i.cost),
+            pr(i.profit, i.sales),
+          ]
       ],
-      totals: [tr('total'), '', Money.fmt(ts), Money.fmt(ts - tp), Money.fmt(tp)],
+      highlight: {for (var k = 0; k < list.length; k++) if (list[k].flags.isNotEmpty) k},
+      totals: [tr('total'), '', Money.fmt(r.itemSales), Money.fmt(r.itemCost), pr(r.goodsProfit, r.itemSales)],
+    );
+  }
+
+  /// प्रकार-निहाय नफा: the same, added up per category.
+  Future<ReportTable> categoryProfit(String to) async {
+    final r = await StockPnlEngine(db, businessId).compute(to);
+    final cat = <String, (int, int, int)>{};
+    for (final i in r.items) {
+      final c = cat[i.item.category] ?? (0, 0, 0);
+      cat[i.item.category] = (c.$1 + i.sales, c.$2 + i.cost, c.$3 + i.profit);
+    }
+    final keys = cat.keys.toList()..sort((a, b) => cat[b]!.$3.compareTo(cat[a]!.$3));
+    return ReportTable(
+      title: tr('r_cat_profit'),
+      subtitle: '${_pnlRange(r)} · ${tr('pnl_note')}',
+      columns: [
+        ReportColumn(tr('category'), flex: 3),
+        ReportColumn.num(tr('sales')),
+        ReportColumn.num(tr('pnl_cost')),
+        ReportColumn.num(tr('profit')),
+        ReportColumn.num('%'),
+      ],
+      rows: [
+        for (final k in keys)
+          if (cat[k]!.$1 != 0 || cat[k]!.$2 != 0)
+            [tr('cat_$k'), Money.fmt(cat[k]!.$1), Money.fmt(cat[k]!.$2), Money.fmt(cat[k]!.$3), _pct(cat[k]!.$3, cat[k]!.$1)]
+      ],
+      totals: [tr('total'), Money.fmt(r.itemSales), Money.fmt(r.itemCost), Money.fmt(r.goodsProfit), _pct(r.goodsProfit, r.itemSales)],
+    );
+  }
+
+  /// मालाची किंमत: how each item's cost was worked out (opening, purchases,
+  /// company discount, closing stock and the net cost per unit).
+  Future<ReportTable> stockCosting(String to) async {
+    final r = await StockPnlEngine(db, businessId).compute(to);
+    String qv(double q, int v) => '${fmtQty(q)} / ${Money.fmt(v)}';
+    return ReportTable(
+      title: tr('r_stock_costing'),
+      subtitle: '${_pnlRange(r)} · ${tr('pnl_costing_note')}',
+      columns: [
+        ReportColumn(tr('item'), flex: 4),
+        ReportColumn.num(tr('opening_stock'), flex: 3),
+        ReportColumn.num(tr('purchases'), flex: 3),
+        ReportColumn.num(tr('pnl_disc')),
+        ReportColumn.num(tr('closing_stock'), flex: 3),
+        ReportColumn.num(tr('pnl_unit_cost')),
+      ],
+      rows: [
+        for (final i in r.items)
+          [
+            '${i.item.name}${_flags(i)}',
+            qv(i.openQty, i.openVal),
+            qv(i.purQty, i.purVal),
+            Money.fmt(i.discR),
+            qv(i.closeQty, i.closeVal),
+            Money.fmt(i.avg.round()),
+          ]
+      ],
+      highlight: {for (var k = 0; k < r.items.length; k++) if (r.items[k].flags.isNotEmpty) k},
+      totals: [tr('total'), Money.fmt(r.openTotal), Money.fmt(r.itemPurchases), Money.fmt(r.discToGoods), Money.fmt(r.closeTotal), ''],
+    );
+  }
+
+  /// नफ्याची जुळवणी: goods profit → net profit, line by line, and the same net
+  /// profit worked out a second way straight from the accounts.
+  Future<ReportTable> profitProof(String to) async {
+    final r = await StockPnlEngine(db, businessId).compute(to);
+    final cogs = r.openTotal + r.itemPurchases - r.discToGoods - r.closeTotal;
+    final rows = <List<String>>[
+      [tr('opening_stock'), Money.fmt(r.openTotal)],
+      ['+ ${tr('purchases')}', Money.fmt(r.itemPurchases)],
+      ['− ${tr('pnl_disc_goods')}', Money.fmt(r.discToGoods)],
+      ['− ${tr('closing_stock')}', Money.fmt(r.closeTotal)],
+      [tr('cogs'), Money.fmt(cogs)],
+      [tr('net_sales'), Money.fmt(r.itemSales)],
+      [tr('pnl_goods_profit'), Money.fmt(r.goodsProfit)],
+      if (r.salesGap != 0) ['+ ${tr('pnl_sales_gap')}', Money.fmt(r.salesGap)],
+      if (r.purchaseGap != 0) ['− ${tr('pnl_purchase_gap')}', Money.fmt(r.purchaseGap)],
+      if (r.discOther != 0) ['+ ${tr('pnl_disc_other')}', Money.fmt(r.discOther)],
+      if (r.discSchemes != 0) ['+ ${tr('pnl_disc_schemes')}', Money.fmt(r.discSchemes)],
+      for (final e in r.otherIncome) ['+ ${e.$1}', Money.fmt(e.$2)],
+      for (final e in r.expenses) ['− ${e.$1}', Money.fmt(e.$2)],
+    ];
+    final netAt = rows.length;
+    rows.add([r.netProfit >= 0 ? tr('net_profit') : tr('net_loss'), Money.fmt(r.netProfit.abs())]);
+    rows.add([
+      tr('pnl_check_accounts'),
+      '${Money.fmt(r.accountsProfit.abs())} ${r.proven ? '✓' : '✗'}',
+    ]);
+    rows.add([tr('pnl_check_sales'), r.salesGap == 0 ? '✓' : '✗ ${Money.fmt(r.salesGap)}']);
+    rows.add([tr('pnl_check_purchases'), r.purchaseGap == 0 ? '✓' : '✗ ${Money.fmt(r.purchaseGap)}']);
+    final flagged = r.items.where((i) => i.flags.isNotEmpty).length;
+    if (flagged > 0) rows.add([tr('pnl_check_flags').replaceAll('{n}', '$flagged'), '⚠']);
+    return ReportTable(
+      title: tr('r_pnl_proof'),
+      subtitle: _pnlRange(r),
+      columns: [ReportColumn(tr('particulars'), flex: 5), ReportColumn.num(tr('amount'))],
+      rows: rows,
+      highlight: {6, netAt},
     );
   }
 
@@ -783,18 +884,13 @@ class Reports {
     );
   }
 
+  /// Stock value at cost – the same valuation as the item-wise profit, so
+  /// every report shows the same rupee.
   Future<int> _stockValue({String? before, String? upto}) async {
-    final items = await stock.list();
-    final avg = await stock.averageCosts(date: upto ?? before);
-    var v = 0.0;
-    for (final i in items) {
-      final q = before != null ? await stock.stockAt(i.id, before, before: true) : await stock.stockAt(i.id, upto!);
-      // bags lent out (उसना) are still ours; bags borrowed are not
-      final lent = before != null ? await stock.lentAt(i.id, before, before: true) : await stock.lentAt(i.id, upto!);
-      v += lent * (avg[i.id] ?? 0);
-      v += q * (avg[i.id] ?? 0);
-    }
-    return v.round();
+    final e = StockPnlEngine(db, businessId);
+    if (upto != null) return (await e.compute(upto)).closeTotal;
+    if (before!.compareTo(Books.start) <= 0) return (await e.compute(Books.start)).openTotal;
+    return (await e.compute(isoDate(parseIso(before).subtract(const Duration(days: 1))))).closeTotal;
   }
 
   Future<ReportTable> trialBalance(String to) async {
