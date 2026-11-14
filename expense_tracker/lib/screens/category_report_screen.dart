@@ -6,6 +6,7 @@ import '../logic/summary.dart';
 import '../models.dart';
 import '../ui/category_style.dart';
 import '../ui/format.dart';
+import '../ui/range.dart';
 import '../ui/selection.dart';
 import 'txn_editor.dart';
 
@@ -35,66 +36,15 @@ class CategoryReportScreen extends StatefulWidget {
   State<CategoryReportScreen> createState() => _CategoryReportScreenState();
 }
 
-/// Days from [start] up to (not including) [end].
-DateTimeRange _days(DateTime start, DateTime end) =>
-    DateTimeRange(start: DateTime(start.year, start.month, start.day), end: DateTime(end.year, end.month, end.day));
-
 class _CategoryReportScreenState extends State<CategoryReportScreen> {
-  late DateTimeRange _range = widget.initial ?? _presets().first.range;
+  late DateTimeRange _range = widget.initial == null || widget.initial!.start.year <= 2015
+      ? rangePresets().first.range
+      : widget.initial!;
 
   /// What the list shows: money out, money in, or in minus out.
   var _mode = _Mode.spent;
 
   AppData get data => widget.data;
-
-  /// Ranges end the day after their last day, so a day is "in" when start <= t < end.
-  List<({String label, DateTimeRange range})> _presets() {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final tomorrow = today.add(const Duration(days: 1));
-    final fyStart = DateTime(now.month >= 4 ? now.year : now.year - 1, 4, 1);
-    return [
-      (label: 'This month', range: _days(DateTime(now.year, now.month), tomorrow)),
-      (label: 'Last month', range: _days(DateTime(now.year, now.month - 1), DateTime(now.year, now.month))),
-      (label: '3 months', range: _days(DateTime(now.year, now.month - 2), tomorrow)),
-      (label: '6 months', range: _days(DateTime(now.year, now.month - 5), tomorrow)),
-      (label: '12 months', range: _days(DateTime(now.year, now.month - 11), tomorrow)),
-      (label: 'This FY', range: _days(fyStart, tomorrow)),
-      (label: 'Last FY', range: _days(DateTime(fyStart.year - 1, 4, 1), fyStart)),
-      (label: '2 years', range: _days(today.subtract(const Duration(days: _maxDays - 1)), tomorrow)),
-    ];
-  }
-
-  Future<void> _custom() async {
-    final now = DateTime.now();
-    final picked = await showDateRangePicker(
-      context: context,
-      firstDate: DateTime(2015),
-      lastDate: now,
-      initialDateRange: DateTimeRange(
-        start: _range.start,
-        end: _range.end.subtract(const Duration(days: 1)).isAfter(now)
-            ? now
-            : _range.end.subtract(const Duration(days: 1)),
-      ),
-      helpText: 'Up to 2 years',
-    );
-    if (picked == null || !mounted) return;
-    var start = picked.start;
-    final end = picked.end.add(const Duration(days: 1));
-    if (end.difference(start).inDays > _maxDays) {
-      start = end.subtract(const Duration(days: _maxDays));
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Reports cover up to 2 years: from ${dayLabel(start)}')));
-    }
-    setState(() => _range = _days(start, end));
-  }
-
-  String _rangeLabel(DateTimeRange r) {
-    final last = r.end.subtract(const Duration(days: 1));
-    final f = DateFormat(r.start.year == last.year ? 'd MMM' : 'd MMM yy');
-    return '${f.format(r.start)} – ${DateFormat('d MMM yy').format(last)}';
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -129,8 +79,6 @@ class _CategoryReportScreenState extends State<CategoryReportScreen> {
     String shown(double v) => _mode == _Mode.net ? '${v > 0 ? '+' : (v < 0 ? '−' : '')}${money(v.abs())}' : money(v);
     Color? tint(double v) =>
         _mode != _Mode.net || v.abs() < 0.005 ? null : (v > 0 ? Colors.green.shade700 : scheme.error);
-    final presets = _presets();
-    final presetLabel = presets.where((p) => p.range == _range).firstOrNull?.label;
 
     Widget stat(String label, String value, {Color? color}) => Expanded(
       child: Column(
@@ -165,7 +113,7 @@ class _CategoryReportScreenState extends State<CategoryReportScreen> {
             builder: (_, _) => _CategoryTxnsScreen(
               data: data,
               title: title,
-              subtitle: _rangeLabel(_range),
+              subtitle: rangeLabel(_range),
               txns: [
                 for (final t in txns)
                   if (data.txn(t.id) != null) data.txn(t.id)!,
@@ -183,22 +131,13 @@ class _CategoryReportScreenState extends State<CategoryReportScreen> {
         children: [
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: [
-                for (final p in presets)
-                  ChoiceChip(
-                    label: Text(p.label),
-                    selected: p.range == _range,
-                    onSelected: (_) => setState(() => _range = p.range),
-                  ),
-                ActionChip(
-                  avatar: const Icon(Icons.date_range, size: 18),
-                  label: Text(presetLabel == null ? _rangeLabel(_range) : 'Custom range'),
-                  onPressed: _custom,
-                ),
-              ],
+            child: RangeChips(
+              range: _range,
+              onChanged: (r) => setState(() => _range = r),
+              withAll: false,
+              withTwoYears: true,
+              maxDays: _maxDays,
+              scroll: false,
             ),
           ),
           Container(
@@ -207,7 +146,7 @@ class _CategoryReportScreenState extends State<CategoryReportScreen> {
             decoration: BoxDecoration(color: scheme.primaryContainer, borderRadius: BorderRadius.circular(20)),
             child: Column(
               children: [
-                Text(_rangeLabel(_range), style: text.labelLarge),
+                Text(rangeLabel(_range), style: text.labelLarge),
                 const SizedBox(height: 12),
                 Row(
                   children: [

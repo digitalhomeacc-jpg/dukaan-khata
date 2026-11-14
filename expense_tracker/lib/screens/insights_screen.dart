@@ -4,9 +4,9 @@ import '../data/app_data.dart';
 import '../logic/summary.dart';
 import '../ui/category_style.dart';
 import '../ui/format.dart';
+import '../ui/range.dart';
 import 'budgets_screen.dart';
 import 'category_report_screen.dart';
-import 'month_bar.dart';
 import 'places_screen.dart';
 
 class InsightsScreen extends StatefulWidget {
@@ -19,27 +19,31 @@ class InsightsScreen extends StatefulWidget {
 }
 
 class _InsightsScreenState extends State<InsightsScreen> {
-  var _month = monthStart(DateTime.now());
+  var _range = rangePresets().first.range;
+
+  DateTime get _lastMonth => monthStart(_range.end.subtract(const Duration(days: 1)));
+  bool get _isMonth => _range == monthRange(_range.start);
 
   @override
   Widget build(BuildContext context) {
     final data = widget.data;
-    final s = summarize(
+    final s = summarizeBetween(
       data.transactions,
-      _month,
+      _range.start,
+      _range.end,
       loanCategoryIds: data.notSpendingCategoryIds,
       shares: data.shareTotalsNow,
     );
     final trend = monthlySpend(
       data.transactions,
-      _month,
+      _range.start.year <= 2015 ? monthStart(DateTime.now()) : _lastMonth,
       6,
       loanCategoryIds: data.notSpendingCategoryIds,
       shares: data.shareTotalsNow,
     );
     final inv = data.investmentCategoryIds;
     final invested = data.transactions
-        .where((t) => inv.contains(t.categoryId) && !t.excluded && inMonth(t.txnAt, _month))
+        .where((t) => inv.contains(t.categoryId) && !t.excluded && inRange(t.txnAt, _range))
         .fold(0.0, (v, t) => v + (t.isDebit ? t.amount : -t.amount));
     final text = Theme.of(context).textTheme;
 
@@ -47,9 +51,13 @@ class _InsightsScreenState extends State<InsightsScreen> {
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 96),
       children: [
         Center(
-          child: MonthBar(month: _month, onChanged: (m) => setState(() => _month = m)),
+          child: RangeBar(range: _range, onChanged: (r) => setState(() => _range = r)),
         ),
-        if (data.budgets.isNotEmpty) ...[
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: RangeChips(range: _range, onChanged: (r) => setState(() => _range = r)),
+        ),
+        if (data.budgets.isNotEmpty && _isMonth) ...[
           Row(
             children: [
               Expanded(child: Text('Budgets', style: text.titleMedium)),
@@ -89,7 +97,9 @@ class _InsightsScreenState extends State<InsightsScreen> {
             child: ListTile(
               leading: const Icon(Icons.savings_outlined),
               title: Text(
-                invested > 0 ? 'Invested ${money(invested)} this month' : 'Took ${money(-invested)} out of investments',
+                invested > 0
+                    ? 'Invested ${money(invested)} in this period'
+                    : 'Took ${money(-invested)} out of investments',
               ),
               subtitle: const Text('Zerodha, mutual funds… Not counted as spending or income.'),
             ),
@@ -98,7 +108,11 @@ class _InsightsScreenState extends State<InsightsScreen> {
         ],
         Text('Last 6 months', style: text.titleMedium),
         const SizedBox(height: 12),
-        _TrendChart(points: trend, selected: _month, onTap: (m) => setState(() => _month = m)),
+        _TrendChart(
+          points: trend,
+          selected: _isMonth ? _range.start : DateTime(0),
+          onTap: (m) => setState(() => _range = monthRange(m)),
+        ),
         const SizedBox(height: 28),
         Row(
           children: [
@@ -106,11 +120,7 @@ class _InsightsScreenState extends State<InsightsScreen> {
             Text(money(s.spent), style: text.titleMedium),
             const SizedBox(width: 4),
             TextButton(
-              onPressed: () => openCategoryReport(
-                context,
-                data,
-                range: DateTimeRange(start: _month, end: DateTime(_month.year, _month.month + 1)),
-              ),
+              onPressed: () => openCategoryReport(context, data, range: _range),
               child: const Text('Details'),
             ),
           ],
@@ -119,7 +129,7 @@ class _InsightsScreenState extends State<InsightsScreen> {
         if (s.byCategory.isEmpty)
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 24),
-            child: Center(child: Text('No spending this month.')),
+            child: Center(child: Text('No spending in this period.')),
           ),
         for (final g in rollUp(s.byCategory, data.parentOf)) ...[
           _ShareRow(

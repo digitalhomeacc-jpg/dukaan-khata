@@ -6,20 +6,30 @@ import '../logic/summary.dart';
 import '../models.dart';
 import '../ui/category_style.dart';
 import '../ui/format.dart';
+import '../ui/range.dart';
 import 'import_statement_screen.dart';
 import 'lender_loans.dart';
 import 'transactions_screen.dart';
 
 /// Cash, bank accounts, cards and wallets with their balances.
-class AccountsScreen extends StatelessWidget {
+class AccountsScreen extends StatefulWidget {
   const AccountsScreen({super.key, required this.data});
 
   final AppData data;
 
   @override
+  State<AccountsScreen> createState() => _AccountsScreenState();
+}
+
+class _AccountsScreenState extends State<AccountsScreen> {
+  /// The dates the money in / out under each account covers.
+  var _range = rangePresets().first.range;
+
+  AppData get data => widget.data;
+
+  @override
   Widget build(BuildContext context) {
     final balances = accountBalances(data.transactions, data.accounts);
-    final month = monthStart(DateTime.now());
     final active = data.accounts.where((a) => !a.archived).toList();
     final archived = data.accounts.where((a) => a.archived).toList();
     // Money you have: cash, bank and wallets. Card dues are shown separately.
@@ -29,7 +39,7 @@ class AccountsScreen extends StatelessWidget {
 
     Widget tile(Account a) {
       final bal = balances[a.id] ?? 0;
-      final flow = accountFlow(data.transactions, a.id, month);
+      final flow = accountFlowBetween(data.transactions, a.id, _range.start, _range.end);
       final isCard = a.kind == AccountKind.card;
       final check = checkBalance(data.transactions, a, data.balanceReadings);
       return ListTile(
@@ -38,7 +48,7 @@ class AccountsScreen extends StatelessWidget {
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('This month: in ${money(flow.moneyIn)} · out ${money(flow.moneyOut)}'),
+            Text('${rangeLabel(_range)}: in ${money(flow.moneyIn)} · out ${money(flow.moneyOut)}'),
             if (check != null)
               Row(
                 children: [
@@ -119,6 +129,7 @@ class AccountsScreen extends StatelessWidget {
               ),
             ),
           ),
+          RangeChips(range: _range, onChanged: (r) => setState(() => _range = r)),
           for (final a in active) tile(a),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 8, 4),

@@ -83,6 +83,10 @@ export function readNarration(n: string): { merchant: string | null; method: Met
   if (m) return { merchant: cleanMerchant(m[1]), method: "upi", rrn, atm: false };
   m = s.match(/^UPI[-\/]([^-]+)-/i);
   if (m) return { merchant: cleanMerchant(m[1]), method: "upi", rrn, atm: false };
+  // ATM fees and charges are money the bank kept, not cash in your hand.
+  if (/\bATM\b.*\b(FEE|FEES|CHG|CHGS|CHARGES?)\b|\b(FEE|CHG|CHARGES?)\b.*\bATM\b/i.test(s)) {
+    return { merchant: "ATM fees", method: "other", rrn, atm: false };
+  }
   if (/^(ATW|NWD|EAW|ATM)[-\s]/i.test(s) || /\bATM\s*(WDL|CASH)/i.test(s)) {
     return { merchant: "ATM cash", method: "atm", rrn, atm: true };
   }

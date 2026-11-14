@@ -5,10 +5,10 @@ import '../logic/summary.dart';
 import '../models.dart';
 import '../ui/category_style.dart';
 import '../ui/format.dart';
+import '../ui/range.dart';
 import '../ui/selection.dart';
 import 'budgets_screen.dart';
 import 'import_statement_screen.dart';
-import 'month_bar.dart';
 import 'quick_sort_screen.dart';
 import 'txn_editor.dart';
 
@@ -27,13 +27,14 @@ class TransactionsScreen extends StatefulWidget {
 }
 
 class _TransactionsScreenState extends State<TransactionsScreen> {
-  var _month = monthStart(DateTime.now());
+  /// An account opens on its whole ledger; the main list on this month.
+  late DateTimeRange _range = widget.accountId != null ? allTimeRange() : rangePresets().first.range;
   var _filter = _Filter.all;
   var _query = '';
   late String? _accountId = widget.accountId;
 
   bool _keep(Txn t) {
-    if (!inMonth(t.txnAt, _month)) return false;
+    if (!inRange(t.txnAt, _range)) return false;
     if (_accountId != null && t.accountId != _accountId && t.counterAccountId != _accountId) return false;
     final ok = switch (_filter) {
       _Filter.all => true,
@@ -54,9 +55,10 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
   Widget build(BuildContext context) {
     final data = widget.data;
     final loans = data.notSpendingCategoryIds;
-    final summary = summarize(
+    final summary = summarizeBetween(
       _accountId == null ? data.transactions : data.transactions.where((t) => t.accountId == _accountId),
-      _month,
+      _range.start,
+      _range.end,
       loanCategoryIds: loans,
       shares: data.shareTotalsNow,
     );
@@ -74,7 +76,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
         appBar:
             bar(shown.map((t) => t.id)) ??
             AppBar(
-              title: MonthBar(month: _month, onChanged: (m) => setState(() => _month = m)),
+              title: RangeBar(range: _range, onChanged: (r) => setState(() => _range = r)),
               centerTitle: true,
               actions: [
                 if (widget.accountId != null && account != null && account.kind == AccountKind.bank)
@@ -108,6 +110,12 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
               )
             : CustomScrollView(
                 slivers: [
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: RangeChips(range: _range, onChanged: (r) => setState(() => _range = r)),
+                    ),
+                  ),
                   if (account != null)
                     SliverToBoxAdapter(
                       child: Padding(
@@ -124,7 +132,8 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                       child: BalanceCheckCard(data: data, account: account, check: check),
                     ),
                   SliverToBoxAdapter(child: _SummaryCard(summary: summary)),
-                  if (_accountId == null)
+                  // Budgets are monthly: shown when looking at one month.
+                  if (_accountId == null && _range == monthRange(_range.start))
                     for (final p in budgetProgress(data.budgets.where((b) => b.categoryId == null), summary))
                       SliverToBoxAdapter(
                         child: Padding(
@@ -384,7 +393,7 @@ class _EmptyState extends StatelessWidget {
         const SizedBox(height: 12),
         Text(
           hasAny
-              ? 'Nothing here for this month.'
+              ? 'Nothing here for these dates.'
               : 'No transactions yet.\nTap Add, or connect Gmail in Settings so bank alerts arrive here automatically.',
           textAlign: TextAlign.center,
         ),

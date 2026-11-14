@@ -59,12 +59,27 @@ MonthSummary summarize(
   DateTime month, {
   Set<String> loanCategoryIds = const {},
   ShareTotals shares = ShareTotals.none,
+}) => summarizeBetween(
+  txns,
+  DateTime(month.year, month.month),
+  DateTime(month.year, month.month + 1),
+  loanCategoryIds: loanCategoryIds,
+  shares: shares,
+);
+
+/// Totals from [from] up to (not including) [to].
+MonthSummary summarizeBetween(
+  Iterable<Txn> txns,
+  DateTime from,
+  DateTime to, {
+  Set<String> loanCategoryIds = const {},
+  ShareTotals shares = ShareTotals.none,
 }) {
   var spent = 0.0, received = 0.0;
   final cat = <String?, double>{};
   final merch = <String, double>{};
   for (final t in txns) {
-    if (!counts(t, loanCategoryIds) || !inMonth(t.txnAt, month)) continue;
+    if (!counts(t, loanCategoryIds) || t.txnAt.isBefore(from) || !t.txnAt.isBefore(to)) continue;
     final amount = shares.own(t);
     if (amount <= 0) continue;
     if (t.isDebit) {
@@ -244,10 +259,18 @@ BalanceCheck? checkBalance(Iterable<Txn> txns, Account account, Iterable<Balance
 }
 
 /// Money in and out of one account in a month (moves from other own accounts included).
-({double moneyIn, double moneyOut}) accountFlow(Iterable<Txn> txns, String accountId, DateTime month) {
+({double moneyIn, double moneyOut}) accountFlow(Iterable<Txn> txns, String accountId, DateTime month) =>
+    accountFlowBetween(txns, accountId, DateTime(month.year, month.month), DateTime(month.year, month.month + 1));
+
+({double moneyIn, double moneyOut}) accountFlowBetween(
+  Iterable<Txn> txns,
+  String accountId,
+  DateTime from,
+  DateTime to,
+) {
   var moneyIn = 0.0, moneyOut = 0.0;
   for (final t in txns) {
-    if (!inMonth(t.txnAt, month)) continue;
+    if (t.txnAt.isBefore(from) || !t.txnAt.isBefore(to)) continue;
     final here = t.accountId == accountId;
     final other = t.excluded && t.counterAccountId == accountId;
     if (!here && !other) continue;

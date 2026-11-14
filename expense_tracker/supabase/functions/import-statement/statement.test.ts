@@ -108,3 +108,10 @@ test("Slice statement: layout, borrow, repayment, interest", () => {
   assert.equal(st.txns[4].merchant, "Slice borrow");
 });
 
+
+test("ATM fees are bank charges, withdrawals are cash", () => {
+  assert.equal(readNarration("ATM FEES INTL W/D INCL ST 200626-EPR2717360302657").atm, false);
+  assert.equal(readNarration("ATM FEES INTL W/D INCL ST 200626-EPR2717360302657").merchant, "ATM fees");
+  assert.equal(readNarration("ATW-416021XXXXXX7523-4972B001-BANGKOK").atm, true);
+  assert.equal(readNarration("NWD-416021XXXXXX7523-00484020-AHMADNAGAR").atm, true);
+});
