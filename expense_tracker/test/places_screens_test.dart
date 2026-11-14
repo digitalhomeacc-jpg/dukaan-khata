@@ -8,6 +8,36 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 
 void main() {
+  test('name search finds a name by any part of it, other names and UPI IDs', () {
+    final now = DateTime(2026, 11, 14);
+    final txns = [
+      Txn(id: '1', amount: 200, isDebit: true, txnAt: now, merchant: 'Sanket Pramod Patil', categoryId: 'f'),
+      Txn(id: '2', amount: 80, isDebit: true, txnAt: now, merchant: 'Hotel Vijay', payeeVpa: '7243@y', categoryId: 'n'),
+      Txn(id: '3', amount: 90, isDebit: true, txnAt: now, merchant: 'Hotel Vijay', payeeVpa: '7243@y', categoryId: 'n'),
+      Txn(
+        id: '4',
+        amount: 800,
+        isDebit: true,
+        txnAt: now,
+        merchant: 'Vaibhav Chetan Parmar',
+        bankName: 'Chetan V Parmar',
+      ),
+      Txn(id: '5', amount: 30, isDebit: true, txnAt: now, merchant: 'Bhai Pan Stall'),
+    ];
+    List<String> find(String q) => nameSuggestions(txns, q).map((s) => s.name).toList();
+    expect(find('san').first, 'Sanket Pramod Patil'); // start
+    expect(find('patil'), ['Sanket Pramod Patil']); // any word
+    expect(find('patil sanket'), ['Sanket Pramod Patil']); // words in any order
+    expect(find('spp'), ['Sanket Pramod Patil']); // initials
+    expect(find('htl vjy'), ['Hotel Vijay']); // letters in order
+    expect(find('chetan').first, 'Vaibhav Chetan Parmar'); // also through the bank's other name
+    expect(find('7243'), ['Hotel Vijay']); // UPI ID
+    expect(find('pan'), contains('Bhai Pan Stall'));
+    expect(find('zzz'), isEmpty);
+    final hv = nameSuggestions(txns, 'hotel').first;
+    expect((hv.count, hv.usualCategoryId), (2, 'n')); // how often, and its usual category
+  });
+
   testWidgets('places: "To sort" shows only places with payments that have no category', (tester) async {
     final now = DateTime.now();
     final data = AppData.preview(

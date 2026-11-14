@@ -43,6 +43,7 @@ class _TxnEditorState extends State<TxnEditor> {
   late final Txn? _start = widget.existing ?? widget.prefill;
   late final _amount = TextEditingController(text: _start == null || _start.amount <= 0 ? '' : _plain(_start.amount));
   late final _merchant = TextEditingController(text: _start?.merchant ?? '');
+  final _merchantFocus = FocusNode();
   late final _note = TextEditingController(text: _start?.note ?? '');
   late bool _isDebit = _start?.isDebit ?? true;
   late DateTime _when = _start?.txnAt ?? DateTime.now();
@@ -68,6 +69,7 @@ class _TxnEditorState extends State<TxnEditor> {
   void dispose() {
     _amount.dispose();
     _merchant.dispose();
+    _merchantFocus.dispose();
     _note.dispose();
     super.dispose();
   }
@@ -188,21 +190,76 @@ class _TxnEditorState extends State<TxnEditor> {
               },
             ),
             const SizedBox(height: 12),
-            TextFormField(
-              controller: _merchant,
-              textCapitalization: TextCapitalization.words,
-              decoration: InputDecoration(
-                labelText: _isLoan ? "Friend's name" : (_isDebit ? 'Paid to' : 'Received from'),
-                helperText: _isLoan
-                    ? (_isDebit
-                          ? 'Spent = you lent money or paid them back'
-                          : 'Received = you borrowed or they paid you back')
-                    : null,
+            LayoutBuilder(
+              builder: (context, box) => RawAutocomplete<NameSuggestion>(
+                textEditingController: _merchant,
+                focusNode: _merchantFocus,
+                // Every earlier name that matches anywhere: the name, the bank's name for it, other names, UPI ID.
+                optionsBuilder: (v) => nameSuggestions(
+                  widget.data.transactions,
+                  v.text,
+                  aliases: widget.data.aliases,
+                  extraNames: widget.data.personNames.values,
+                ),
+                displayStringForOption: (o) => o.name,
+                onSelected: (o) => setState(() {
+                  // A new entry takes the usual category of that name (you can still change it).
+                  if (_isNew && _categoryId == null && o.usualCategoryId != null) _categoryId = o.usualCategoryId;
+                }),
+                fieldViewBuilder: (context, ctl, focus, onSubmit) => TextFormField(
+                  controller: ctl,
+                  focusNode: focus,
+                  textCapitalization: TextCapitalization.words,
+                  decoration: InputDecoration(
+                    labelText: _isLoan ? "Friend's name" : (_isDebit ? 'Paid to' : 'Received from'),
+                    suffixIcon: const Icon(Icons.search),
+                    helperText: _isLoan
+                        ? (_isDebit
+                              ? 'Spent = you lent money or paid them back'
+                              : 'Received = you borrowed or they paid you back')
+                        : null,
+                  ),
+                  validator: (v) => (_isLoan || _onCredit) && (v ?? '').trim().isEmpty
+                      ? (_onCredit ? 'Who do you owe?' : 'Whose loan is it?')
+                      : null,
+                  onChanged: (_) => setState(() {}),
+                  onFieldSubmitted: (_) => onSubmit(),
+                ),
+                optionsViewBuilder: (context, onSelected, options) => Align(
+                  alignment: Alignment.topLeft,
+                  child: Material(
+                    elevation: 6,
+                    borderRadius: BorderRadius.circular(12),
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(maxHeight: 340, maxWidth: box.maxWidth),
+                      child: ListView(
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        shrinkWrap: true,
+                        children: [
+                          for (final o in options)
+                            ListTile(
+                              dense: true,
+                              leading: CategoryAvatar(widget.data.category(o.usualCategoryId), size: 32),
+                              title: Text(o.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+                              subtitle: Text(
+                                [
+                                  if (o.count > 0) '${o.count} payment${o.count == 1 ? '' : 's'}',
+                                  if (o.last != null)
+                                    'last ${o.lastWasDebit ? '−' : '+'}${money(o.lastAmount)} on ${dayLabel(o.last!)}',
+                                  if (widget.data.category(o.usualCategoryId) case final c?) c.name,
+                                  if (o.via.isNotEmpty) 'also ${o.via.take(2).join(', ')}',
+                                ].join(' · '),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              onTap: () => onSelected(o),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
               ),
-              validator: (v) => (_isLoan || _onCredit) && (v ?? '').trim().isEmpty
-                  ? (_onCredit ? 'Who do you owe?' : 'Whose loan is it?')
-                  : null,
-              onChanged: (_) => setState(() {}),
             ),
             const SizedBox(height: 12),
             OutlinedButton.icon(

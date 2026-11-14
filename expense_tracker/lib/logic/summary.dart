@@ -1173,3 +1173,101 @@ List<({String name, List<Txn> txns, double total})> unsortedByPayee(Iterable<Txn
       );
   return out;
 }
+
+// ------------------------------------------------------------ name search
+
+/// A name you have paid or got money from before, for the "Paid to" box.
+class NameSuggestion {
+  NameSuggestion(this.name);
+
+  final String name;
+  int count = 0;
+  DateTime? last;
+  double lastAmount = 0;
+  bool lastWasDebit = true;
+  final Map<String?, int> _cats = {};
+
+  /// Other names that led here: the bank's name, an "also known as", a UPI ID.
+  final Set<String> via = {};
+  int score = 0;
+
+  String? get usualCategoryId =>
+      _cats.isEmpty ? null : (_cats.entries.toList()..sort((a, b) => b.value.compareTo(a.value))).first.key;
+}
+
+String _norm(String s) =>
+    s.toLowerCase().replaceAll(RegExp(r'[^a-z0-9@ ]'), ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
+
+/// How well [query] matches [text]: the whole thing, a word's start, anywhere, the initials ("spp"), or its
+/// letters in order. 0 = no match.
+int matchScore(String text, String query) {
+  final t = _norm(text), q = _norm(query);
+  if (q.isEmpty || t.isEmpty) return 0;
+  if (t == q) return 100;
+  if (t.startsWith(q)) return 80;
+  final words = t.split(' ');
+  if (words.any((w) => w.startsWith(q))) return 60;
+  // Every word of the query starts a word of the name, in any order ("patil sanket").
+  final qWords = q.split(' ');
+  if (qWords.length > 1 && qWords.every((qw) => words.any((w) => w.startsWith(qw)))) return 55;
+  if (t.contains(q)) return 40;
+  final squashed = t.replaceAll(' ', '');
+  if (squashed.contains(q.replaceAll(' ', ''))) return 35;
+  final initials = words.map((w) => w.isEmpty ? '' : w[0]).join();
+  if (q.length >= 2 && initials.startsWith(q)) return 30;
+  // Letters in order ("htl vjy" → "hotel vijay").
+  var i = 0;
+  for (final c in squashed.split('')) {
+    if (i < q.replaceAll(' ', '').length && c == q.replaceAll(' ', '')[i]) i++;
+  }
+  if (q.replaceAll(' ', '').length >= 3 && i == q.replaceAll(' ', '').length) return 10;
+  return 0;
+}
+
+/// Every earlier name that matches [query] anywhere: in the name, the bank's own name for it, an "also known
+/// as" name, or its UPI ID. Best matches first, then the ones you pay most.
+List<NameSuggestion> nameSuggestions(
+  Iterable<Txn> txns,
+  String query, {
+  Map<String, String> aliases = const {},
+  Iterable<String> extraNames = const [],
+  int limit = 12,
+}) {
+  if (query.trim().isEmpty) return const [];
+  final byKey = <String, NameSuggestion>{};
+  NameSuggestion of(String name) => byKey.putIfAbsent(_norm(name), () => NameSuggestion(name.trim()));
+  for (final n in extraNames) {
+    if (n.trim().isNotEmpty) of(n);
+  }
+  for (final t in txns) {
+    final name = t.merchant?.trim();
+    if (name == null || name.isEmpty) continue;
+    final s = of(name);
+    s.count++;
+    if (s.last == null || t.txnAt.isAfter(s.last!)) {
+      s.last = t.txnAt;
+      s.lastAmount = t.amount;
+      s.lastWasDebit = t.isDebit;
+    }
+    s._cats[t.categoryId] = (s._cats[t.categoryId] ?? 0) + 1;
+    final alsoBank = t.bankName?.trim();
+    if (alsoBank != null && alsoBank.isNotEmpty && _norm(alsoBank) != _norm(name)) s.via.add(alsoBank);
+    if (t.payeeVpa != null) s.via.add('UPI ••${t.payeeVpa}');
+  }
+  for (final e in aliases.entries) {
+    of(e.value).via.add(e.key);
+  }
+  final out = <NameSuggestion>[];
+  for (final s in byKey.values) {
+    var best = matchScore(s.name, query);
+    for (final v in s.via) {
+      final m = matchScore(v, query);
+      if (m > 0 && m - 5 > best) best = m - 5; // found through another name: just below a direct match
+    }
+    if (best == 0) continue;
+    s.score = best;
+    out.add(s);
+  }
+  out.sort((a, b) => b.score != a.score ? b.score.compareTo(a.score) : b.count.compareTo(a.count));
+  return out.take(limit).toList();
+}

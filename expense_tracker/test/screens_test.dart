@@ -405,6 +405,16 @@ void main() {
     expect(find.textContaining('Rest:'), findsOneWidget);
   });
 
+  testWidgets('typing a name shows matching earlier names with details', (tester) async {
+    final data = sample();
+    final name = data.transactions.firstWhere((t) => (t.merchant ?? '').length > 3).merchant!;
+    await pump(tester, TxnEditor(data: data));
+    await tester.enterText(find.widgetWithText(TextFormField, 'Paid to'), name.substring(0, 3));
+    await tester.pumpAndSettle();
+    expect(find.text(name), findsWidgets);
+    expect(find.textContaining('payment'), findsWidgets);
+  });
+
   testWidgets('editor for an email transaction', (tester) async {
     final data = sample();
     await pump(tester, TxnEditor(data: data, existing: data.transactions.first));
