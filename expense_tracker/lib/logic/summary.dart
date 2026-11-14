@@ -189,7 +189,27 @@ Map<String, double> runningBalances(Iterable<Txn> txns, Account account) {
     bal += _effect(t, account);
     out[t.id] = _round(bal);
   }
+  // Before the opening date entries don't move the balance, but their balance can be worked back from it:
+  // the balance after each one is the opening balance minus what happened between it and the opening.
+  final from = account.openingDate;
+  if (from != null) {
+    final earlier = txns.where((t) => t.txnAt.isBefore(from) && _rawEffect(t, account) != 0).toList()
+      ..sort((a, b) => b.txnAt.compareTo(a.txnAt));
+    var back = account.openingBalance;
+    for (final t in earlier) {
+      out[t.id] = _round(back);
+      back -= _rawEffect(t, account);
+    }
+  }
   return out;
+}
+
+double _rawEffect(Txn t, Account account) {
+  final signed = t.isDebit ? -t.amount : t.amount;
+  var e = 0.0;
+  if (t.accountId == account.id) e += signed;
+  if (t.excluded && t.counterAccountId == account.id) e -= signed;
+  return e;
 }
 
 /// The app's balance for [account] at [time].

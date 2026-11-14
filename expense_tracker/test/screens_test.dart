@@ -226,6 +226,40 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('categories report: net view and a category as a ledger with running balance', (tester) async {
+    final now = DateTime.now();
+    final data = AppData.preview(
+      categories: const [Category(id: 'inv', name: 'Zerodha', icon: 'savings', color: 0xFF009688)],
+      transactions: [
+        Txn(
+          id: 'a',
+          amount: 1000,
+          isDebit: true,
+          txnAt: now.subtract(const Duration(days: 3)),
+          merchant: 'Zerodha',
+          categoryId: 'inv',
+        ),
+        Txn(
+          id: 'b',
+          amount: 900,
+          isDebit: false,
+          txnAt: now.subtract(const Duration(days: 1)),
+          merchant: 'Zerodha',
+          categoryId: 'inv',
+        ),
+      ],
+    );
+    await pump(tester, CategoryReportScreen(data: data));
+    await tester.tap(find.text('Net').last);
+    await tester.pumpAndSettle();
+    expect(find.text('−₹100'), findsWidgets); // sent 1,000, got 900 back
+    await tester.tap(find.text('Zerodha').first);
+    await tester.pumpAndSettle();
+    expect(find.text('You paid'), findsOneWidget);
+    expect(find.text('Balance'), findsOneWidget);
+    expect(find.text('−₹1,000'), findsOneWidget); // balance after the first
+  });
+
   test('categories report adds up spending by category in a date range', () {
     final t = [
       Txn(id: 'a', amount: 100, isDebit: true, txnAt: DateTime(2026, 1, 5), categoryId: 'f'),
