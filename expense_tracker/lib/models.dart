@@ -677,7 +677,13 @@ class Recurring {
 
 /// One due date of a repeat, settled: matched to a payment, added, or skipped.
 class RecurringRun {
-  const RecurringRun({required this.id, required this.recurringId, required this.dueOn, required this.kind, this.txnId});
+  const RecurringRun({
+    required this.id,
+    required this.recurringId,
+    required this.dueOn,
+    required this.kind,
+    this.txnId,
+  });
 
   final String id;
   final String recurringId;
@@ -693,5 +699,54 @@ class RecurringRun {
     dueOn: DateTime.parse(m['due_on'] as String),
     kind: m['kind'] as String,
     txnId: m['txn_id'] as String?,
+  );
+}
+
+/// Save an amount by a date, or spend less in a category.
+class Goal {
+  const Goal({
+    required this.id,
+    required this.kind,
+    required this.name,
+    required this.startsOn,
+    this.emoji,
+    this.targetAmount,
+    this.deadline,
+    this.accountId,
+    this.categoryId,
+    this.cutPct,
+    this.archived = false,
+  });
+
+  final String id;
+
+  /// 'save' or 'cut'.
+  final String kind;
+  final String name;
+  final String? emoji;
+  final DateTime startsOn;
+  final double? targetAmount;
+  final DateTime? deadline;
+
+  /// Save: this account's growth counts; none = money kept (in minus spent).
+  final String? accountId;
+  final String? categoryId;
+  final double? cutPct;
+  final bool archived;
+
+  bool get isSave => kind == 'save';
+
+  factory Goal.fromMap(Map<String, dynamic> m) => Goal(
+    id: m['id'] as String,
+    kind: m['kind'] as String,
+    name: m['name'] as String,
+    emoji: m['emoji'] as String?,
+    startsOn: DateTime.parse(m['starts_on'] as String),
+    targetAmount: (m['target_amount'] as num?)?.toDouble(),
+    deadline: m['deadline'] == null ? null : DateTime.parse(m['deadline'] as String),
+    accountId: m['account_id'] as String?,
+    categoryId: m['category_id'] as String?,
+    cutPct: (m['cut_pct'] as num?)?.toDouble(),
+    archived: m['archived'] == true,
   );
 }

@@ -23,14 +23,39 @@ void main() {
     Account(id: 'cash', name: 'Cash', kind: AccountKind.cash, openingBalance: 1200),
     Account(id: 'hdfc', name: 'HDFC A/c ••4321', bank: 'HDFC', last4: '4321', openingBalance: 142000),
     Account(id: 'icici', name: 'ICICI A/c ••5678', bank: 'ICICI', last4: '5678', openingBalance: 15000),
-    Account(id: 'card', name: 'ICICI Card ••9876', kind: AccountKind.card, bank: 'ICICI', last4: '9876', openingBalance: -6400),
+    Account(
+      id: 'card',
+      name: 'ICICI Card ••9876',
+      kind: AccountKind.card,
+      bank: 'ICICI',
+      last4: '9876',
+      openingBalance: -6400,
+    ),
     Account(id: 'paytm', name: 'Paytm', kind: AccountKind.wallet, openingBalance: 350),
   ];
   var n = 0;
-  Txn t(double a, DateTime at, String m, String? c,
-          {bool debit = true, String acc = 'hdfc', String? to, bool excluded = false}) =>
-      Txn(id: '${n++}', amount: a, isDebit: debit, txnAt: at, merchant: m, categoryId: c, accountId: acc,
-          counterAccountId: to, source: acc == 'cash' ? 'manual' : 'email', method: 'upi', excluded: excluded);
+  Txn t(
+    double a,
+    DateTime at,
+    String m,
+    String? c, {
+    bool debit = true,
+    String acc = 'hdfc',
+    String? to,
+    bool excluded = false,
+  }) => Txn(
+    id: '${n++}',
+    amount: a,
+    isDebit: debit,
+    txnAt: at,
+    merchant: m,
+    categoryId: c,
+    accountId: acc,
+    counterAccountId: to,
+    source: acc == 'cash' ? 'manual' : 'email',
+    method: 'upi',
+    excluded: excluded,
+  );
   final txns = [
     t(250, ago(0, 13, 5), 'SWIGGY LIMITED', 'food'),
     t(180, ago(0, 9, 40), 'UBER INDIA', 'trans', acc: 'icici'),
@@ -59,13 +84,58 @@ void main() {
     categories: cats,
     accounts: accounts,
     profile: {'display_name': 'Asha', 'ingest_token': 'ab' * 24, 'last_sync_at': now.toUtc().toIso8601String()},
+    budgets: const [Budget(id: 'b', amount: 25000)],
+    recurring: [
+      Recurring(
+        id: 'r1',
+        name: 'Rent',
+        amount: 9000,
+        startsOn: DateTime(now.year, now.month, now.day - 2),
+        categoryId: 'bills',
+      ),
+      Recurring(
+        id: 'r2',
+        name: 'Netflix',
+        amount: 649,
+        startsOn: DateTime(now.year, now.month, now.day + 1),
+        categoryId: 'fun',
+      ),
+      Recurring(
+        id: 'r3',
+        name: 'Jio',
+        amount: 299,
+        startsOn: DateTime(now.year, now.month, now.day + 4),
+        categoryId: 'bills',
+      ),
+    ],
+    goals: [
+      Goal(
+        id: 'g1',
+        kind: 'save',
+        name: 'Goa trip',
+        emoji: '🏖️',
+        startsOn: DateTime(now.year, now.month, 1),
+        targetAmount: 20000,
+        deadline: DateTime(now.year, now.month + 3, 1),
+      ),
+      Goal(
+        id: 'g2',
+        kind: 'cut',
+        name: 'Less eating out',
+        startsOn: DateTime(now.year, now.month, 1),
+        categoryId: 'food',
+        cutPct: 20,
+      ),
+    ],
   );
-  runApp(MaterialApp(
-    debugShowCheckedModeBanner: false,
-    theme: ThemeData(
-      colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF00897B)),
-      inputDecorationTheme: const InputDecorationTheme(border: OutlineInputBorder()),
+  runApp(
+    MaterialApp(
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF00897B)),
+        inputDecorationTheme: const InputDecorationTheme(border: OutlineInputBorder()),
+      ),
+      home: HomeShell(data: data),
     ),
-    home: HomeShell(data: data),
-  ));
+  );
 }

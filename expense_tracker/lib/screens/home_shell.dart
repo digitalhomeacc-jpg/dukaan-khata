@@ -7,8 +7,8 @@ import 'insights_screen.dart';
 import '../main.dart' show pendingInviteCode;
 import 'friends_screen.dart';
 import 'settings_screen.dart';
+import 'home_screen.dart';
 import 'quick_add.dart';
-import 'transactions_screen.dart';
 
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key, this.data});
@@ -52,7 +52,7 @@ class _HomeShellState extends State<HomeShell> {
         body: IndexedStack(
           index: _tab,
           children: [
-            TransactionsScreen(data: data),
+            HomeScreen(data: data, onOpenTab: (i) => setState(() => _tab = i)),
             AccountsScreen(data: data),
             FriendsScreen(data: data),
             InsightsScreen(data: data),

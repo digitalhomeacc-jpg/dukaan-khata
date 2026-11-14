@@ -6,6 +6,7 @@ import '../ui/category_style.dart';
 import '../ui/format.dart';
 import '../ui/paid_with.dart';
 import '../ui/range.dart';
+import 'goals_screen.dart';
 import 'txn_editor.dart';
 
 Future<void> openAnalysis(BuildContext context, AppData data) => Navigator.of(context).push(
@@ -130,6 +131,23 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
               child: PaidWithChip(data: data, value: _paidWith, onChanged: (v) => setState(() => _paidWith = v)),
             ),
           ),
+
+          // Goals, week by week
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 8, 0),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text('Goals', style: text.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+                ),
+                TextButton(
+                  onPressed: () => openGoals(context, data),
+                  child: Text(data.goals.any((g) => !g.archived) ? 'All goals' : 'Set a goal'),
+                ),
+              ],
+            ),
+          ),
+          for (final g in data.goals.where((g) => !g.archived)) GoalCard(data: data, goal: g, showWeeks: true),
 
           // 1. In and out
           section('Money in and out', [

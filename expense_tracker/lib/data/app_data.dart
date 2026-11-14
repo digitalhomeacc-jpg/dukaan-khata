@@ -7,6 +7,7 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../config.dart';
+import '../logic/goals.dart';
 import '../logic/recurring.dart';
 import '../logic/summary.dart'
     show
@@ -30,6 +31,10 @@ class AppData extends ChangeNotifier {
         loaded = true;
         notifyListeners();
         _scheduleRecurring();
+      }, onError: _onError),
+      db.from('goals').stream(primaryKey: ['id']).order('created_at').listen((rows) {
+        goals = rows.map(Goal.fromMap).toList();
+        notifyListeners();
       }, onError: _onError),
       db.from('recurring').stream(primaryKey: ['id']).order('created_at').listen((rows) {
         recurring = rows.map(Recurring.fromMap).toList();
@@ -142,6 +147,7 @@ class AppData extends ChangeNotifier {
     this.profile = const {},
     this.recurring = const [],
     this.recurringRuns = const [],
+    this.goals = const [],
   }) : _client = null,
        loaded = true {
     _subs = [];
@@ -228,6 +234,53 @@ class AppData extends ChangeNotifier {
 
   /// Friends' parts of group payments, for the totals.
   ShareTotals get shareTotalsNow => _shareTotals ??= shareTotals(shares, parts: parts);
+
+  // ------------------------------------------------------------------ goals
+
+  List<Goal> goals = const [];
+
+  GoalProgress progressOf(Goal g) => goalProgress(
+    g,
+    txns: transactions,
+    accounts: accounts,
+    categories: categories,
+    notSpendingIds: notSpendingCategoryIds,
+    shares: shareTotalsNow,
+  );
+
+  Future<void> saveGoal({
+    String? id,
+    required String kind,
+    required String name,
+    String? emoji,
+    required DateTime startsOn,
+    double? targetAmount,
+    DateTime? deadline,
+    String? accountId,
+    String? categoryId,
+    double? cutPct,
+  }) async {
+    String? d(DateTime? x) => x == null ? null : _date(x);
+    final row = {
+      'kind': kind,
+      'name': name.trim(),
+      'emoji': emoji,
+      'starts_on': d(startsOn),
+      'target_amount': kind == 'save' ? targetAmount : null,
+      'deadline': kind == 'save' ? d(deadline) : null,
+      'account_id': kind == 'save' ? accountId : null,
+      'category_id': kind == 'cut' ? categoryId : null,
+      'cut_pct': kind == 'cut' ? cutPct : null,
+    };
+    if (id == null) {
+      await _db.from('goals').insert(row);
+    } else {
+      await _db.from('goals').update(row).eq('id', id);
+    }
+  }
+
+  Future<void> archiveGoal(String id, {bool archived = true}) =>
+      _db.from('goals').update({'archived': archived}).eq('id', id);
 
   // ------------------------------------------------------------------ repeats
 
