@@ -420,6 +420,19 @@ DateTime nextDueOn(int dueDay, DateTime from) {
   return thisMonth.isBefore(d) ? onMonth(d.year, d.month + 1) : thisMonth;
 }
 
+/// A credit line's spending power now: what the lender showed, less borrowing and spending since,
+/// plus repayments since (roughly: repayments also cover interest).
+double? creditLeft(Loan loan, Iterable<LoanEvent> events) {
+  final base = loan.availableCredit;
+  if (base == null) return null;
+  var left = base;
+  for (final e in events.where((e) => e.loanId == loan.id)) {
+    if (loan.availableAt != null && !e.at.isAfter(loan.availableAt!)) continue;
+    left += e.kind == LoanEventKind.repay ? e.amount : -e.amount;
+  }
+  return _round(left < 0 ? 0 : left);
+}
+
 /// Loan dues coming up, by date: each loan's next due, then its later EMIs (one a month) where known.
 List<({DateTime date, double amount, Loan loan, bool estimate})> upcomingDues(
   Iterable<Loan> loans,
@@ -430,6 +443,16 @@ List<({DateTime date, double amount, Loan loan, bool estimate})> upcomingDues(
   final out = <({DateTime date, double amount, Loan loan, bool estimate})>[];
   for (final loan in loans.where((l) => !l.closed)) {
     final s = loanStatus(loan, events, now: now);
+    // The lender's own schedule, when there is one: exact dues, not estimates.
+    if (loan.schedule.isNotEmpty) {
+      final today = _day(now ?? DateTime.now());
+      for (final e in loan.schedule) {
+        if (e.date.isBefore(today)) continue;
+        if (s.nextDuePaid && s.nextDueDate != null && _day(e.date) == _day(s.nextDueDate!)) continue;
+        out.add((date: e.date, amount: e.amount, loan: loan, estimate: false));
+      }
+      continue;
+    }
     final first = s.nextDueDate;
     if (first == null || s.nextDueAmount == null || s.owed <= 0) continue;
     var left = s.owed;

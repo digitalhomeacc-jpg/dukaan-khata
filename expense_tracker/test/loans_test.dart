@@ -6,6 +6,49 @@ LoanEvent ev(LoanEventKind k, double a, DateTime at, {String loan = 'L'}) =>
     LoanEvent(id: '$k$a$at', loanId: loan, kind: k, amount: a, at: at);
 
 void main() {
+  test('credit left on a credit line follows spending and repayments since the lender showed it', () {
+    final loan = Loan(
+      id: 's',
+      lender: 'slice',
+      name: 'Slice borrow',
+      kind: LoanKind.creditLine,
+      availableCredit: 320,
+      availableAt: DateTime(2026, 11, 14, 13),
+    );
+    final events = [
+      LoanEvent(
+        id: '1',
+        loanId: 's',
+        kind: LoanEventKind.spend,
+        amount: 136,
+        at: DateTime(2026, 11, 7),
+      ), // before: already in 320
+      LoanEvent(id: '2', loanId: 's', kind: LoanEventKind.spend, amount: 120, at: DateTime(2026, 11, 15)),
+      LoanEvent(id: '3', loanId: 's', kind: LoanEventKind.repay, amount: 500, at: DateTime(2026, 12, 5)),
+    ];
+    expect(creditLeft(loan, events), 700);
+  });
+
+  test('a loan with its own schedule shows each due exactly', () {
+    final loan = Loan(
+      id: 's',
+      lender: 'slice',
+      name: 'Slice borrow',
+      kind: LoanKind.creditLine,
+      outstanding: 28792.91,
+      outstandingAt: DateTime(2026, 11, 14),
+      nextDueAmount: 4940.24,
+      nextDueDate: DateTime(2026, 12, 5),
+      schedule: [
+        (date: DateTime(2026, 11, 5), amount: 506.54),
+        (date: DateTime(2026, 12, 5), amount: 4940.24),
+        (date: DateTime(2027, 1, 5), amount: 4800.71),
+      ],
+    );
+    final d = upcomingDues([loan], const [], now: DateTime(2026, 11, 14));
+    expect(d.map((x) => (x.date.month, x.amount, x.estimate)).toList(), [(12, 4940.24, false), (1, 4800.71, false)]);
+  });
+
   test('upcoming dues by date: next dues, then later EMIs up to what is owed', () {
     final now = DateTime(2026, 11, 14);
     final loans = [

@@ -128,8 +128,8 @@ class LoansSummaryCard extends StatelessWidget {
                       Padding(
                         padding: const EdgeInsets.only(top: 6, bottom: 8),
                         child: Text(
-                          '≈ later EMIs are estimated from each loan\'s EMI. Loans without a fixed EMI (like Slice) '
-                          'show only their next due.',
+                          '≈ later EMIs are estimated from each loan\'s EMI. Loans with their own schedule (like Slice) '
+                          'show its exact amounts.',
                           style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
                         ),
                       ),
@@ -184,7 +184,12 @@ class LenderLoanCard extends StatelessWidget {
                       children: [
                         Text(loan.name, style: text.titleMedium),
                         Text(
-                          loan.kind == LoanKind.creditLine ? 'Credit line' : 'EMI loan',
+                          loan.kind == LoanKind.creditLine
+                              ? [
+                                  'Credit line',
+                                  if (creditLeft(loan, data.loanEvents) case final left?) '${money(left)} left to use',
+                                ].join(' · ')
+                              : 'EMI loan',
                           style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
                         ),
                       ],
@@ -410,6 +415,14 @@ class LoanDetailScreen extends StatelessWidget {
                     fact(
                       s.nextDuePaid ? 'Last due (paid)' : 'Next due',
                       '${money(s.nextDueAmount ?? 0)} · ${_date.format(s.nextDueDate!)}',
+                    ),
+                  if (creditLeft(loan, data.loanEvents) case final left?)
+                    fact('Credit left to use', '${money(left)} (about)'),
+                  if (loan.schedule.where((e) => !e.date.isBefore(DateTime.now())).isNotEmpty)
+                    fact(
+                      'Schedule',
+                      '${loan.schedule.where((e) => !e.date.isBefore(DateTime.now())).length} dues left · '
+                          '${money(loan.schedule.where((e) => !e.date.isBefore(DateTime.now())).fold(0.0, (v, e) => v + e.amount))}',
                     ),
                   if (loan.emiAmount != null) fact('EMI', money(loan.emiAmount!)),
                   if (loan.dueDay != null) fact('EMI date', '${loan.dueDay} of every month'),

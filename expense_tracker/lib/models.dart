@@ -239,6 +239,9 @@ class Loan {
     this.accountId,
     this.closed = false,
     this.createdAt,
+    this.schedule = const [],
+    this.availableCredit,
+    this.availableAt,
   });
 
   final String id;
@@ -262,6 +265,13 @@ class Loan {
   /// When the loan was added; EMIs paid before then are in [emisPaidBefore].
   final DateTime? createdAt;
 
+  /// The lender's own repayment schedule, when dues are not one fixed EMI (Slice).
+  final List<({DateTime date, double amount})> schedule;
+
+  /// A credit line's spending power left, as the lender last showed it, and when.
+  final double? availableCredit;
+  final DateTime? availableAt;
+
   factory Loan.fromMap(Map<String, dynamic> m) {
     double? n(Object? v) => v == null ? null : _num(v);
     return Loan(
@@ -283,6 +293,12 @@ class Loan {
       accountId: m['account_id'] as String?,
       closed: m['closed'] == true,
       createdAt: m['created_at'] == null ? null : DateTime.parse(m['created_at'] as String).toLocal(),
+      availableCredit: (m['available_credit'] as num?)?.toDouble(),
+      availableAt: m['available_at'] == null ? null : DateTime.parse(m['available_at'] as String).toLocal(),
+      schedule: [
+        for (final e in (m['schedule'] as List?) ?? const [])
+          (date: DateTime.parse((e as Map)['date'] as String), amount: (e['amount'] as num).toDouble()),
+      ],
     );
   }
 }
