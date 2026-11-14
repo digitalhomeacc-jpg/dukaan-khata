@@ -30,7 +30,13 @@ class _AccountsScreenState extends State<AccountsScreen> {
   @override
   Widget build(BuildContext context) {
     final balances = accountBalances(data.transactions, data.accounts);
-    final active = data.accounts.where((a) => !a.archived).toList();
+    // A loan's own account (e.g. "Slice borrow", what was bought with the credit line) is already in the
+    // loan's outstanding: it is shown with the loan, not again as an account or a card due.
+    final loanAccounts = {
+      for (final l in data.loans)
+        if (l.accountId != null) l.accountId!,
+    };
+    final active = data.accounts.where((a) => !a.archived && !loanAccounts.contains(a.id)).toList();
     final archived = data.accounts.where((a) => a.archived).toList();
     // Money you have: cash, bank and wallets. Card dues are shown separately.
     final have = active.where((a) => a.kind != AccountKind.card).fold(0.0, (s, a) => s + (balances[a.id] ?? 0));

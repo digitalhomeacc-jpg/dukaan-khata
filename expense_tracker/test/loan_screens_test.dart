@@ -71,6 +71,23 @@ Future<void> pump(WidgetTester tester, Widget child) async {
 }
 
 void main() {
+  testWidgets('a loan\'s own account is not a second debt on the Accounts tab', (tester) async {
+    final now = DateTime.now();
+    final data = AppData.preview(
+      categories: const [],
+      accounts: const [
+        Account(id: 'h', name: 'HDFC A/c ••6516', kind: AccountKind.bank),
+        Account(id: 'sb', name: 'Slice borrow', kind: AccountKind.card),
+      ],
+      loans: const [Loan(id: 's', lender: 'slice', name: 'Slice loan', kind: LoanKind.creditLine, accountId: 'sb')],
+      transactions: [Txn(id: 't', amount: 136, isDebit: true, txnAt: now, merchant: 'Medical store', accountId: 'sb')],
+    );
+    await pump(tester, AccountsScreen(data: data));
+    expect(find.text('HDFC A/c ••6516'), findsOneWidget);
+    expect(find.text('Slice borrow'), findsNothing);
+    expect(find.text('₹136'), findsNothing); // not in card dues
+  });
+
   testWidgets('Accounts tab shows lender loans with details', (tester) async {
     final data = sample();
     await pump(tester, AccountsScreen(data: data));
