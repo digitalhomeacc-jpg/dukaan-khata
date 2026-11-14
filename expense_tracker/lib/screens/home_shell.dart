@@ -7,8 +7,8 @@ import 'insights_screen.dart';
 import '../main.dart' show pendingInviteCode;
 import 'friends_screen.dart';
 import 'settings_screen.dart';
+import 'quick_add.dart';
 import 'transactions_screen.dart';
-import 'txn_editor.dart';
 
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key, this.data});
@@ -63,7 +63,7 @@ class _HomeShellState extends State<HomeShell> {
         floatingActionButton: _tab != 0 && _tab != 3
             ? null
             : FloatingActionButton.extended(
-                onPressed: () => openTxnEditor(context, data),
+                onPressed: () => openAddSheet(context, data),
                 icon: const Icon(Icons.add),
                 label: const Text('Add'),
               ),

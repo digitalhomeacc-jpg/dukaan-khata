@@ -1271,3 +1271,58 @@ List<NameSuggestion> nameSuggestions(
   out.sort((a, b) => b.score != a.score ? b.score.compareTo(a.score) : b.count.compareTo(a.count));
   return out.take(limit).toList();
 }
+
+// ------------------------------------------------------------ quick entries
+
+/// A payment you make again and again (₹800 thali, ₹20 chai): one tap to add it again.
+class FrequentEntry {
+  FrequentEntry(this.amount, this.isDebit, this.categoryId);
+
+  final double amount;
+  final bool isDebit;
+  final String? categoryId;
+  int count = 0;
+  DateTime? last;
+  final Map<String, int> _payees = {};
+  final Map<String?, int> _accounts = {};
+  final Map<String, int> _methods = {};
+
+  String? _top<K>(Map<K, int> m) =>
+      m.isEmpty ? null : (m.entries.toList()..sort((a, b) => b.value.compareTo(a.value))).first.key?.toString();
+  String? get usualPayee => _top(_payees);
+  String? get usualAccountId => _top(_accounts);
+  String get usualMethod => _top(_methods) ?? 'upi';
+
+  /// Everyone it went to, most often first ("Saket, Vaibhav").
+  List<String> get payees =>
+      (_payees.entries.toList()..sort((a, b) => b.value.compareTo(a.value))).map((e) => e.key).toList();
+}
+
+/// Same amount, same category, same direction, 3+ times in the last [days]: most used first.
+List<FrequentEntry> frequentEntries(Iterable<Txn> txns, {DateTime? now, int days = 120, int limit = 8}) {
+  final since = (now ?? DateTime.now()).subtract(Duration(days: days));
+  final by = <String, FrequentEntry>{};
+  for (final t in txns) {
+    if (t.excluded || t.isLoanTransfer || t.txnAt.isBefore(since) || t.amount <= 0) continue;
+    final k = '${t.isDebit}|${t.amount.toStringAsFixed(2)}|${t.categoryId}';
+    final f = by.putIfAbsent(k, () => FrequentEntry(t.amount, t.isDebit, t.categoryId));
+    f.count++;
+    if (f.last == null || t.txnAt.isAfter(f.last!)) f.last = t.txnAt;
+    if (t.merchant != null && t.merchant!.trim().isNotEmpty) {
+      f._payees[t.merchant!.trim()] = (f._payees[t.merchant!.trim()] ?? 0) + 1;
+    }
+    f._accounts[t.accountId] = (f._accounts[t.accountId] ?? 0) + 1;
+    f._methods[t.method] = (f._methods[t.method] ?? 0) + 1;
+  }
+  final out = by.values.where((f) => f.count >= 3).toList()
+    ..sort((a, b) => b.count != a.count ? b.count.compareTo(a.count) : b.last!.compareTo(a.last!));
+  return out.take(limit).toList();
+}
+
+/// Does [query] look like an amount, and does [t] have it? "800" matches ₹800 and ₹800.50; "80" does not match ₹800.
+bool matchesAmount(Txn t, String query) {
+  final q = query.replaceAll(RegExp(r'[₹,\s]'), '');
+  if (q.isEmpty || double.tryParse(q) == null) return false;
+  final whole = t.amount.truncate().toString();
+  return q.contains('.') ? t.amount.toStringAsFixed(2).startsWith(q) : whole == q;
+}

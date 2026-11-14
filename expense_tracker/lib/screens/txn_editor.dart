@@ -7,6 +7,7 @@ import '../models.dart';
 import '../ui/category_picker.dart';
 import '../ui/category_style.dart';
 import '../ui/format.dart';
+import 'quick_add.dart';
 import 'split_section.dart';
 
 Future<void> openTxnEditor(BuildContext context, AppData data, {Txn? existing, Txn? prefill}) {
@@ -515,6 +516,21 @@ class _BankRecordCardState extends State<BankRecordCard> {
           if (t.payeeVpa != null) row('UPI ID', '••${t.payeeVpa}'),
           if (ref != null) row('Reference', ref, copy: true),
           if (balance != null) row('Balance after', '${balance < 0 ? '−' : ''}${money(balance.abs())}'),
+          Builder(
+            builder: (context) {
+              final same = data.transactions.where((x) => (x.amount - t.amount).abs() < 0.005).length;
+              if (same < 2) return const SizedBox.shrink();
+              return Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  style: TextButton.styleFrom(padding: EdgeInsets.zero, visualDensity: VisualDensity.compact),
+                  onPressed: () => openSameAmount(context, data, t.amount),
+                  icon: const Icon(Icons.view_list_outlined, size: 18),
+                  label: Text('All ${money(t.amount)} payments ($same)'),
+                ),
+              );
+            },
+          ),
           if (t.emailSubject != null) row('Email', t.emailSubject!),
           if (email != null && email.isNotEmpty) ...[
             Align(

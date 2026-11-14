@@ -45,7 +45,8 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
     if (!ok) return false;
     if (_query.isEmpty) return true;
     final q = _query.toLowerCase();
-    return t.title.toLowerCase().contains(q) ||
+    return matchesAmount(t, q) ||
+        t.title.toLowerCase().contains(q) ||
         (t.note ?? '').toLowerCase().contains(q) ||
         (t.details ?? '').toLowerCase().contains(q) ||
         (widget.data.category(t.categoryId)?.name.toLowerCase().contains(q) ?? false);
@@ -164,7 +165,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                       child: TextField(
                         decoration: const InputDecoration(
                           prefixIcon: Icon(Icons.search),
-                          hintText: 'Search merchant, note or category',
+                          hintText: 'Search name, amount (800), note or category',
                           isDense: true,
                         ),
                         onChanged: (v) => setState(() => _query = v.trim()),
