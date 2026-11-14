@@ -1082,6 +1082,30 @@ class AppData extends ChangeNotifier {
 
   /// Changes what you owe a friend (positive: you owe more) without touching any account, e.g. part of the
   /// money they sent was for things you bought for them.
+  /// A connected friend: the balance you both see changes only by an entry they OK. Sets it from [current] to
+  /// [target] (positive: you owe them) with one clearly named entry, never a made-up payment.
+  Future<void> setSharedBalance(FriendLink link, String friendId, double current, double target, String reason) async {
+    final change = double.parse((target - current).toStringAsFixed(2)); // positive: you owe more
+    if (change.abs() < 0.005) return;
+    String m(double v) =>
+        '${v < 0 ? 'they owe you' : 'you owe'} ₹${v.abs().toStringAsFixed(v == v.roundToDouble() ? 0 : 2)}';
+    await _db.from('shared_entries').insert({
+      'link_id': link.id,
+      'creditor': change > 0 ? friendId : me,
+      'debtor': change > 0 ? me : friendId,
+      'amount': change.abs(),
+      'kind': 'settle',
+      'description':
+          'Balance set: ${m(target)} (was ${m(current)})${reason.trim().isEmpty ? '' : ' · ${reason.trim()}'}',
+      'at': DateTime.now().toUtc().toIso8601String(),
+      'created_by': me,
+    });
+    await _reloadFriendsData();
+  }
+
+  /// Whether this payment is in one of your accounts (not added by hand without one).
+  bool inAnAccount(String txnId) => txn(txnId)?.accountId != null;
+
   Future<void> correctFriendBalance(String person, double change, String reason) async {
     final cat = friendsCategory?.id ?? (await ensureLoanCategory()).id;
     await _db.from('transactions').insert({

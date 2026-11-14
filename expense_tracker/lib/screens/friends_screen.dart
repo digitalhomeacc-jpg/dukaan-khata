@@ -550,9 +550,17 @@ class FriendDetailScreen extends StatelessWidget {
   Future<void> _correct(BuildContext context, double balance) async {
     final result = await showDialog<({double owed, String reason, bool fresh})>(
       context: context,
-      builder: (c) => _CorrectBalanceDialog(person: person, balance: balance),
+      builder: (c) => _CorrectBalanceDialog(person: person, balance: balance, connected: data.linkFor(person) != null),
     );
     if (result == null) return;
+    // Connected: the balance you both see is changed by one entry they OK (never a made-up bank payment).
+    final link = data.linkFor(person);
+    final me = data.me;
+    if (link != null && me != null) {
+      final friendId = link.a == me ? link.b! : link.a;
+      await data.setSharedBalance(link, friendId, balance, result.owed, result.reason);
+      return;
+    }
     if (result.fresh) {
       await data.startFresh(
         {AppData.keyOf(person): person},
@@ -605,6 +613,7 @@ class FriendDetailScreen extends StatelessWidget {
     final what = e.description == null || e.description!.isEmpty ? '' : ' · ${e.description}';
     return switch (e.kind) {
       'expense' => mine ? '$person\'s share$what' : 'Your share$what ($person paid)',
+      'settle' when (e.description ?? '').startsWith('Balance set') => e.description!,
       _ => mine ? 'You paid $person$what' : '$person paid you$what',
     };
   }
@@ -763,7 +772,17 @@ class FriendDetailScreen extends StatelessWidget {
                 MaterialPageRoute<void>(
                   builder: (_) => ListenableBuilder(
                     listenable: data,
-                    builder: (_, _) => PlaceDetailScreen(data: data, keys: {key}),
+                    builder: (_, _) => PlaceDetailScreen(
+                      data: data,
+                      keys: {
+                        key,
+                        for (final a in data.aliases.entries)
+                          if (AppData.keyOf(a.value) == key) a.key,
+                      },
+                      extra: link == null || me == null
+                          ? null
+                          : _NotInBankCard(data: data, linkId: link.id, me: me, person: person, text: _entryText),
+                    ),
                   ),
                 ),
               ),
@@ -805,7 +824,7 @@ class FriendDetailScreen extends StatelessWidget {
                         if (e.mergedInto != null)
                           'same money as another record: merged'
                         else if (!e.deleted && e.kind != 'expense')
-                          switch (backingOf(e, me)) {
+                          switch (backingOf(e, me, inMyBank: data.inAnAccount)) {
                             Backing.both => 'in both banks ✓',
                             Backing.mine => 'only in your bank',
                             Backing.theirs => 'only in ${person.split(' ').first}\'s bank',
@@ -964,8 +983,10 @@ class FriendDetailScreen extends StatelessWidget {
 }
 
 class _CorrectBalanceDialog extends StatefulWidget {
-  const _CorrectBalanceDialog({required this.person, required this.balance});
+  const _CorrectBalanceDialog({required this.person, required this.balance, this.connected = false});
 
+  /// Connected: the change goes to the friend for their OK; no private fresh start.
+  final bool connected;
   final String person;
 
   /// Positive: you owe them.
@@ -1026,16 +1047,26 @@ class _CorrectBalanceDialogState extends State<_CorrectBalanceDialog> {
               onChanged: (_) => setState(() {}),
             ),
             const SizedBox(height: 8),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              value: _fresh,
-              onChanged: (v) => setState(() => _fresh = v),
-              title: const Text('Start fresh from today'),
-              subtitle: const Text(
-                'Older entries stay as history but stop counting; this amount is the opening balance',
+            if (widget.connected)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  '${widget.person.split(' ').first} sees the same balance, so this is sent as one entry '
+                  '"Balance set" for their OK. Until they say OK, the balance stays as it is.',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              )
+            else
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                value: _fresh,
+                onChanged: (v) => setState(() => _fresh = v),
+                title: const Text('Start fresh from today'),
+                subtitle: const Text(
+                  'Older entries stay as history but stop counting; this amount is the opening balance',
+                ),
               ),
-            ),
-            if (!_fresh && diff != null && diff >= 0.005) ...[
+            if ((widget.connected || !_fresh) && diff != null && diff >= 0.005) ...[
               const SizedBox(height: 12),
               Text('The other ${money(diff)} was:', style: Theme.of(context).textTheme.titleSmall),
               const SizedBox(height: 6),
@@ -1205,7 +1236,7 @@ class _BankCheckCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
-    final c = bankCheck(data.sharedEntries, linkId, me);
+    final c = bankCheck(data.sharedEntries, linkId, me, inMyBank: data.inAnAccount);
     final first = person.split(' ').first;
     final total = c.values.fold(0, (v, x) => v + x.count);
     if (total == 0) return const SizedBox.shrink();
@@ -1243,6 +1274,66 @@ class _BankCheckCard extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Under "All payments with …": what you share with a connected friend that is not a payment in your bank
+/// (expenses they paid, cash, balance changes), so everything between you is in one place.
+class _NotInBankCard extends StatelessWidget {
+  const _NotInBankCard({
+    required this.data,
+    required this.linkId,
+    required this.me,
+    required this.person,
+    required this.text,
+  });
+
+  final AppData data;
+  final String linkId;
+  final String me;
+  final String person;
+  final String Function(SharedEntry e, String me) text;
+
+  @override
+  Widget build(BuildContext context) {
+    final list =
+        data.sharedEntries
+            .where(
+              (e) =>
+                  e.linkId == linkId &&
+                  !e.deleted &&
+                  backingOf(e, me, inMyBank: data.inAnAccount) != Backing.both &&
+                  backingOf(e, me, inMyBank: data.inAnAccount) != Backing.mine,
+            )
+            .toList()
+          ..sort((a, b) => b.at.compareTo(a.at));
+    if (list.isEmpty) return const SizedBox.shrink();
+    final total = list.fold(0.0, (v, e) => v + (e.debtor == me ? (e.confirmedAmount ?? 0) : -(e.confirmedAmount ?? 0)));
+    return Card.outlined(
+      margin: const EdgeInsets.only(top: 12),
+      child: ExpansionTile(
+        initiallyExpanded: true,
+        title: Text('Shared with ${person.split(' ').first}, not in your bank (${list.length})'),
+        subtitle: Text(
+          total.abs() < 0.005
+              ? 'Even'
+              : (total > 0 ? 'You owe ${money(total)} from these' : 'Owed to you ${money(-total)} from these'),
+        ),
+        children: [
+          for (final e in list)
+            ListTile(
+              dense: true,
+              leading: Icon(e.kind == 'expense' ? Icons.call_split : Icons.swap_horiz),
+              title: Text(text(e, me)),
+              subtitle: Text('${dayLabel(e.at)}${e.waiting ? ' · waiting for OK' : ''}'),
+              trailing: Text(
+                '${e.debtor == me ? '−' : '+'}${money(e.amount)}',
+                style: TextStyle(fontWeight: FontWeight.w600, color: e.debtor == me ? null : Colors.green.shade700),
+              ),
+            ),
+        ],
       ),
     );
   }

@@ -181,13 +181,16 @@ class _PlacesViewState extends State<PlacesView> {
 
 /// One place or person as a ledger: who it is, how their money counts, money out / in / running net.
 class PlaceDetailScreen extends StatelessWidget {
-  const PlaceDetailScreen({super.key, required this.data, required this.keys, this.vpas = const {}});
+  const PlaceDetailScreen({super.key, required this.data, required this.keys, this.vpas = const {}, this.extra});
 
   final AppData data;
   final Set<String> keys;
 
   /// The place's UPI IDs: two businesses with the same name are told apart by these.
   final Set<String> vpas;
+
+  /// Shown under the summary (a connected friend: what is shared but not in your bank).
+  final Widget? extra;
 
   Future<void> _rename(BuildContext context, PayeeGroup g) async {
     final ctl = TextEditingController(text: g.name);
@@ -343,6 +346,7 @@ class PlaceDetailScreen extends StatelessWidget {
                   LinkedNamesCard(data: data, person: g.name),
                   if (looksLikePerson(g.name)) SamePersonCard(data: data, person: g.name),
                   const SizedBox(height: 16),
+                  ?extra,
                   // Who is this?
                   Text('Who is this?', style: text.titleSmall),
                   const SizedBox(height: 8),

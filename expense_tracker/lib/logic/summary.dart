@@ -1439,8 +1439,10 @@ Map<String, double> allocateSettle({
 /// Where a shared record with a connected friend is backed: both banks, only one, or neither (added by hand).
 enum Backing { both, mine, theirs, none }
 
-Backing backingOf(SharedEntry e, String me) {
-  final mine = e.creditor == me ? e.creditorTxn : e.debtorTxn;
+/// [inMyBank]: whether my linked payment is in a bank account (one added by hand, with no account, is not).
+Backing backingOf(SharedEntry e, String me, {bool Function(String txnId)? inMyBank}) {
+  var mine = e.creditor == me ? e.creditorTxn : e.debtorTxn;
+  if (mine != null && inMyBank != null && !inMyBank(mine)) mine = null;
   final theirs = e.creditor == me ? e.debtorTxn : e.creditorTxn;
   if (mine != null && theirs != null) return Backing.both;
   if (mine != null) return Backing.mine;
@@ -1449,11 +1451,16 @@ Backing backingOf(SharedEntry e, String me) {
 }
 
 /// "Check with banks" for one friend: how many counted records each bank backs, and their amounts.
-Map<Backing, ({int count, double amount})> bankCheck(Iterable<SharedEntry> entries, String linkId, String me) {
+Map<Backing, ({int count, double amount})> bankCheck(
+  Iterable<SharedEntry> entries,
+  String linkId,
+  String me, {
+  bool Function(String txnId)? inMyBank,
+}) {
   final out = {for (final b in Backing.values) b: (count: 0, amount: 0.0)};
   for (final e in entries) {
     if (e.linkId != linkId || e.deleted || e.kind == 'expense') continue;
-    final b = backingOf(e, me);
+    final b = backingOf(e, me, inMyBank: inMyBank);
     out[b] = (count: out[b]!.count + 1, amount: _round(out[b]!.amount + e.amount));
   }
   return out;
