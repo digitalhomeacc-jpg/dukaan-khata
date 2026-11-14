@@ -60,7 +60,7 @@ class _LoginScreenState extends State<LoginScreen> {
           await _auth.signInWithOtp(
             email: email,
             shouldCreateUser: false,
-            emailRedirectTo: kIsWeb ? Uri.base.replace(fragment: '', query: '').toString() : null,
+            emailRedirectTo: kIsWeb ? '${Uri.base.origin}${Uri.base.path}' : null,
           );
           _codeSent = true;
           _info =
