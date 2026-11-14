@@ -6,6 +6,7 @@ import '../logic/summary.dart';
 import '../models.dart';
 import '../ui/category_style.dart';
 import '../ui/format.dart';
+import '../ui/paid_with.dart';
 import '../ui/range.dart';
 import '../ui/selection.dart';
 import 'txn_editor.dart';
@@ -15,22 +16,27 @@ enum _Mode { spent, received, net }
 /// The longest range a report covers.
 const _maxDays = 731;
 
-Future<void> openCategoryReport(BuildContext context, AppData data, {DateTimeRange? range}) =>
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => ListenableBuilder(
-          listenable: data,
-          builder: (_, _) => CategoryReportScreen(data: data, initial: range),
-        ),
-      ),
-    );
+Future<void> openCategoryReport(
+  BuildContext context,
+  AppData data, {
+  DateTimeRange? range,
+  PaidWith paidWith = const PaidWith.all(),
+}) => Navigator.of(context).push(
+  MaterialPageRoute<void>(
+    builder: (_) => ListenableBuilder(
+      listenable: data,
+      builder: (_, _) => CategoryReportScreen(data: data, initial: range, paidWith: paidWith),
+    ),
+  ),
+);
 
 /// Spending (or money received) by category over any range up to two years.
 class CategoryReportScreen extends StatefulWidget {
-  const CategoryReportScreen({super.key, required this.data, this.initial});
+  const CategoryReportScreen({super.key, required this.data, this.initial, this.paidWith = const PaidWith.all()});
 
   final AppData data;
   final DateTimeRange? initial;
+  final PaidWith paidWith;
 
   @override
   State<CategoryReportScreen> createState() => _CategoryReportScreenState();
@@ -43,6 +49,7 @@ class _CategoryReportScreenState extends State<CategoryReportScreen> {
 
   /// What the list shows: money out, money in, or in minus out.
   var _mode = _Mode.spent;
+  late var _paidWith = widget.paidWith;
 
   AppData get data => widget.data;
 
@@ -50,8 +57,9 @@ class _CategoryReportScreenState extends State<CategoryReportScreen> {
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
     final scheme = Theme.of(context).colorScheme;
+    final txns = _paidWith.isAll ? data.transactions : data.transactions.where(_paidWith.keep).toList();
     List<CategoryLine> report(bool debits) => categoryReport(
-      data.transactions,
+      txns,
       _range.start,
       _range.end,
       debits: debits,
@@ -146,6 +154,13 @@ class _CategoryReportScreenState extends State<CategoryReportScreen> {
               withTwoYears: true,
               maxDays: _maxDays,
               scroll: false,
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: PaidWithChip(data: data, value: _paidWith, onChanged: (v) => setState(() => _paidWith = v)),
             ),
           ),
           Container(

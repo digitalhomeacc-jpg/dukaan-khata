@@ -4,7 +4,9 @@ import '../data/app_data.dart';
 import '../logic/summary.dart';
 import '../ui/category_style.dart';
 import '../ui/format.dart';
+import '../ui/paid_with.dart';
 import '../ui/range.dart';
+import 'analysis_screen.dart';
 import 'budgets_screen.dart';
 import 'category_report_screen.dart';
 import 'places_screen.dart';
@@ -20,6 +22,7 @@ class InsightsScreen extends StatefulWidget {
 
 class _InsightsScreenState extends State<InsightsScreen> {
   var _range = rangePresets().first.range;
+  var _paidWith = const PaidWith.all();
 
   DateTime get _lastMonth => monthStart(_range.end.subtract(const Duration(days: 1)));
   bool get _isMonth => _range == monthRange(_range.start);
@@ -27,22 +30,24 @@ class _InsightsScreenState extends State<InsightsScreen> {
   @override
   Widget build(BuildContext context) {
     final data = widget.data;
+    // Only payments from the chosen account or way of paying.
+    final txns = _paidWith.isAll ? data.transactions : data.transactions.where(_paidWith.keep).toList();
     final s = summarizeBetween(
-      data.transactions,
+      txns,
       _range.start,
       _range.end,
       loanCategoryIds: data.notSpendingCategoryIds,
       shares: data.shareTotalsNow,
     );
     final trend = monthlySpend(
-      data.transactions,
+      txns,
       _range.start.year <= 2015 ? monthStart(DateTime.now()) : _lastMonth,
       6,
       loanCategoryIds: data.notSpendingCategoryIds,
       shares: data.shareTotalsNow,
     );
     final inv = data.investmentCategoryIds;
-    final invested = data.transactions
+    final invested = txns
         .where((t) => inv.contains(t.categoryId) && !t.excluded && inRange(t.txnAt, _range))
         .fold(0.0, (v, t) => v + (t.isDebit ? t.amount : -t.amount));
     final text = Theme.of(context).textTheme;
@@ -54,8 +59,15 @@ class _InsightsScreenState extends State<InsightsScreen> {
           child: RangeBar(range: _range, onChanged: (r) => setState(() => _range = r)),
         ),
         Padding(
-          padding: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.only(bottom: 4),
           child: RangeChips(range: _range, onChanged: (r) => setState(() => _range = r)),
+        ),
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Wrap(
+            spacing: 8,
+            children: [PaidWithChip(data: data, value: _paidWith, onChanged: (v) => setState(() => _paidWith = v))],
+          ),
         ),
         if (data.budgets.isNotEmpty && _isMonth) ...[
           Row(
@@ -171,6 +183,11 @@ class _InsightsScreenState extends State<InsightsScreen> {
         appBar: AppBar(
           title: const Text('Insights'),
           actions: [
+            IconButton(
+              tooltip: 'Self analysis',
+              icon: const Icon(Icons.psychology_outlined),
+              onPressed: () => openAnalysis(context, data),
+            ),
             IconButton(
               tooltip: 'Categories report',
               icon: const Icon(Icons.bar_chart),
