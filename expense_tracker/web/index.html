@@ -43,8 +43,53 @@
 
   <title>Expense Tracker</title>
   <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#00897B">
+  <style>
+    html, body { margin: 0; height: 100%; background: #f4faf8; }
+    @media (prefers-color-scheme: dark) { html, body { background: #101413; } #splash { color: #dfe6e3; } }
+    #splash { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center;
+      justify-content: center; gap: 14px; font: 16px -apple-system, system-ui, sans-serif; color: #1b2a26; }
+    #splash .dot { width: 34px; height: 34px; border-radius: 50%; border: 3px solid #00897B33;
+      border-top-color: #00897B; animation: spin 0.9s linear infinite; }
+    #splash button { display: none; font: inherit; padding: 10px 22px; border: 0; border-radius: 22px;
+      background: #00897B; color: #fff; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+  <script>
+    // Old copies of the app kept by a service worker can show a white page: remove them.
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then(function (rs) { rs.forEach(function (r) { r.unregister(); }); });
+      if (window.caches) caches.keys().then(function (ks) { ks.forEach(function (k) { caches.delete(k); }); });
+    }
+    var started = false;
+    window.addEventListener('flutter-first-frame', function () {
+      started = true;
+      var s = document.getElementById('splash'); if (s) s.remove();
+    });
+    // Not started after 12 s: offer a reload instead of a blank page.
+    setTimeout(function () {
+      if (started) return;
+      var t = document.getElementById('splash-text'), b = document.getElementById('splash-reload');
+      if (t) t.textContent = 'Taking longer than usual…';
+      if (b) b.style.display = 'block';
+    }, 12000);
+    // iPhone: coming back to a page restored from memory, or losing the drawing surface
+    // after a while in the background, leaves it white. Reload instead.
+    window.addEventListener('pageshow', function (e) { if (e.persisted) location.reload(); });
+    document.addEventListener('webglcontextlost', function () { setTimeout(function () { location.reload(); }, 300); }, true);
+    var hiddenAt = 0;
+    document.addEventListener('visibilitychange', function () {
+      if (document.hidden) { hiddenAt = Date.now(); return; }
+      if (hiddenAt && Date.now() - hiddenAt > 30 * 60 * 1000) location.reload();
+    });
+  </script>
 </head>
 <body>
+  <div id="splash">
+    <div class="dot"></div>
+    <div id="splash-text">Loading Expense Tracker…</div>
+    <button id="splash-reload" onclick="location.reload()">Reload</button>
+  </div>
   <!--
     You can customize the "flutter_bootstrap.js" script.
     This is useful to provide a custom configuration to the Flutter loader
