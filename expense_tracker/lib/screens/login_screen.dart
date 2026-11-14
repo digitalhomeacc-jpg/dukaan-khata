@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:material_ui/material_ui.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -15,7 +16,6 @@ class _LoginScreenState extends State<LoginScreen> {
   final _name = TextEditingController();
   final _email = TextEditingController();
   final _password = TextEditingController();
-  final _code = TextEditingController();
   var _mode = _Mode.signIn;
   var _busy = false;
   var _codeSent = false;
@@ -27,7 +27,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   void dispose() {
-    for (final c in [_name, _email, _password, _code]) {
+    for (final c in [_name, _email, _password]) {
       c.dispose();
     }
     super.dispose();
@@ -56,14 +56,16 @@ class _LoginScreenState extends State<LoginScreen> {
             _mode = _Mode.signIn;
           }
         case _Mode.forgot:
-          if (!_codeSent) {
-            await _auth.signInWithOtp(email: email, shouldCreateUser: false);
-            _codeSent = true;
-            _info = 'We emailed a 6-digit code to $email.';
-          } else {
-            await _auth.verifyOTP(email: email, token: _code.text.trim(), type: OtpType.email);
-            await _auth.updateUser(UserAttributes(password: _password.text));
-          }
+          // The email has a sign-in link: it opens the app signed in, which then asks for a new password.
+          await _auth.signInWithOtp(
+            email: email,
+            shouldCreateUser: false,
+            emailRedirectTo: kIsWeb ? Uri.base.replace(fragment: '', query: '').toString() : null,
+          );
+          _codeSent = true;
+          _info =
+              'We emailed a sign-in link to $email. Open it on this phone: you are signed in and can '
+              'set a new password. No email? Check Spam, or wait a minute and send again.';
       }
     } on AuthException catch (e) {
       _error = e.message;
@@ -84,7 +86,7 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final needsPassword = _mode != _Mode.forgot || _codeSent;
+    final needsPassword = _mode != _Mode.forgot;
     return Scaffold(
       body: SafeArea(
         child: Center(
@@ -126,25 +128,12 @@ class _LoginScreenState extends State<LoginScreen> {
                     ],
                     TextFormField(
                       controller: _email,
-                      enabled: !_codeSent,
                       keyboardType: TextInputType.emailAddress,
                       autofillHints: const [AutofillHints.email],
                       decoration: const InputDecoration(labelText: 'Email', prefixIcon: Icon(Icons.email)),
                       validator: (v) =>
                           RegExp(r'^\S+@\S+\.\S+$').hasMatch((v ?? '').trim()) ? null : 'Enter a valid email',
                     ),
-                    if (_mode == _Mode.forgot && _codeSent) ...[
-                      const SizedBox(height: 12),
-                      TextFormField(
-                        controller: _code,
-                        keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(
-                          labelText: 'Code from the email',
-                          prefixIcon: Icon(Icons.pin),
-                        ),
-                        validator: (v) => (v ?? '').trim().length < 6 ? 'Enter the code' : null,
-                      ),
-                    ],
                     if (needsPassword) ...[
                       const SizedBox(height: 12),
                       TextFormField(
@@ -180,7 +169,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           : Text(switch (_mode) {
                               _Mode.signIn => 'Sign in',
                               _Mode.signUp => 'Create account',
-                              _Mode.forgot => _codeSent ? 'Set new password' : 'Email me a code',
+                              _Mode.forgot => _codeSent ? 'Send the link again' : 'Email me a sign-in link',
                             }),
                     ),
                     const SizedBox(height: 8),
