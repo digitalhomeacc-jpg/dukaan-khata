@@ -565,7 +565,8 @@ class _KhataScreenState extends State<KhataScreen> {
     final img = await boundary.toImage(pixelRatio: 2.5);
     final bytes = (await img.toByteData(format: ui.ImageByteFormat.png))!.buffer.asUint8List();
     if (mounted) setState(() => _sharing = false);
-    final msg = app.t('reminder_msg')
+    // the caption says who owes whom: they owe us → reminder; we owe them → our dues; settled
+    final msg = app.t(st.closing > 0 ? 'reminder_msg' : st.closing < 0 ? 'statement_msg_we_owe' : 'statement_msg_settled')
         .replaceAll('{name}', st.ledger.name)
         .replaceAll('{shop}', app.businessName)
         .replaceAll('{amount}', Money.fmt(st.closing, abs: true));
@@ -739,7 +740,8 @@ class _KhataScreenState extends State<KhataScreen> {
                   IconButton.filledTonal(icon: const Icon(Icons.call), onPressed: () => WhatsApp.call(l.phone!)),
                   const SizedBox(width: 8),
                 ],
-                if (l.group.isParty)
+                // a reminder only when they owe us (never to a supplier we owe)
+                if (l.group.isParty && st.closing > 0)
                   Flexible(
                     child: FittedBox(
                       fit: BoxFit.scaleDown,

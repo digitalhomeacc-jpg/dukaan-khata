@@ -837,9 +837,11 @@ const Map<String, (String, String)> _s = {
   'create_shop': ('दुकान सुरू करा', 'Create shop'),
   'your_name': ('तुमचे नाव', 'Your name'),
   'imported': ('आयात झाले', 'Imported'),
+  'statement_msg_we_owe': ('नमस्कार {name}, {shop} कडून आपले ₹{amount} देणे बाकी आहे. खाते उतारा सोबत पाठवला आहे. धन्यवाद.', 'Hello {name}, {shop} owes you ₹{amount}. Statement attached. Thank you.'),
+  'statement_msg_settled': ('नमस्कार {name}, {shop} कडे आपले खाते पूर्ण आहे (काहीही बाकी नाही). खाते उतारा सोबत. धन्यवाद.', 'Hello {name}, your account with {shop} is fully settled. Statement attached. Thank you.'),
   'reminder_msg': (
-    'नमस्कार {name}, {shop} कडे आपली बाकी ₹{amount} आहे. कृपया लवकर जमा करावी. धन्यवाद.',
-    'Hello {name}, your balance with {shop} is ₹{amount}. Kindly pay at the earliest. Thank you.'
+    'नमस्कार {name}, आपल्याकडे {shop} चे ₹{amount} (उधारी) बाकी आहेत. कृपया लवकर जमा करावे. धन्यवाद.',
+    'Hello {name}, ₹{amount} (credit) is due from you to {shop}. Kindly pay at the earliest. Thank you.'
   ),
   'err_required': ('आवश्यक', 'Required'),
   'err_party': ('ग्राहक/खाते निवडा', 'Select a party'),
