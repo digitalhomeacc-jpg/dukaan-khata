@@ -28,6 +28,9 @@ class _PlacesViewState extends State<PlacesView> {
   var _byAmount = false;
   var _query = '';
 
+  /// Only places with payments still to give a category.
+  var _toSort = false;
+
   DateTime? get _from {
     final now = DateTime.now();
     return switch (_period) {
@@ -49,6 +52,15 @@ class _PlacesViewState extends State<PlacesView> {
       aliases: data.aliases,
     );
     if (_byAmount) groups.sort((a, b) => b.total.compareTo(a.total));
+    int unsorted(PayeeGroup g) => g.txns.where((t) => t.categoryId == null).length;
+    final withUnsorted = groups.where((g) => unsorted(g) > 0).toList();
+    if (_toSort) {
+      groups = withUnsorted
+        ..sort((a, b) {
+          double amt(PayeeGroup g) => g.txns.where((t) => t.categoryId == null).fold(0.0, (v, t) => v + t.amount);
+          return amt(b).compareTo(amt(a));
+        });
+    }
     if (_query.isNotEmpty) {
       final q = _query.toLowerCase();
       groups = groups
@@ -72,6 +84,15 @@ class _PlacesViewState extends State<PlacesView> {
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
           child: Row(
             children: [
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: FilterChip(
+                  avatar: _toSort ? null : const Icon(Icons.help_outline, size: 18),
+                  label: Text('To sort (${withUnsorted.length})'),
+                  selected: _toSort,
+                  onSelected: (v) => setState(() => _toSort = v),
+                ),
+              ),
               for (final p in _Period.values)
                 Padding(
                   padding: const EdgeInsets.only(right: 8),
@@ -113,9 +134,12 @@ class _PlacesViewState extends State<PlacesView> {
           ),
         ),
         if (groups.isEmpty)
-          const Padding(
-            padding: EdgeInsets.all(32),
-            child: Text('No spending in this period.', textAlign: TextAlign.center),
+          Padding(
+            padding: const EdgeInsets.all(32),
+            child: Text(
+              _toSort ? 'Everything in this period has a category.' : 'No spending in this period.',
+              textAlign: TextAlign.center,
+            ),
           ),
         for (final (i, g) in groups.take(150).indexed)
           ListTile(
@@ -123,6 +147,7 @@ class _PlacesViewState extends State<PlacesView> {
             title: Text(g.name, maxLines: 1, overflow: TextOverflow.ellipsis),
             subtitle: Text(
               [
+                if (_toSort) '${unsorted(g)} to sort',
                 '${g.count}× · avg ${money(g.average)} · last ${dayLabel(g.lastPaid)}',
                 if ((nameCount[g.name.toLowerCase()] ?? 0) > 1 && g.vpas.isNotEmpty) 'UPI ••${g.vpas.first}',
               ].join(' · '),

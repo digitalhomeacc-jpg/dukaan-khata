@@ -3,10 +3,35 @@ import 'package:expense_tracker/data/app_data.dart';
 import 'package:expense_tracker/logic/summary.dart';
 import 'package:expense_tracker/models.dart';
 import 'package:expense_tracker/screens/insights_screen.dart';
+import 'package:expense_tracker/screens/places_screen.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 
 void main() {
+  testWidgets('places: "To sort" shows only places with payments that have no category', (tester) async {
+    final now = DateTime.now();
+    final data = AppData.preview(
+      categories: const [Category(id: 'f', name: 'Food & Dining', icon: 'restaurant', color: 0xFFFF5722)],
+      transactions: [
+        Txn(id: '1', amount: 100, isDebit: true, txnAt: now, merchant: 'Cafe One', categoryId: 'f'),
+        Txn(id: '2', amount: 80, isDebit: true, txnAt: now, merchant: 'Pan Stall'),
+        Txn(id: '3', amount: 60, isDebit: true, txnAt: now, merchant: 'Pan Stall'),
+      ],
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: PlacesView(data: data)),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Cafe One'), findsOneWidget);
+    await tester.tap(find.text('To sort (1)'));
+    await tester.pumpAndSettle();
+    expect(find.text('Cafe One'), findsNothing);
+    expect(find.text('Pan Stall'), findsOneWidget);
+    expect(find.textContaining('2 to sort'), findsOneWidget);
+  });
+
   test('a place renamed the same on several UPI IDs is one place', () {
     final now = DateTime.now();
     final groups = payeeGroups([
