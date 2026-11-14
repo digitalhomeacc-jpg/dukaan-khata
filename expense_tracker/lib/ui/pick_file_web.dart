@@ -11,7 +11,7 @@ Future<PickedFile?> pickFile() {
   final input = web.HTMLInputElement()
     ..type = 'file'
     // No strict filter: Safari greys out .xls files when it does not know their type.
-    ..accept = '.xls,.xlsx,.csv,.txt,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv,text/plain,*/*'
+    ..accept = '.pdf,application/pdf,.xls,.xlsx,.csv,.txt,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv,text/plain,*/*'
     ..style.display = 'none';
   web.document.body!.append(input);
 

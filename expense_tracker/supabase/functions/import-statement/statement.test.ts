@@ -1,7 +1,7 @@
 // Run with: node --test supabase/functions/import-statement/statement.test.ts
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { planImport, readNarration, readStatement, statementDate, type StatementTxn } from "./statement.ts";
+import { federalPayee, planImport, readFederalLines, readNarration, readStatement, statementDate, type StatementTxn } from "./statement.ts";
 
 // HDFC layout with made-up people and numbers.
 const ROWS: string[][] = [
@@ -136,4 +136,68 @@ test("match exactly: a withdrawal the bank put back is fixed, a manual guess on 
   assert.equal(plan.already, 1);
   // Outside the statement's days nothing is touched.
   assert.ok(!plan.extras.some((e) => e.id === "out"));
+});
+
+// Federal Bank PDF text, made-up people and numbers.
+const FED = [
+  "Name  : ASHA RAVI KUMAR  Branch Name  : Pune",
+  "Address Last Updated On  : 01/01/2021  Account Number  : 11110100001234",
+  "Regd. Mobile Number  : 919800000001  Customer ID  : 1",
+  "Email ID  : asha.kumar90@example.com  Account Open Date  : 01/01/2021",
+  "Statement of Account for the period 2026-08-01 to 2026-08-31",
+  "Tran  Cheque  DR",
+  "Date  Value Date  Particulars  Tran ID  Withdrawals  Deposits  Balance",
+  "Type  Details  /CR",
+  "Opening Balance  1,000.00  Cr",
+  "02-AUG-2026  02-AUG-2026  UPI IN/600000000001/priya.sharma-  TFR  S1  250.00  1,250.00  Cr",
+  "2@okicici/0000",
+  "03-AUG-2026  03-AUG-2026  UPIOUT/600000000002  TFR  S2  60.00  1,190.00  Cr",
+  "/q123456789@ybl/UPI/5812",
+  "The Federal Bank Ltd. Corporate Office: Federal Towers, Aluva, Kerala",
+  "Ph:0484 2630996 Website:www.federalbank.co.in  Page 1 of 2",
+  "04-AUG-2026  04-AUG-2026  UPIOUT/600000000003/asha.kumar90-  TFR  S3  500.00  690.00  Cr",
+  "1@oksbi/0000",
+  "05-AUG-2026  05-AUG-2026  FT IMPS/IFI/600000000004/ASHA  TFR  S4  2,000.00  2,690.00  Cr",
+  "RAVI KUMAR/IMPS",
+  "29-AUG-2026  28-AUG-2026  SBINT:01-06-2026 to 28-08-2026  SBINT  S5  12.00  2,702.00  Cr",
+  "[11110100001234]",
+  "GRAND TOTAL  560.00  2262.00",
+  "****END OF STATEMENT****",
+];
+
+test("Federal Bank PDF: in or out from the balance, wrapped particulars, your own transfers", () => {
+  const st = readFederalLines(FED);
+  assert.deepEqual(st.problems, []);
+  assert.equal(st.bank, "Federal");
+  assert.equal(st.accountLast4, "1234");
+  assert.equal(st.from, "2026-08-01");
+  assert.equal(st.openingBalance, 1000);
+  assert.equal(st.closingBalance, 2702);
+  assert.deepEqual(st.txns.map((t) => [t.date, t.direction, t.amount, t.merchant]), [
+    ["2026-08-02", "credit", 250, "Priya Sharma"],
+    ["2026-08-03", "debit", 60, "PhonePe shop ••6789"],
+    ["2026-08-04", "debit", 500, "Asha Ravi Kumar"],
+    ["2026-08-05", "credit", 2000, "Asha Ravi Kumar"],
+    ["2026-08-29", "credit", 12, "Bank interest"],
+  ]);
+  assert.equal(st.txns[0].narration, "UPI IN/600000000001/priya.sharma-2@okicici/0000");
+  assert.equal(st.txns[0].rrn, "600000000001");
+  assert.equal(st.txns[3].narration, "FT IMPS/IFI/600000000004/ASHA RAVI KUMAR/IMPS");
+});
+
+test("Federal Bank PDF that does not add up is refused", () => {
+  const broken = FED.map((l) => l.replace("S2  60.00", "S2  66.00"));
+  const st = readFederalLines(broken);
+  assert.ok(st.problems.some((p) => p.includes("03-AUG-2026")));
+  const cut = FED.filter((l) => !l.startsWith("GRAND TOTAL"));
+  assert.ok(readFederalLines(cut).problems.some((p) => p.includes("GRAND TOTAL")));
+});
+
+test("payee from a UPI ID alone", () => {
+  assert.equal(federalPayee("siddharth0723@slc"), "Siddharth");
+  assert.equal(federalPayee("paytmqr5w649z@ptys"), "Paytm shop ••649z");
+  assert.equal(federalPayee("bharatpe.9s0x0g0b1t75346"), "BharatPe shop ••5346");
+  assert.equal(federalPayee("netflixupi.payu@hdfcbank"), "Netflix");
+  assert.equal(federalPayee("borrowrepayments@slc"), "Slice borrow repayment");
+  assert.equal(federalPayee("7020000000@axl"), "7020000000@axl");
 });

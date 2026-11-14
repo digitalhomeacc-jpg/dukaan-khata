@@ -132,8 +132,9 @@ class _ImportStatementScreenState extends State<ImportStatementScreen> {
         children: [
           if (done == null) ...[
             const Text(
-              'In NetBanking, download your account statement as XLS (Excel) or Delimited (CSV), not PDF. '
-              'Choose any dates, e.g. from 1 April. Payments the app already has from bank emails are not added twice.',
+              'In NetBanking, download your account statement as XLS (Excel) or Delimited (CSV). Federal Bank: the PDF '
+              'works too (remove its password first). Choose any dates, e.g. from 1 April. Payments the app already has '
+              'from bank emails are not added twice.',
             ),
             const SizedBox(height: 16),
             FilledButton.tonalIcon(

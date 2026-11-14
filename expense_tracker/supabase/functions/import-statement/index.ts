@@ -8,8 +8,9 @@
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import * as XLSX from "npm:xlsx@0.18.5";
+import { getDocumentProxy } from "npm:unpdf@0.12.1";
 import { defaultCategoryName, merchantKey } from "../ingest-email/parsers.ts";
-import { planImport, readStatement, type StatementTxn } from "./statement.ts";
+import { planImport, readFederalLines, readStatement, type Statement, type StatementTxn } from "./statement.ts";
 
 const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, {
   auth: { persistSession: false },
@@ -46,24 +47,42 @@ Deno.serve(async (req) => {
   }
   if (!body.file) return json(400, { error: "No file." });
 
-  let rows: string[][];
+  let rows: string[][] = [];
   let kind = "unknown";
+  let st: Statement;
   try {
     const bytes = Uint8Array.from(atob(body.file), (c) => c.charCodeAt(0));
     const head = new TextDecoder().decode(bytes.slice(0, 64)).trimStart().toLowerCase();
     kind = head.startsWith("%pdf") ? "pdf" : bytes[0] === 0x50 && bytes[1] === 0x4b ? "xlsx"
       : bytes[0] === 0xd0 && bytes[1] === 0xcf ? "xls" : head.startsWith("<") ? "html" : "text";
     if (kind === "pdf") {
-      return json(400, { error: "This is a PDF. In NetBanking choose the format XLS or Delimited, then download again." });
+      let lines: string[];
+      try {
+        lines = await pdfLines(bytes);
+      } catch (e) {
+        return json(400, { error: /password|encrypt/i.test(String(e))
+          ? "This PDF has a password. Open it once, save or print it without the password, then import that copy."
+          : `Could not read the PDF: ${e}` });
+      }
+      if (!/federal bank/i.test(lines.join("\n"))) {
+        return json(400, { error: "PDFs can be read for Federal Bank. For this bank, download the statement as XLS (Excel) or Delimited (CSV)." });
+      }
+      const fed = readFederalLines(lines);
+      if (fed.problems.length) {
+        // Never import a statement that does not add up: say where, so it can be fixed.
+        return json(400, { error: `This statement did not add up, so nothing was imported. ${fed.problems.slice(0, 4).join(" ")}` });
+      }
+      st = fed;
+    } else {
+      const wb = XLSX.read(bytes, { type: "array" });
+      const sheet = wb.Sheets[wb.SheetNames[0]];
+      rows = (XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, defval: "" }) as unknown[][])
+        .map((r) => r.map((c) => String(c ?? "")));
+      st = readStatement(rows);
     }
-    const wb = XLSX.read(bytes, { type: "array" });
-    const sheet = wb.Sheets[wb.SheetNames[0]];
-    rows = (XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, defval: "" }) as unknown[][])
-      .map((r) => r.map((c) => String(c ?? "")));
   } catch (e) {
     return json(400, { error: `Could not open the file: ${e}` });
   }
-  const st = readStatement(rows);
   if (!st.txns.length) {
     // Say what was in the file, so a new layout can be added.
     const sample = rows.filter((r) => r.some((c) => c.trim())).slice(0, 25)
@@ -255,3 +274,33 @@ async function checkDays(userId: string, accountId: string, bankByDay: Map<strin
   return { days: days.filter((d) => !openingDate || d >= openingDate).length, differences: differences.slice(0, 50), differentDays: differences.length };
 }
 
+
+/** A PDF's text, one string per printed line; columns far apart are separated by two spaces. */
+async function pdfLines(bytes: Uint8Array): Promise<string[]> {
+  const pdf = await getDocumentProxy(bytes);
+  const out: string[] = [];
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const page = await pdf.getPage(p);
+    const content = await page.getTextContent();
+    const rows: Array<{ y: number; items: Array<{ x: number; w: number; s: string }> }> = [];
+    for (const it of content.items as Array<{ str?: string; transform: number[]; width: number }>) {
+      if (!it.str?.trim()) continue;
+      const x = it.transform[4], y = it.transform[5];
+      let r = rows.find((r) => Math.abs(r.y - y) < 2.5);
+      if (!r) rows.push((r = { y, items: [] }));
+      r.items.push({ x, w: it.width, s: it.str });
+    }
+    rows.sort((a, b) => b.y - a.y);
+    for (const r of rows) {
+      r.items.sort((a, b) => a.x - b.x);
+      let line = "", end: number | null = null;
+      for (const it of r.items) {
+        if (end != null) line += it.x - end > 3 ? "  " : "";
+        line += it.s;
+        end = it.x + it.w;
+      }
+      out.push(line.replace(/\s+$/, ""));
+    }
+  }
+  return out;
+}

@@ -190,6 +190,206 @@ export function readStatement(rows: string[][]): Statement {
   return st;
 }
 
+/**
+ * Federal Bank PDF statement, from its text lines (columns separated by two or more spaces):
+ *   "17-NOV-2025  17-NOV-2025  UPI IN/114289461244/tiwari.rnst-  TFR  S71689235  616.00  876.43  Cr"
+ *   "2@okhdfcbank/0000"                                  ← the particulars carry on
+ * In or out is read from how the balance moved, and every line must agree with it (and the grand total),
+ * otherwise [problems] says where and nothing should be imported.
+ */
+export function readFederalLines(lines: string[]): Statement & { problems: string[] } {
+  const text = lines.slice(0, 40).join("\n");
+  const acc = text.match(/Account Number\s*:\s*(\d{4,})/i);
+  const period = text.match(/period\s+(\d{4}-\d{2}-\d{2})\s+to\s+(\d{4}-\d{2}-\d{2})/i);
+  const st: Statement & { problems: string[] } = {
+    bank: "Federal",
+    accountLast4: acc ? acc[1].slice(-4) : null,
+    from: period?.[1] ?? null,
+    to: period?.[2] ?? null,
+    openingBalance: null,
+    closingBalance: null,
+    txns: [],
+    problems: [],
+  };
+  const money = (v: string) => Number(v.replace(/,/g, ""));
+  const signed = (v: string, side: string) => (/dr/i.test(side) ? -1 : 1) * money(v);
+  const round = (v: number) => Math.round(v * 100) / 100;
+  const noise = /Federal Bank Ltd|^Ph:|Page \d+ of \d+|^Abbreviations|GRAND TOTAL|END OF STATEMENT|^DISCLAIMER|^Tran\b|^Type\b|^Date\s+Value Date/i;
+  const entry = /^(\d{2}-[A-Z]{3}-\d{4})\s{2,}\d{2}-[A-Z]{3}-\d{4}\s{2,}(.*)$/i;
+  let balance: number | null = null;
+  let open: { cols: string[]; extra: string[] } | null = null;
+  let seq = 0;
+  let totals: [number, number] | null = null;
+
+  const finish = () => {
+    if (!open) return;
+    const { cols, extra } = open;
+    open = null;
+    // [date, value date, ...particulars, type, tran id, (cheque), amount, balance, Cr/Dr]
+    const side = cols.at(-1)!, bal = cols.at(-2)!, amt = cols.at(-3)!;
+    const typeAt = cols.slice(0, -3).findLastIndex((c, i) => i >= 3 && /^[A-Z]{2,6}$/.test(c));
+    let particulars = cols.slice(2, typeAt > 2 ? typeAt : cols.length - 5).join(" ");
+    for (const e of extra) {
+      // Federal wraps by width: in the middle of an ID (joined as is), or between words of a name.
+      particulars += /[A-Z]$/.test(particulars) && /^[A-Z]/.test(e) ? ` ${e}` : e;
+    }
+    const date = statementDate(cols[0]);
+    if (!date || !/^(cr|dr)$/i.test(side) || !/^[\d,]+\.\d{2}$/.test(amt) || !/^[\d,]+\.\d{2}$/.test(bal)) {
+      st.problems.push(`Could not read the line: ${cols.join(" | ")}`);
+      return;
+    }
+    const value = money(amt), after = signed(bal, side);
+    let direction: "debit" | "credit";
+    if (balance == null) {
+      st.problems.push("No opening balance before the first entry.");
+      direction = "debit";
+    } else {
+      const moved = round(after - balance);
+      if (Math.abs(Math.abs(moved) - value) > 0.005) {
+        st.problems.push(`${cols[0]} ₹${amt}: the balance moved by ₹${Math.abs(moved).toFixed(2)}, not ₹${amt}.`);
+      }
+      direction = moved < 0 ? "debit" : "credit";
+    }
+    balance = after;
+    const info = readFederalNarration(particulars);
+    st.txns.push({
+      date,
+      seq: seq++,
+      narration: particulars,
+      ref: cols[typeAt + 1] ?? null,
+      rrn: info.rrn,
+      amount: round(value),
+      direction,
+      closingBalance: after,
+      merchant: info.merchant,
+      vpa: vpaTail(info.vpa),
+      method: info.method,
+      atm: info.atm && direction === "debit",
+    });
+  };
+
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) continue;
+    const ob = line.match(/^Opening Balance\s+([\d,]+\.\d{2})\s+(Cr|Dr)$/i);
+    if (ob) {
+      balance = st.openingBalance = signed(ob[1], ob[2]);
+      continue;
+    }
+    const gt = line.match(/GRAND TOTAL\s+([\d,]+\.\d{2})\s+([\d,]+\.\d{2})/i);
+    if (gt) totals = [money(gt[1]), money(gt[2])];
+    if (entry.test(line)) {
+      finish();
+      open = { cols: line.split(/\s{2,}/), extra: [] };
+      continue;
+    }
+    if (noise.test(line) || /\s{2,}/.test(line)) {
+      finish();
+      continue;
+    }
+    if (open) (open as { extra: string[] }).extra.push(line);
+  }
+  finish();
+
+  // Your own UPI IDs (the statement's email or mobile number): money between your own accounts, under your name.
+  const holder = text.match(/^Name\s*:\s*(.+?)(?:\s{2,}|$)/im)?.[1]?.trim();
+  const email = text.match(/Email ID\s*:\s*([^\s@]+)@/i)?.[1]?.toLowerCase();
+  const mobile = text.match(/Mobile Number\s*:\s*(?:91)?(\d{10})\b/i)?.[1];
+  if (holder) {
+    const name = holder.toLowerCase().replace(/\b[a-z]/g, (c) => c.toUpperCase());
+    for (const t of st.txns) {
+      const id = (t.narration.match(/([a-z0-9.\-_]+)@[a-z0-9]+/i)?.[1] ?? "").toLowerCase();
+      if (id && ((email && id.startsWith(email)) || (mobile && id.includes(mobile)))) t.merchant = name;
+      if (/^FT IMPS/i.test(t.narration) && t.merchant?.toLowerCase() === holder.toLowerCase()) t.merchant = name;
+    }
+  }
+
+  st.closingBalance = balance;
+  if (st.openingBalance == null) st.problems.push("The opening balance was not found.");
+  if (!st.txns.length) st.problems.push("No entries were found.");
+  if (totals) {
+    const out = round(st.txns.filter((t) => t.direction === "debit").reduce((v, t) => v + t.amount, 0));
+    const into = round(st.txns.filter((t) => t.direction === "credit").reduce((v, t) => v + t.amount, 0));
+    if (Math.abs(out - totals[0]) > 0.005 || Math.abs(into - totals[1]) > 0.005) {
+      st.problems.push(`Read ₹${out.toFixed(2)} out and ₹${into.toFixed(2)} in; the bank's total says ₹${totals[0].toFixed(2)} and ₹${totals[1].toFixed(2)}.`);
+    }
+  } else {
+    st.problems.push("The GRAND TOTAL line was not found, so the statement may be cut short.");
+  }
+  st.from ??= st.txns[0]?.date ?? null;
+  st.to ??= st.txns.at(-1)?.date ?? null;
+  return st;
+}
+
+const BRANDS: [RegExp, string][] = [
+  [/^borrowrepayments@slc/i, "Slice borrow repayment"],
+  [/^amazonpaylater/i, "Amazon Pay Later repayment"],
+  [/^amazon/i, "Amazon"],
+  [/^netflix/i, "Netflix"],
+  [/^youtube/i, "YouTube"],
+  [/^spotify/i, "Spotify"],
+  [/^nykaa/i, "Nykaa"],
+  [/^swiggy/i, "Swiggy"],
+  [/^zomato/i, "Zomato"],
+  [/^(blinkit|grofers)/i, "Blinkit"],
+  [/^zepto/i, "Zepto"],
+  [/^irctc/i, "IRCTC"],
+  [/^uber/i, "Uber"],
+  [/^(olacabs|ola\b)/i, "Ola"],
+  [/^(jio|myjio)/i, "Jio"],
+  [/^airtel/i, "Airtel"],
+];
+
+/**
+ * A payee name from a UPI ID alone (Federal Bank statements have no names): brands by name, shop QR codes as
+ * "PhonePe shop ••8806" (each shop stays apart), people as their first name ("siddhant0723@slc" → "Siddhant"),
+ * which the app then widens to the full name it knows for that UPI ID.
+ */
+export function federalPayee(id: string): string {
+  const v = id.trim();
+  if (!v) return "UPI payment";
+  for (const [re, name] of BRANDS) if (re.test(v)) return name;
+  const local = v.split("@")[0];
+  const tail = (x: string) => `••${x.replace(/[^a-z0-9]/gi, "").slice(-4)}`;
+  if (/^q\d+$/i.test(local) && /@ybl$/i.test(v)) return `PhonePe shop ${tail(local)}`;
+  if (/^paytm(qr|\.s)/i.test(local)) return `Paytm shop ${tail(local)}`;
+  if (/^bharatpe/i.test(local)) return `BharatPe shop ${tail(local)}`;
+  if (/^gpay-\d+/i.test(local) || /@okbiz/i.test(v)) return `GPay shop ${tail(local)}`;
+  if (/^vyapar\./i.test(local)) return `Vyapar shop ${tail(local)}`;
+  if (/^\d{10,}$/.test(local) || !v.includes("@")) return v;
+  const words = local
+    .replace(/^(paytm|gpay|phonepe)[.\-]/i, "")
+    .replace(/-\d+$/, "")
+    .split(/[._\-]+/)
+    .map((w) => w.replace(/\d+/g, ""))
+    .filter((w) => w.length >= 2);
+  if (!words.length) return v;
+  return words.map((w) => w[0].toUpperCase() + w.slice(1).toLowerCase()).join(" ");
+}
+
+/**
+ * Federal Bank particulars: "UPIOUT/<ref>/<upi id>/<note>/<code>", "UPI IN/<ref>/<upi id>/…",
+ * "FT IMPS/IFI/<ref>/<name>/…", "NFT/<name>/…", "SBINT:…" (interest).
+ */
+export function readFederalNarration(n: string): { merchant: string | null; method: Method; rrn: string | null; atm: boolean; vpa: string | null } {
+  const s = n.replace(/\s+/g, " ").trim();
+  const rrn = s.match(/\b(\d{12})\b/)?.[1] ?? null;
+  const vpa = s.match(/([a-z0-9.\-_]+@[a-z0-9]+)/i)?.[1] ?? null;
+  if (/^SBINT/i.test(s)) return { merchant: "Bank interest", method: "other", rrn, atm: false, vpa: null };
+  if (/^UPI\s*(OUT|IN)\b/i.test(s)) {
+    const id = vpa ?? s.split("/")[2]?.trim() ?? "";
+    return { merchant: federalPayee(id), method: "upi", rrn, atm: false, vpa };
+  }
+  const imps = s.match(/^FT\s+IMPS\/IF[IO]\/\d+\/([^\/]+)/i);
+  if (imps) {
+    return { merchant: cleanMerchant(imps[1].replace(/\s+(DIS|DISB|PV)$/i, "")), method: "netbanking", rrn, atm: false, vpa: null };
+  }
+  const neft = s.match(/^NFT\/([^\/]+)/i);
+  if (neft) return { merchant: cleanMerchant(neft[1]), method: "netbanking", rrn, atm: false, vpa: null };
+  const r = readNarration(s);
+  return { ...r, vpa };
+}
+
 /** An entry the app already has on the account (from an email, a statement or by hand). */
 export interface ExistingRow {
   id: string;
