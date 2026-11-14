@@ -5,6 +5,7 @@ import '../logic/summary.dart';
 import '../ui/category_style.dart';
 import '../ui/format.dart';
 import 'budgets_screen.dart';
+import 'category_report_screen.dart';
 import 'month_bar.dart';
 import 'places_screen.dart';
 
@@ -103,6 +104,15 @@ class _InsightsScreenState extends State<InsightsScreen> {
           children: [
             Expanded(child: Text('Where the money went', style: text.titleMedium)),
             Text(money(s.spent), style: text.titleMedium),
+            const SizedBox(width: 4),
+            TextButton(
+              onPressed: () => openCategoryReport(
+                context,
+                data,
+                range: DateTimeRange(start: _month, end: DateTime(_month.year, _month.month + 1)),
+              ),
+              child: const Text('Details'),
+            ),
           ],
         ),
         const SizedBox(height: 8),
@@ -150,6 +160,13 @@ class _InsightsScreenState extends State<InsightsScreen> {
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Insights'),
+          actions: [
+            IconButton(
+              tooltip: 'Categories report',
+              icon: const Icon(Icons.bar_chart),
+              onPressed: () => openCategoryReport(context, data),
+            ),
+          ],
           bottom: const TabBar(
             tabs: [
               Tab(text: 'Overview'),

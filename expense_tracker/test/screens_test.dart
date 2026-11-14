@@ -1,7 +1,9 @@
 import 'package:expense_tracker/data/app_data.dart';
 import 'package:expense_tracker/models.dart';
 import 'package:expense_tracker/screens/accounts_screen.dart';
+import 'package:expense_tracker/logic/summary.dart';
 import 'package:expense_tracker/screens/categories_screen.dart';
+import 'package:expense_tracker/screens/category_report_screen.dart';
 import 'package:expense_tracker/screens/friends_screen.dart';
 import 'package:expense_tracker/screens/gmail_setup_screen.dart';
 import 'package:expense_tracker/screens/insights_screen.dart';
@@ -207,6 +209,34 @@ void main() {
     expect(find.widgetWithText(FilledButton, 'Save'), findsOneWidget);
     await tester.scrollUntilVisible(find.text('Loans with friends'), 200, scrollable: find.byType(Scrollable).last);
     expect(find.text('Loans with friends'), findsOneWidget);
+  });
+
+  testWidgets('categories report: ranges, spent and received, a category\'s payments', (tester) async {
+    final data = sample();
+    await pump(tester, CategoryReportScreen(data: data));
+    expect(tester.takeException(), isNull);
+    expect(find.text('This month'), findsOneWidget);
+    expect(find.text('Spent'), findsWidgets);
+    await tester.tap(find.text('12 months'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(InkWell).at(0), warnIfMissed: false);
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+
+  test('categories report adds up spending by category in a date range', () {
+    final t = [
+      Txn(id: 'a', amount: 100, isDebit: true, txnAt: DateTime(2026, 1, 5), categoryId: 'f'),
+      Txn(id: 'b', amount: 50, isDebit: true, txnAt: DateTime(2026, 1, 31, 23), categoryId: 'f'),
+      Txn(id: 'c', amount: 70, isDebit: true, txnAt: DateTime(2026, 2, 1), categoryId: 'f'),
+      Txn(id: 'd', amount: 30, isDebit: true, txnAt: DateTime(2026, 1, 10)),
+      Txn(id: 'e', amount: 500, isDebit: false, txnAt: DateTime(2026, 1, 10), categoryId: 's'),
+      Txn(id: 'x', amount: 999, isDebit: true, txnAt: DateTime(2026, 1, 10), excluded: true),
+    ];
+    final out = categoryReport(t, DateTime(2026, 1, 1), DateTime(2026, 2, 1), debits: true);
+    expect(out.map((l) => (l.id, l.total, l.count)), [('f', 150.0, 2), (null, 30.0, 1)]);
+    final into = categoryReport(t, DateTime(2026, 1, 1), DateTime(2026, 2, 1), debits: false);
+    expect(into.single.total, 500);
   });
 
   testWidgets('editor for an email transaction', (tester) async {

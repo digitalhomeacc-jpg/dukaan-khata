@@ -84,6 +84,43 @@ MonthSummary summarize(
   );
 }
 
+/// One category over a date range: money out or in, how many payments, and which.
+class CategoryLine {
+  CategoryLine(this.id);
+
+  final String? id;
+  double total = 0;
+  final List<Txn> txns = [];
+  int get count => txns.length;
+}
+
+/// Spending ([debits] true) or money received by category from [from] up to (not including) [to],
+/// leaving out transfers, friends' money and investments; friends' shares of a payment are not yours.
+List<CategoryLine> categoryReport(
+  Iterable<Txn> txns,
+  DateTime from,
+  DateTime to, {
+  required bool debits,
+  Set<String> notSpendingIds = const {},
+  ShareTotals shares = ShareTotals.none,
+}) {
+  final lines = <String?, CategoryLine>{};
+  for (final t in txns) {
+    if (t.isDebit != debits || !counts(t, notSpendingIds)) continue;
+    if (t.txnAt.isBefore(from) || !t.txnAt.isBefore(to)) continue;
+    final v = shares.own(t);
+    if (v <= 0) continue;
+    final l = lines.putIfAbsent(t.categoryId, () => CategoryLine(t.categoryId));
+    l.total += v;
+    l.txns.add(t);
+  }
+  for (final l in lines.values) {
+    l.total = _round(l.total);
+    l.txns.sort((a, b) => b.txnAt.compareTo(a.txnAt));
+  }
+  return lines.values.toList()..sort((a, b) => b.total.compareTo(a.total));
+}
+
 /// Spending for the [count] months ending with [lastMonth], oldest first.
 List<MapEntry<DateTime, double>> monthlySpend(
   Iterable<Txn> txns,
