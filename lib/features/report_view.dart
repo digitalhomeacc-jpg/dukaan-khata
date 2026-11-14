@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'check_lists_screen.dart';
 import 'health_screen.dart';
+import 'item_pnl_sheet.dart';
 import '../accounting/models.dart';
 import '../accounting/reports.dart';
 import '../core/money.dart';
@@ -107,7 +108,11 @@ class _ReportViewState extends State<ReportView> {
                 ascending: ascending,
                 onSort: _sortBy,
                 onTapRow: (ref) async {
-                  if (widget.rowsAreLedgers) {
+                  if (ref.startsWith('pnl:')) {
+                    // an item in the profit reports: show how its profit was worked out
+                    final p = ref.split(':');
+                    await ItemPnlSheet.show(context, p[1], p.sublist(2).join(':'));
+                  } else if (widget.rowsAreLedgers) {
                     final l = await app.ledgers.byId(ref);
                     if (l != null && context.mounted) KhataScreen.open(context, l.id);
                   } else {

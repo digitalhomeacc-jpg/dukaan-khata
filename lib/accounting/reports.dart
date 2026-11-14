@@ -721,6 +721,8 @@ class Reports {
             pr(i.profit, i.sales),
           ]
       ],
+      // tap a row: how this item's profit was worked out (pnl:<date>:<item>)
+      rowRefs: [for (final i in list) 'pnl:${r.to}:${i.item.id}'],
       highlight: {for (var k = 0; k < list.length; k++) if (list[k].flags.isNotEmpty) k},
       totals: [tr('total'), '', Money.fmt(r.itemSales), Money.fmt(r.itemCost), pr(r.goodsProfit, r.itemSales)],
     );
@@ -781,6 +783,7 @@ class Reports {
             Money.fmt(i.avg.round()),
           ]
       ],
+      rowRefs: [for (final i in r.items) 'pnl:${r.to}:${i.item.id}'],
       highlight: {for (var k = 0; k < r.items.length; k++) if (r.items[k].flags.isNotEmpty) k},
       totals: [tr('total'), Money.fmt(r.openTotal), Money.fmt(r.itemPurchases), Money.fmt(r.discToGoods), Money.fmt(r.closeTotal), ''],
     );
