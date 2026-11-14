@@ -652,20 +652,66 @@ class AppData extends ChangeNotifier {
 
   Future<void> disconnect(String linkId) => _db.from('friend_links').delete().eq('id', linkId);
 
-  Future<void> answerMatch(String questionId, bool yes) =>
-      _db.rpc('answer_match', params: {'p_question': questionId, 'p_yes': yes});
+  /// Answers "same payment?". The card goes at once (Yes also settles the entry's other questions);
+  /// if the server refuses, it comes back and the error is thrown.
+  Future<void> answerMatch(String questionId, bool yes) async {
+    final before = questions;
+    final q = questions.where((x) => x.id == questionId).firstOrNull;
+    if (q == null) return; // already answered (a second tap)
+    questions = [
+      for (final x in questions)
+        if (x.id != questionId && !(yes && x.entryId == q.entryId)) x,
+    ];
+    notifyListeners();
+    try {
+      final ok = await _db.rpc('answer_match', params: {'p_question': questionId, 'p_yes': yes});
+      if (ok != true) throw StateError('not saved, please try again');
+      await _reloadFriendsData();
+    } catch (_) {
+      questions = before;
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Reads shared entries and questions again right after an answer, not waiting for the live feed.
+  Future<void> _reloadFriendsData() async {
+    final entries = await _db.from('shared_entries').select().order('at');
+    final qs = await _db.from('match_questions').select();
+    sharedEntries = entries.map(SharedEntry.fromMap).toList();
+    questions = qs.map(MatchQuestion.fromMap).toList();
+    notifyListeners();
+  }
 
   /// Asks to remove a shared entry: it goes once the other person says OK (one not yet agreed goes at once).
-  Future<void> deleteSharedEntry(String id) => _db.rpc('request_remove_shared', params: {'p_entry': id});
+  Future<void> deleteSharedEntry(String id) async {
+    final done = await _db.rpc('request_remove_shared', params: {'p_entry': id});
+    if (done != true) throw StateError('not saved, please try again');
+    await _reloadFriendsData();
+  }
 
   /// OK or no to a change a connected friend made to an entry between you.
-  Future<void> answerShared(String id, {required bool ok}) =>
-      _db.rpc('answer_shared', params: {'p_entry': id, 'p_ok': ok});
+  Future<void> answerShared(String id, {required bool ok}) async {
+    if (!_answering.add(id)) return; // a second tap while saving
+    notifyListeners();
+    try {
+      final done = await _db.rpc('answer_shared', params: {'p_entry': id, 'p_ok': ok});
+      if (done != true) throw StateError('not saved, please try again');
+      await _reloadFriendsData();
+    } catch (_) {
+      _answering.remove(id);
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Answers sent but not yet back from the server: hidden from "waiting" meanwhile.
+  final _answering = <String>{};
 
   /// Changes by friends waiting for your OK.
   List<SharedEntry> get waitingForMe => [
     for (final e in sharedEntries)
-      if (e.waiting && e.changedBy != null && e.changedBy != me) e,
+      if (e.waiting && e.changedBy != null && e.changedBy != me && !_answering.contains(e.id)) e,
   ];
 
   /// "Also known as": payments from this payee name count as that friend.

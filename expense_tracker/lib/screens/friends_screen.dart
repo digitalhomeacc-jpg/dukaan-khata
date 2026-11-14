@@ -255,6 +255,15 @@ class _QuestionCard extends StatelessWidget {
   final AppData data;
   final MatchQuestion question;
 
+  Future<void> _answer(BuildContext context, bool yes) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await data.answerMatch(question.id, yes);
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('Could not save your answer: $e')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final e = data.sharedEntries.where((x) => x.id == question.entryId).firstOrNull;
@@ -291,8 +300,8 @@ class _QuestionCard extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  TextButton(onPressed: () => data.answerMatch(question.id, false), child: const Text('No')),
-                  FilledButton(onPressed: () => data.answerMatch(question.id, true), child: const Text('Yes, same')),
+                  TextButton(onPressed: () => _answer(context, false), child: const Text('No')),
+                  FilledButton(onPressed: () => _answer(context, true), child: const Text('Yes, same')),
                 ],
               ),
             ],
@@ -802,7 +811,13 @@ class FriendDetailScreen extends StatelessWidget {
                             ],
                           ),
                         );
-                        if (yes == true) await data.deleteSharedEntry(e.id);
+                        if (yes != true || !context.mounted) return;
+                        final messenger = ScaffoldMessenger.of(context);
+                        try {
+                          await data.deleteSharedEntry(e.id);
+                        } catch (err) {
+                          messenger.showSnackBar(SnackBar(content: Text('Could not send: $err')));
+                        }
                       },
               )
           else ...[
@@ -1034,6 +1049,15 @@ class _WaitingLine extends StatelessWidget {
   final SharedEntry entry;
   final String person;
 
+  Future<void> _answer(BuildContext context, bool ok) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await data.answerShared(entry.id, ok: ok);
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('Could not save your answer: $e')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final e = entry;
@@ -1052,7 +1076,17 @@ class _WaitingLine extends StatelessWidget {
             ),
           ),
           if (e.confirmedAmount == null && e.removeRequestedBy == null)
-            TextButton(onPressed: () => data.deleteSharedEntry(e.id), child: const Text('Cancel')),
+            TextButton(
+              onPressed: () async {
+                final messenger = ScaffoldMessenger.of(context);
+                try {
+                  await data.deleteSharedEntry(e.id);
+                } catch (err) {
+                  messenger.showSnackBar(SnackBar(content: Text('Could not cancel: $err')));
+                }
+              },
+              child: const Text('Cancel'),
+            ),
         ],
       );
     }
@@ -1064,8 +1098,8 @@ class _WaitingLine extends StatelessWidget {
             style: TextStyle(color: scheme.error, fontWeight: FontWeight.w600),
           ),
         ),
-        TextButton(onPressed: () => data.answerShared(e.id, ok: false), child: const Text('No')),
-        FilledButton.tonal(onPressed: () => data.answerShared(e.id, ok: true), child: const Text('OK')),
+        TextButton(onPressed: () => _answer(context, false), child: const Text('No')),
+        FilledButton.tonal(onPressed: () => _answer(context, true), child: const Text('OK')),
       ],
     );
   }

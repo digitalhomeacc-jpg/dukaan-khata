@@ -206,4 +206,14 @@ void main() {
     );
     expect(find.textContaining("Waiting for Ravi Kumar's OK"), findsOneWidget);
   });
+
+  test('answering "same payment?" removes the card at once; if saving fails it comes back', () async {
+    final d = sample();
+    expect(d.questions, hasLength(1));
+    final seen = <int>[];
+    d.addListener(() => seen.add(d.questions.length));
+    await expectLater(d.answerMatch('q', false), throwsA(anything)); // no server in tests: the save fails…
+    expect(seen.first, 0); // …but the card went away at once, before any server answer
+    expect(d.questions, hasLength(1)); // and on failure it is back, nothing lost
+  });
 }
