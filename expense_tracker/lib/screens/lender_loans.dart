@@ -308,6 +308,41 @@ class LoanDetailScreen extends StatelessWidget {
     await data.addLoanEvent(loan.id, kind, v, when, note: 'Added by hand');
   }
 
+  Future<void> _setCreditLeft(BuildContext context, Loan loan) async {
+    final c = TextEditingController(text: loan.availableCredit?.toStringAsFixed(0) ?? '');
+    final v = await showDialog<double>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Credit left to use'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'The spending power the ${loan.name} app shows now (e.g. "Purchase power"). New spends and repayments '
+              'move it from today.',
+              style: Theme.of(ctx).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: c,
+              autofocus: true,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(labelText: 'Credit left', prefixText: '₹ '),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, double.tryParse(c.text.replaceAll(',', ''))),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    if (v != null && v >= 0) await data.setCreditLeft(loan.id, v);
+  }
+
   Future<void> _setOwed(BuildContext context, Loan loan) async {
     final c = TextEditingController();
     final ok = await showDialog<bool>(
@@ -402,6 +437,35 @@ class LoanDetailScreen extends StatelessWidget {
               const SizedBox(width: 12),
               Expanded(
                 child: OutlinedButton(onPressed: () => _setOwed(context, loan), child: const Text('Set amount owed')),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              if (loan.kind == LoanKind.creditLine) ...[
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () => _setCreditLeft(context, loan),
+                    icon: const Icon(Icons.credit_score_outlined, size: 18),
+                    label: const Text('Credit left'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+              ],
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => ListenableBuilder(
+                        listenable: data,
+                        builder: (_, _) => ScheduleScreen(data: data, loanId: loan.id),
+                      ),
+                    ),
+                  ),
+                  icon: const Icon(Icons.event_note_outlined, size: 18),
+                  label: const Text('Repayment schedule'),
+                ),
               ),
             ],
           ),
@@ -770,6 +834,225 @@ class _LoanFormState extends State<_LoanForm> {
             ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// The lender's repayment schedule: add, change or remove dues, or paste them from a screenshot's text.
+class ScheduleScreen extends StatefulWidget {
+  const ScheduleScreen({super.key, required this.data, required this.loanId});
+
+  final AppData data;
+  final String loanId;
+
+  @override
+  State<ScheduleScreen> createState() => _ScheduleScreenState();
+}
+
+class _ScheduleScreenState extends State<ScheduleScreen> {
+  late List<({DateTime date, double amount})> _rows = [...?widget.data.loan(widget.loanId)?.schedule];
+  var _changed = false;
+  var _busy = false;
+
+  void _set(List<({DateTime date, double amount})> rows) => setState(() {
+    _rows = rows..sort((a, b) => a.date.compareTo(b.date));
+    _changed = true;
+  });
+
+  Future<void> _edit([int? i]) async {
+    final old = i == null ? null : _rows[i];
+    var date = old?.date ?? DateTime(DateTime.now().year, DateTime.now().month + 1, 5);
+    final amount = TextEditingController(text: old == null ? '' : old.amount.toStringAsFixed(2));
+    final result = await showDialog<({DateTime date, double amount})>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setState) => AlertDialog(
+          title: Text(old == null ? 'Add a due' : 'Change this due'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              OutlinedButton.icon(
+                onPressed: () async {
+                  final d = await showDatePicker(
+                    context: ctx,
+                    initialDate: date,
+                    firstDate: DateTime(2020),
+                    lastDate: DateTime(2040),
+                  );
+                  if (d != null) setState(() => date = d);
+                },
+                icon: const Icon(Icons.event),
+                label: Text(DateFormat('d MMM yyyy').format(date)),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: amount,
+                autofocus: old == null,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(labelText: 'Amount due', prefixText: '₹ '),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+            FilledButton(
+              onPressed: () {
+                final a = double.tryParse(amount.text.replaceAll(',', ''));
+                if (a != null && a > 0) Navigator.pop(ctx, (date: date, amount: a));
+              },
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (result == null) return;
+    _set([
+      for (final (j, r) in _rows.indexed)
+        if (j != i) r,
+      result,
+    ]);
+  }
+
+  Future<void> _paste() async {
+    final c = TextEditingController();
+    final text = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Paste the schedule'),
+        content: SizedBox(
+          width: 400,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'On iPhone: open the screenshot in Photos, tap the text icon (bottom right), then Copy All, and paste '
+                'it here. Several screenshots? Paste them one after another. Lines like "Due on 05 Dec \'26 '
+                '₹4,940.24" or "05/12/2026 4940.24" are read.',
+                style: Theme.of(ctx).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: c,
+                autofocus: true,
+                minLines: 4,
+                maxLines: 10,
+                decoration: const InputDecoration(hintText: 'Paste here'),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, c.text), child: const Text('Read it')),
+        ],
+      ),
+    );
+    if (text == null || !mounted) return;
+    final found = parseSchedule(text);
+    if (found.isEmpty) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('No dates with amounts found in that text.')));
+      return;
+    }
+    // Same dates are replaced, new ones added.
+    final byDay = {for (final r in _rows) DateTime(r.date.year, r.date.month, r.date.day): r};
+    for (final f in found) {
+      byDay[DateTime(f.date.year, f.date.month, f.date.day)] = f;
+    }
+    _set(byDay.values.toList());
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Read ${found.length} due${found.length == 1 ? '' : 's'}. Check them, then Save.')),
+    );
+  }
+
+  Future<void> _save() async {
+    setState(() => _busy = true);
+    try {
+      await widget.data.saveSchedule(widget.loanId, _rows);
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not save: $e')));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final loan = widget.data.loan(widget.loanId);
+    final text = Theme.of(context).textTheme;
+    final today = DateTime.now();
+    final left = _rows.where((r) => !r.date.isBefore(DateTime(today.year, today.month, today.day)));
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('${loan?.name ?? 'Loan'}: schedule'),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: FilledButton(onPressed: _changed && !_busy ? _save : null, child: const Text('Save')),
+          ),
+        ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => _edit(),
+        icon: const Icon(Icons.add),
+        label: const Text('Add a due'),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.only(bottom: 96),
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: OutlinedButton.icon(
+              onPressed: _paste,
+              icon: const Icon(Icons.content_paste),
+              label: const Text('Paste from a screenshot'),
+              style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(48)),
+            ),
+          ),
+          if (_rows.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Text(
+                '${left.length} dues left · ${money(left.fold(0.0, (v, r) => v + r.amount))}',
+                style: text.titleSmall,
+              ),
+            ),
+          if (_rows.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(24),
+              child: Text(
+                'No schedule yet. Paste it from a screenshot, or add each due by hand.',
+                textAlign: TextAlign.center,
+              ),
+            ),
+          for (final (i, r) in _rows.indexed)
+            ListTile(
+              leading: Icon(
+                r.date.isBefore(DateTime(today.year, today.month, today.day))
+                    ? Icons.check_circle_outline
+                    : Icons.event,
+              ),
+              title: Text(DateFormat('EEE, d MMM yyyy').format(r.date)),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(money(r.amount), style: const TextStyle(fontWeight: FontWeight.w600)),
+                  IconButton(
+                    tooltip: 'Remove',
+                    icon: const Icon(Icons.close, size: 18),
+                    onPressed: () => _set([
+                      for (final (j, x) in _rows.indexed)
+                        if (j != i) x,
+                    ]),
+                  ),
+                ],
+              ),
+              onTap: () => _edit(i),
+            ),
+        ],
       ),
     );
   }

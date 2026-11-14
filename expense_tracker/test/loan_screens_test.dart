@@ -71,6 +71,22 @@ Future<void> pump(WidgetTester tester, Widget child) async {
 }
 
 void main() {
+  testWidgets('loan page: credit left and a schedule pasted from a screenshot', (tester) async {
+    final data = sample();
+    await pump(tester, LoanDetailScreen(data: data, loanId: 's'));
+    expect(find.text('Credit left'), findsOneWidget);
+    await tester.tap(find.text('Repayment schedule'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Paste from a screenshot'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), "Due on 05 Dec '26\n₹4,940.24\nDue on 05 Jan '27\n₹4,800.71");
+    await tester.tap(find.text('Read it'));
+    await tester.pumpAndSettle();
+    expect(find.text('₹4,940.24'), findsOneWidget);
+    expect(find.text('₹4,800.71'), findsOneWidget);
+    expect(find.text('2 dues left · ₹9,740.95'), findsOneWidget);
+  });
+
   testWidgets('a loan\'s own account is not a second debt on the Accounts tab', (tester) async {
     final now = DateTime.now();
     final data = AppData.preview(

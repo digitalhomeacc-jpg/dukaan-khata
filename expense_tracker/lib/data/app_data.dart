@@ -368,6 +368,27 @@ class AppData extends ChangeNotifier {
     await _db.rpc('link_loan_transactions', params: {'p_user': user!.id});
   }
 
+  /// A credit line's spending power left, as the lender shows it now.
+  Future<void> setCreditLeft(String loanId, double amount) => _db
+      .from('loans')
+      .update({'available_credit': amount, 'available_at': DateTime.now().toUtc().toIso8601String()})
+      .eq('id', loanId);
+
+  /// The lender's repayment schedule (replaces the old one).
+  Future<void> saveSchedule(String loanId, List<({DateTime date, double amount})> schedule) => _db
+      .from('loans')
+      .update({
+        'schedule': [
+          for (final e in schedule)
+            {
+              'date':
+                  '${e.date.year}-${e.date.month.toString().padLeft(2, '0')}-${e.date.day.toString().padLeft(2, '0')}',
+              'amount': e.amount,
+            },
+        ],
+      })
+      .eq('id', loanId);
+
   Future<void> deleteLoan(String id) => _db.from('loans').delete().eq('id', id);
 
   /// Records a repayment (or extra borrowing) by hand.

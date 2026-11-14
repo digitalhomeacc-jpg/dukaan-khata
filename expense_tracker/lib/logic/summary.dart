@@ -420,6 +420,53 @@ DateTime nextDueOn(int dueDay, DateTime from) {
   return thisMonth.isBefore(d) ? onMonth(d.year, d.month + 1) : thisMonth;
 }
 
+/// Reads a repayment schedule from text, e.g. copied from a screenshot with Live Text:
+/// "Due on 05 Dec '26 ₹4,940.24 Due on 05 Jan '27 ₹4,800.71…" or "05/12/2026 4940.24". Sorted by date.
+List<({DateTime date, double amount})> parseSchedule(String text) {
+  const months = {
+    'jan': 1,
+    'feb': 2,
+    'mar': 3,
+    'apr': 4,
+    'may': 5,
+    'jun': 6,
+    'jul': 7,
+    'aug': 8,
+    'sep': 9,
+    'oct': 10,
+    'nov': 11,
+    'dec': 12,
+  };
+  int year(String y) => y.length == 2 ? 2000 + int.parse(y) : int.parse(y);
+  final dates = <({int at, int end, DateTime date})>[];
+  for (final m in RegExp(r"(\d{1,2})(?:st|nd|rd|th)?\s*([A-Za-z]{3})[a-z]*\.?,?\s*['’]?(\d{2,4})").allMatches(text)) {
+    final mo = months[m.group(2)!.toLowerCase()];
+    if (mo == null) continue;
+    dates.add((at: m.start, end: m.end, date: DateTime(year(m.group(3)!), mo, int.parse(m.group(1)!))));
+  }
+  for (final m in RegExp(r'\b(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})\b').allMatches(text)) {
+    final d = int.parse(m.group(1)!), mo = int.parse(m.group(2)!);
+    if (mo < 1 || mo > 12 || d < 1 || d > 31) continue;
+    dates.add((at: m.start, end: m.end, date: DateTime(year(m.group(3)!), mo, d)));
+  }
+  dates.sort((a, b) => a.at.compareTo(b.at));
+  final out = <({DateTime date, double amount})>[];
+  for (var i = 0; i < dates.length; i++) {
+    final until = i + 1 < dates.length ? dates[i + 1].at : text.length;
+    final part = text.substring(dates[i].end, until);
+    final a = RegExp(
+      r'(?:₹|rs\.?|inr)?\s*(\d{1,3}(?:,\d{2,3})+(?:\.\d{1,2})?|\d+\.\d{1,2}|\d{3,})',
+      caseSensitive: false,
+    ).firstMatch(part);
+    if (a == null) continue;
+    final amount = double.tryParse(a.group(1)!.replaceAll(',', ''));
+    if (amount == null || amount <= 0) continue;
+    out.add((date: dates[i].date, amount: amount));
+  }
+  out.sort((a, b) => a.date.compareTo(b.date));
+  return out;
+}
+
 /// A credit line's spending power now: what the lender showed, less borrowing and spending since,
 /// plus repayments since (roughly: repayments also cover interest).
 double? creditLeft(Loan loan, Iterable<LoanEvent> events) {

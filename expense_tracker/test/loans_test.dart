@@ -6,6 +6,31 @@ LoanEvent ev(LoanEventKind k, double a, DateTime at, {String loan = 'L'}) =>
     LoanEvent(id: '$k$a$at', loanId: loan, kind: k, amount: a, at: at);
 
 void main() {
+  test('a repayment schedule is read from text copied off a screenshot', () {
+    const copied = """12:18
+Repayment schedule
+Due on 05 Dec '26
+₹4,940.24
+Due on 05 Jan '27
+₹4,800.71
+Due on 05 Apr '27
+₹4,155.82
+Due on 05 Oct '27
+₹577.45""";
+    final s = parseSchedule(copied);
+    expect(s.map((e) => (e.date.year, e.date.month, e.date.day, e.amount)).toList(), [
+      (2026, 12, 5, 4940.24),
+      (2027, 1, 5, 4800.71),
+      (2027, 4, 5, 4155.82),
+      (2027, 10, 5, 577.45),
+    ]);
+    expect(parseSchedule('05/12/2026 4940.24\n05/01/2027 Rs 4,800.71').map((e) => e.amount).toList(), [
+      4940.24,
+      4800.71,
+    ]);
+    expect(parseSchedule('nothing here'), isEmpty);
+  });
+
   test('credit left on a credit line follows spending and repayments since the lender showed it', () {
     final loan = Loan(
       id: 's',
