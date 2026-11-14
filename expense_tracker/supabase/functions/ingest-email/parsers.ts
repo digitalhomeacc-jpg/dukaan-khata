@@ -200,12 +200,31 @@ export function cleanMerchant(raw: string | undefined | null): string | null {
     .trim();
   if (s.length < 2) return null;
   if (/^\d+$/.test(s)) return null;
+  s = fromUpiIdName(s);
   if (/^(your|the|a|an|on|via|using|account|a\/c)$/i.test(s)) return null;
   // Footer and help text is never a payee.
   if (/support you|every step|report it|customer care|toll.?free|your (hdfc|icici|sbi|axis)? ?(bank )?(account|a\/c)/i.test(s)) return null;
   s = s.replace(/\s+(?:private\s+limited|pvt\.?\s*ltd\.?|limited|ltd\.?)$/i, "").trim() || s;
   if (s.length > 48) s = s.slice(0, 48).trim();
   return tidyCase(s);
+}
+
+/**
+ * A payee the bank wrote as its UPI ID: "Meenalondhe97okicici" → "Meenalondhe",
+ * "Dranshparakh1okicici-Dransh.Parakh" → "Dransh Parakh", "Jiohotstar-Paytm" → "Jiohotstar".
+ */
+export function fromUpiIdName(s: string): string {
+  if (/\s/.test(s)) return s;
+  const gateway = /^(?:paytm|razorpay|phonepe|gpay|billdesk|cashfree|payu)$/i;
+  const [first, ...rest] = s.split("-");
+  const second = rest.join("-");
+  const handle = /(ok(?:icici|icic|ici|axis|axi|ax|hdfcbank|hdfc|sbi)|ybl|ibl|axl|apl|paytm|upi)$/i;
+  if (second && gateway.test(second)) return first;
+  if (!handle.test(first) && !second) return s;
+  if (!handle.test(first)) return s;
+  const pick = second && /[a-z]{3}/i.test(second) ? second : first.replace(handle, "");
+  const name = pick.replace(/[._]+/g, " ").replace(/\d+/g, " ").replace(/\s+/g, " ").trim();
+  return name.length >= 3 ? name : s;
 }
 
 /** "UPI/P2M/412345678901/SWIGGY LIMITED/..." → "SWIGGY LIMITED" */

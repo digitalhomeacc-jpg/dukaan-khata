@@ -1,7 +1,7 @@
 // Run with: node --test supabase/functions/ingest-email/parsers.test.ts   (Node 23.6+)
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseBankEmail, type EmailInput, type ParsedTxn } from "./parsers.ts";
+import { cleanMerchant, parseBankEmail, type EmailInput, type ParsedTxn } from "./parsers.ts";
 
 const RECEIVED = "2026-11-12T05:00:00.000Z"; // 12 Nov 2026, 10:30 IST
 
@@ -440,4 +440,14 @@ test("brands are found in the UPI ID or statement details too", () => {
   assert.equal(defaultCategoryName("Blinkit Commerce", null), "Groceries");
   assert.equal(defaultCategoryName("Ajio", null), "Shopping");
   assert.equal(defaultCategoryName("Ravi Kumar", "UPI-RAVI KUMAR-9000000000@ybl-..."), null);
+});
+
+test("payees written as their UPI ID get a readable name", () => {
+  assert.equal(cleanMerchant("Meenalondhe97okicici"), "Meenalondhe");
+  assert.equal(cleanMerchant("Dranshparakh1okicici-Dransh.Parakh"), "Dransh Parakh");
+  assert.equal(cleanMerchant("Jiohotstar-Paytm"), "Jiohotstar");
+  assert.equal(cleanMerchant("Wakadepuokicici"), "Wakadepu");
+  assert.equal(cleanMerchant("Satishmore0272okicic-Satishmore027"), "Satishmore");
+  assert.equal(cleanMerchant("Swiggy"), "Swiggy");
+  assert.equal(cleanMerchant("Mpokket"), "Mpokket");
 });
