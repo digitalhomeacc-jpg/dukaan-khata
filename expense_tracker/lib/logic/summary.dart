@@ -29,7 +29,10 @@ bool counts(Txn t, Set<String> loanCategoryIds) =>
 
 /// How much of each payment friends cover, and which money received was a friend paying their part.
 class ShareTotals {
-  const ShareTotals({this.othersPart = const {}, this.paidBack = const {}});
+  const ShareTotals({this.othersPart = const {}, this.paidBack = const {}, this.parts = const {}});
+
+  /// Payment id → its split across your own categories (₹300 Groceries + ₹200 Cigarettes).
+  final Map<String, List<({String? categoryId, double amount})>> parts;
 
   /// Payment id → friends' parts of it.
   final Map<String, double> othersPart;
@@ -42,15 +45,37 @@ class ShareTotals {
   /// The part of a transaction that is really yours: your share of a group payment,
   /// and nothing for money friends sent to cover their share.
   double own(Txn t) => math.max(0, t.amount - ((t.isDebit ? othersPart : paidBack)[t.id] ?? 0));
+
+  /// Your part of a payment by category: its parts, and what is left in its own category. Always adds up
+  /// to exactly [own] (parts never take more than that).
+  List<({String? categoryId, double amount})> byCategory(Txn t) {
+    final mine = own(t);
+    final split = t.isDebit ? parts[t.id] : null;
+    if (split == null || split.isEmpty) return [(categoryId: t.categoryId, amount: mine)];
+    final out = <({String? categoryId, double amount})>[];
+    var left = mine;
+    for (final p in split) {
+      final a = math.min(p.amount, left);
+      if (a <= 0) break;
+      out.add((categoryId: p.categoryId, amount: a));
+      left -= a;
+    }
+    if (left > 0.004) out.add((categoryId: t.categoryId, amount: _round(left)));
+    return out;
+  }
 }
 
-ShareTotals shareTotals(Iterable<TxnShare> shares) {
+ShareTotals shareTotals(Iterable<TxnShare> shares, {Iterable<TxnPart> parts = const []}) {
   final others = <String, double>{}, back = <String, double>{};
   for (final s in shares) {
     others[s.txnId] = (others[s.txnId] ?? 0) + s.amount;
     if (s.paidTxnId != null) back[s.paidTxnId!] = (back[s.paidTxnId!] ?? 0) + s.amount;
   }
-  return ShareTotals(othersPart: others, paidBack: back);
+  final split = <String, List<({String? categoryId, double amount})>>{};
+  for (final p in parts) {
+    (split[p.txnId] ??= []).add((categoryId: p.categoryId, amount: p.amount));
+  }
+  return ShareTotals(othersPart: others, paidBack: back, parts: split);
 }
 
 /// Totals for one month, without transfers and loans so money is not counted twice.
@@ -84,7 +109,9 @@ MonthSummary summarizeBetween(
     if (amount <= 0) continue;
     if (t.isDebit) {
       spent += amount;
-      cat[t.categoryId] = (cat[t.categoryId] ?? 0) + amount;
+      for (final p in shares.byCategory(t)) {
+        cat[p.categoryId] = (cat[p.categoryId] ?? 0) + p.amount;
+      }
       merch[t.title] = (merch[t.title] ?? 0) + amount;
     } else {
       received += amount;
@@ -106,6 +133,9 @@ class CategoryLine {
   final String? id;
   double total = 0;
   final List<Txn> txns = [];
+
+  /// How much of each payment is in this category (less than the payment when it is split).
+  final Map<String, double> amounts = {};
   int get count => txns.length;
 }
 
@@ -123,11 +153,13 @@ List<CategoryLine> categoryReport(
   for (final t in txns) {
     if (t.isDebit != debits || !counts(t, notSpendingIds)) continue;
     if (t.txnAt.isBefore(from) || !t.txnAt.isBefore(to)) continue;
-    final v = shares.own(t);
-    if (v <= 0) continue;
-    final l = lines.putIfAbsent(t.categoryId, () => CategoryLine(t.categoryId));
-    l.total += v;
-    l.txns.add(t);
+    if (shares.own(t) <= 0) continue;
+    for (final p in shares.byCategory(t)) {
+      final l = lines.putIfAbsent(p.categoryId, () => CategoryLine(p.categoryId));
+      l.total += p.amount;
+      l.txns.add(t);
+      l.amounts[t.id] = p.amount;
+    }
   }
   for (final l in lines.values) {
     l.total = _round(l.total);
@@ -1069,12 +1101,16 @@ List<({String? id, double total, List<MapEntry<String?, double>> children})> rol
 typedef LedgerLine = ({Txn txn, double out, double into, double net});
 
 /// A place's or person's payments as a statement, newest first, with the running net.
-List<LedgerLine> placeLedger(Iterable<Txn> txns, {ShareTotals shares = ShareTotals.none}) {
+List<LedgerLine> placeLedger(
+  Iterable<Txn> txns, {
+  ShareTotals shares = ShareTotals.none,
+  Map<String, double>? amounts,
+}) {
   final sorted = txns.toList()..sort((a, b) => a.txnAt.compareTo(b.txnAt));
   var net = 0.0;
   final out = <LedgerLine>[];
   for (final t in sorted) {
-    final v = shares.own(t);
+    final v = amounts?[t.id] ?? shares.own(t);
     net += t.isDebit ? -v : v;
     out.add((txn: t, out: t.isDebit ? v : 0, into: t.isDebit ? 0 : v, net: _round(net)));
   }

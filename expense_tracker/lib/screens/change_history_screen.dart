@@ -181,6 +181,7 @@ class _ChangeHistoryScreenState extends State<ChangeHistoryScreen> {
       'friend_aliases': 'also known as',
       'people': 'who is this',
       'payee_names': 'renamed place',
+      'txn_parts': 'split into categories',
     };
     return {
       for (final r in b.rows)
@@ -224,6 +225,11 @@ class _ChangeHistoryScreenState extends State<ChangeHistoryScreen> {
       'friend_aliases' => 'Also known as: “$key”',
       'people' => 'Who is “$key”',
       'payee_names' => 'Place name for ${key.replaceFirst('vpa:', 'UPI ••').replaceFirst('name:', '')}',
+      'txn_parts' => () {
+        final c = (r['context'] as Map?) ?? const {};
+        return 'Split part of ${c['merchant'] ?? 'a payment'}'
+            '${c['amount'] == null ? '' : ' (${money((c['amount'] as num).toDouble())})'}';
+      }(),
       _ => '${r['tbl']} $key',
     };
     return '$op: $kind';
@@ -243,7 +249,8 @@ class _ChangeHistoryScreenState extends State<ChangeHistoryScreen> {
     if (r['tbl'] == 'transactions' || r['tbl'] == 'shared_entries') return [];
     return [
       for (final f in row.keys.cast<String>())
-        if (f != 'user_id') '${_fieldNames[f] ?? f.replaceAll('_', ' ')}: ${show(f, row[f])}',
+        if (!const {'user_id', 'id', 'txn_id', 'created_at'}.contains(f))
+          '${_fieldNames[f] ?? f.replaceAll('_', ' ')}: ${show(f, row[f])}',
     ];
   }
 

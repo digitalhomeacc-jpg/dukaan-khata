@@ -4,6 +4,7 @@ import '../data/app_data.dart';
 import '../models.dart';
 import '../screens/categories_screen.dart';
 import 'category_style.dart';
+import 'format.dart';
 
 /// What was picked: a category id, or null for "no category". The sheet returns null when closed.
 typedef CategoryPick = ({String? id});
@@ -408,4 +409,105 @@ Future<void> moveCategory(BuildContext context, AppData data, Category cat) asyn
     isLoan: cat.isLoan,
     parentId: picked.parent,
   );
+}
+
+/// One payment across several of your categories: "₹300 Groceries + ₹200 Cigarettes".
+/// The parts never add up to more than your share of the payment; the rest stays in its category.
+class CategoryPartsSection extends StatelessWidget {
+  const CategoryPartsSection({super.key, required this.data, required this.payment});
+
+  final AppData data;
+  final Txn payment;
+
+  Future<void> _add(BuildContext context, double left) async {
+    final pick = await pickCategory(context, data, allowNone: false, title: 'Which category is part of it?');
+    if (pick?.id == null || !context.mounted) return;
+    final ctl = TextEditingController();
+    final amount = await showDialog<double>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: Text('How much was ${data.category(pick!.id)?.name ?? 'it'}?'),
+        content: TextField(
+          controller: ctl,
+          autofocus: true,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          decoration: InputDecoration(prefixText: '₹ ', helperText: 'Up to ${money(left)}'),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c), child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () {
+              final v = double.tryParse(ctl.text.replaceAll(',', ''));
+              if (v != null && v > 0 && v <= left + 0.001) Navigator.pop(c, v);
+            },
+            child: const Text('Add'),
+          ),
+        ],
+      ),
+    );
+    if (amount == null || !context.mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await data.addPart(payment.id, pick!.id, amount);
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('Could not add: $e')));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final parts = data.partsOf(payment.id);
+    final mine = data.shareTotalsNow.own(payment);
+    final used = parts.fold(0.0, (v, p) => v + p.amount);
+    final left = (mine - used) < 0 ? 0.0 : mine - used;
+    final text = Theme.of(context).textTheme;
+    final scheme = Theme.of(context).colorScheme;
+    final main = data.category(payment.categoryId);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(child: Text('Split into categories', style: text.titleSmall)),
+            if (left > 0.004)
+              TextButton.icon(
+                onPressed: () => _add(context, left),
+                icon: const Icon(Icons.add, size: 18),
+                label: const Text('Add a part'),
+              ),
+          ],
+        ),
+        if (parts.isEmpty)
+          Text(
+            'Bought different things in one payment? E.g. ₹300 Groceries + ₹200 Cigarettes.',
+            style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+          )
+        else ...[
+          for (final p in parts)
+            Row(
+              children: [
+                CategoryAvatar(data.category(p.categoryId), size: 28),
+                const SizedBox(width: 10),
+                Expanded(child: Text(data.category(p.categoryId)?.name ?? 'No category')),
+                Text(money(p.amount), style: const TextStyle(fontWeight: FontWeight.w600)),
+                IconButton(
+                  tooltip: 'Remove this part',
+                  icon: const Icon(Icons.close, size: 18),
+                  onPressed: () => data.removePart(p.id),
+                ),
+              ],
+            ),
+          Row(
+            children: [
+              CategoryAvatar(main, size: 28),
+              const SizedBox(width: 10),
+              Expanded(child: Text('Rest: ${main?.name ?? 'No category'} (the category above)')),
+              Text(money(left), style: const TextStyle(fontWeight: FontWeight.w600)),
+              const SizedBox(width: 48),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
 }

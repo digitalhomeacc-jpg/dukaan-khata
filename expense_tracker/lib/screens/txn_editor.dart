@@ -305,6 +305,14 @@ class _TxnEditorState extends State<TxnEditor> {
                 hintText: 'What was it for? Who was with you? Bill no.…',
               ),
             ),
+            if (existing != null && existing.isDebit && !existing.isLoanTransfer && !_isLoan) ...[
+              const SizedBox(height: 16),
+              ListenableBuilder(
+                listenable: widget.data,
+                builder: (context, _) =>
+                    CategoryPartsSection(data: widget.data, payment: widget.data.txn(existing.id) ?? existing),
+              ),
+            ],
             if (existing != null && !existing.isLoanTransfer && !_isLoan) ...[
               const SizedBox(height: 16),
               ListenableBuilder(

@@ -512,3 +512,22 @@ class MatchQuestion {
   factory MatchQuestion.fromMap(Map<String, dynamic> m) =>
       MatchQuestion(id: m['id'] as String, entryId: m['entry_id'] as String, txnId: m['txn_id'] as String);
 }
+
+/// Part of one payment in one of your categories ("₹300 of this was Groceries").
+class TxnPart {
+  const TxnPart({required this.id, required this.txnId, required this.amount, this.categoryId, this.note});
+
+  final String id;
+  final String txnId;
+  final String? categoryId;
+  final double amount;
+  final String? note;
+
+  factory TxnPart.fromMap(Map<String, dynamic> m) => TxnPart(
+    id: m['id'] as String,
+    txnId: m['txn_id'] as String,
+    categoryId: m['category_id'] as String?,
+    amount: _num(m['amount']),
+    note: m['note'] as String?,
+  );
+}

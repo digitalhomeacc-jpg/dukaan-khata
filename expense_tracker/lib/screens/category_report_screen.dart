@@ -101,17 +101,25 @@ class _CategoryReportScreenState extends State<CategoryReportScreen> {
         for (final c in data.categories)
           if (c.parentId == id && id != null) c.id,
       };
-      // Money out and in, so the ledger's balance is the category's net.
-      final txns = [
-        for (final l in [...out, ...into])
-          if (ids.contains(l.id)) ...l.txns,
-      ]..sort((a, b) => b.txnAt.compareTo(a.txnAt));
+      // Money out and in, so the ledger's balance is the category's net. A payment split across these
+      // categories counts once, with the amount that falls in them.
+      final amounts = <String, double>{};
+      final byId = <String, Txn>{};
+      for (final l in [...out, ...into]) {
+        if (!ids.contains(l.id)) continue;
+        for (final t in l.txns) {
+          byId[t.id] = t;
+          amounts[t.id] = (amounts[t.id] ?? 0) + (l.amounts[t.id] ?? 0);
+        }
+      }
+      final txns = byId.values.toList()..sort((a, b) => b.txnAt.compareTo(a.txnAt));
       Navigator.of(context).push(
         MaterialPageRoute<void>(
           builder: (_) => ListenableBuilder(
             listenable: data,
             builder: (_, _) => _CategoryTxnsScreen(
               data: data,
+              amounts: amounts,
               title: title,
               subtitle: rangeLabel(_range),
               txns: [
@@ -312,9 +320,18 @@ class _Line extends StatelessWidget {
 
 /// Every payment of one category in the range, with its month-by-month totals.
 class _CategoryTxnsScreen extends StatelessWidget {
-  const _CategoryTxnsScreen({required this.data, required this.title, required this.subtitle, required this.txns});
+  const _CategoryTxnsScreen({
+    required this.data,
+    required this.title,
+    required this.subtitle,
+    required this.txns,
+    this.amounts = const {},
+  });
 
   final AppData data;
+
+  /// How much of each payment is in this category (part of it when the payment is split).
+  final Map<String, double> amounts;
   final String title;
   final String subtitle;
   final List<Txn> txns;
@@ -325,7 +342,7 @@ class _CategoryTxnsScreen extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final shares = data.shareTotalsNow;
     // Oldest first gives the running balance; shown newest first.
-    final ledger = placeLedger(txns, shares: shares);
+    final ledger = placeLedger(txns, shares: shares, amounts: amounts);
     final out = ledger.fold(0.0, (s, l) => s + l.out), into = ledger.fold(0.0, (s, l) => s + l.into);
     final net = into - out;
     final byMonth = <DateTime, ({double out, double into})>{};

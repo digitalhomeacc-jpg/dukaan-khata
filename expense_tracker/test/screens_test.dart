@@ -393,6 +393,18 @@ void main() {
     expect(find.textContaining('You owe Hotel Sai'), findsOneWidget);
   });
 
+  testWidgets('a payment shows its split into categories and what is left', (tester) async {
+    final data = sample();
+    final t = data.transactions.firstWhere((t) => t.isDebit && t.categoryId != null);
+    final other = data.categories.firstWhere((c) => c.id != t.categoryId && !c.isLoan);
+    data.parts = [TxnPart(id: 'x', txnId: t.id, categoryId: other.id, amount: 1)];
+    await pump(tester, TxnEditor(data: data, existing: t));
+    await tester.scrollUntilVisible(find.text('Split into categories'), 200, scrollable: find.byType(Scrollable).first);
+    expect(find.text('Split into categories'), findsOneWidget);
+    expect(find.text(other.name), findsWidgets);
+    expect(find.textContaining('Rest:'), findsOneWidget);
+  });
+
   testWidgets('editor for an email transaction', (tester) async {
     final data = sample();
     await pump(tester, TxnEditor(data: data, existing: data.transactions.first));

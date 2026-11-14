@@ -104,4 +104,40 @@ void main() {
     expect(runningBalances(txns, a), {'n1': 4000, 'n2': 4300, 'old': 5000, 'older': 5999});
     expect(balanceAt(txns, a, DateTime(2026, 4, 1, 12)), 4000);
   });
+
+  group('one payment split into categories', () {
+    final now = DateTime(2026, 11, 14);
+    final t = Txn(id: 'p', amount: 500, isDebit: true, txnAt: now, merchant: 'Saket', categoryId: 'food');
+    final parts = [const TxnPart(id: 'a', txnId: 'p', categoryId: 'groc', amount: 300)];
+
+    test('the total never changes; only how it is divided', () {
+      final s = summarizeBetween(
+        [t],
+        DateTime(2026, 11),
+        DateTime(2026, 12),
+        shares: shareTotals(const [], parts: parts),
+      );
+      expect(s.spent, 500);
+      expect(Map.fromEntries(s.byCategory), {'groc': 300.0, 'food': 200.0});
+    });
+
+    test('the category report counts each part in its own category', () {
+      final r = categoryReport(
+        [t],
+        DateTime(2026, 11),
+        DateTime(2026, 12),
+        debits: true,
+        shares: shareTotals(const [], parts: parts),
+      );
+      expect({for (final l in r) l.id: l.total}, {'groc': 300.0, 'food': 200.0});
+      expect(r.firstWhere((l) => l.id == 'groc').amounts['p'], 300);
+    });
+
+    test('with a friend\'s share taken out, parts never exceed your part', () {
+      final shares = shareTotals(const [TxnShare(id: 's', txnId: 'p', person: 'Ravi', amount: 250)], parts: parts);
+      // Yours is 250 of the 500: the 300 part is cut to 250, nothing left in Food, total still 250.
+      expect(shares.byCategory(t).map((e) => (e.categoryId, e.amount)).toList(), [('groc', 250.0)]);
+      expect(summarizeBetween([t], DateTime(2026, 11), DateTime(2026, 12), shares: shares).spent, 250);
+    });
+  });
 }

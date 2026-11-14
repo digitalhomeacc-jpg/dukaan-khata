@@ -40,6 +40,11 @@ class AppData extends ChangeNotifier {
         balanceReadings = rows.map(BalanceReading.fromMap).toList();
         notifyListeners();
       }, onError: _onError),
+      db.from('txn_parts').stream(primaryKey: ['id']).listen((rows) {
+        parts = rows.map(TxnPart.fromMap).toList();
+        _shareTotals = null;
+        notifyListeners();
+      }, onError: _onError),
       db.from('txn_shares').stream(primaryKey: ['id']).listen((rows) {
         shares = rows.map(TxnShare.fromMap).toList();
         _shareTotals = null;
@@ -190,7 +195,30 @@ class AppData extends ChangeNotifier {
   ShareTotals? _shareTotals;
 
   /// Friends' parts of group payments, for the totals.
-  ShareTotals get shareTotalsNow => _shareTotals ??= shareTotals(shares);
+  ShareTotals get shareTotalsNow => _shareTotals ??= shareTotals(shares, parts: parts);
+
+  /// Payments split across your own categories.
+  List<TxnPart> parts = const [];
+  List<TxnPart> partsOf(String txnId) => parts.where((p) => p.txnId == txnId).toList();
+
+  /// Adds a part of a payment in another category (never more than what is left of it).
+  Future<void> addPart(String txnId, String? categoryId, double amount) async {
+    final row = await _db
+        .from('txn_parts')
+        .insert({'txn_id': txnId, 'category_id': categoryId, 'amount': amount})
+        .select()
+        .single();
+    parts = [...parts, TxnPart.fromMap(row)];
+    _shareTotals = null;
+    notifyListeners();
+  }
+
+  Future<void> removePart(String id) async {
+    await _db.from('txn_parts').delete().eq('id', id);
+    parts = parts.where((p) => p.id != id).toList();
+    _shareTotals = null;
+    notifyListeners();
+  }
 
   List<TxnShare> sharesOf(String txnId) => shares.where((s) => s.txnId == txnId).toList();
   List<TxnShare> sharesPaidBy(String txnId) => shares.where((s) => s.paidTxnId == txnId).toList();
