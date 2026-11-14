@@ -611,3 +611,87 @@ class GroupExpense {
     txnIds: [for (final x in (m['txn_ids'] as List?) ?? const []) x as String],
   );
 }
+
+/// A payment that comes back: rent, a subscription, salary, a bill.
+class Recurring {
+  const Recurring({
+    required this.id,
+    required this.name,
+    required this.amount,
+    required this.startsOn,
+    this.isDebit = true,
+    this.every = 'month',
+    this.varies = false,
+    this.autoAdd = false,
+    this.categoryId,
+    this.accountId,
+    this.groupId,
+    this.note,
+    this.active = true,
+  });
+
+  final String id;
+  final String name;
+  final double amount;
+  final bool isDebit;
+
+  /// 'week', 'month' or 'year'.
+  final String every;
+
+  /// The first due date; later ones keep its day (31st → last day of shorter months).
+  final DateTime startsOn;
+
+  /// The amount changes each time (electricity): matched by name, not exact amount.
+  final bool varies;
+
+  /// Entered by itself on the day (for cash; bank payments are matched instead).
+  final bool autoAdd;
+  final String? categoryId;
+  final String? accountId;
+  final String? groupId;
+  final String? note;
+  final bool active;
+
+  factory Recurring.fromMap(Map<String, dynamic> m) => Recurring(
+    id: m['id'] as String,
+    name: m['name'] as String,
+    amount: (m['amount'] as num).toDouble(),
+    isDebit: m['direction'] != 'credit',
+    every: (m['every'] as String?) ?? 'month',
+    startsOn: DateTime.parse(m['starts_on'] as String),
+    varies: m['varies'] == true,
+    autoAdd: m['auto_add'] == true,
+    categoryId: m['category_id'] as String?,
+    accountId: m['account_id'] as String?,
+    groupId: m['group_id'] as String?,
+    note: m['note'] as String?,
+    active: m['active'] != false,
+  );
+
+  String get everyLabel => switch (every) {
+    'week' => 'every week',
+    'year' => 'every year',
+    _ => 'every month',
+  };
+}
+
+/// One due date of a repeat, settled: matched to a payment, added, or skipped.
+class RecurringRun {
+  const RecurringRun({required this.id, required this.recurringId, required this.dueOn, required this.kind, this.txnId});
+
+  final String id;
+  final String recurringId;
+  final DateTime dueOn;
+
+  /// 'matched', 'added' or 'skipped'.
+  final String kind;
+  final String? txnId;
+
+  factory RecurringRun.fromMap(Map<String, dynamic> m) => RecurringRun(
+    id: m['id'] as String,
+    recurringId: m['recurring_id'] as String,
+    dueOn: DateTime.parse(m['due_on'] as String),
+    kind: m['kind'] as String,
+    txnId: m['txn_id'] as String?,
+  );
+}

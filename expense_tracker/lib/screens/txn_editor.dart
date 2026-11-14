@@ -9,6 +9,7 @@ import '../ui/category_style.dart';
 import '../ui/entry_history.dart';
 import '../ui/format.dart';
 import 'quick_add.dart';
+import 'recurring_screen.dart';
 import 'split_section.dart';
 
 Future<void> openTxnEditor(BuildContext context, AppData data, {Txn? existing, Txn? prefill}) {
@@ -405,6 +406,44 @@ class _TxnEditorState extends State<TxnEditor> {
                 onSelected: (id) => setState(() => _counterId = id),
               ),
             ],
+            if (existing != null && !existing.excluded && !existing.isLoanTransfer)
+              ListenableBuilder(
+                listenable: widget.data,
+                builder: (context, _) {
+                  final run = widget.data.runForTxn(existing.id);
+                  final r = widget.data.recurringById(run?.recurringId);
+                  if (r != null) {
+                    return ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.event_repeat),
+                      title: Text('Part of a repeat: ${r.name}'),
+                      subtitle: Text('${r.everyLabel} · due ${run!.dueOn.day}/${run.dueOn.month}'),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => editRecurring(context, widget.data, existing: r),
+                    );
+                  }
+                  return Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: () => editRecurring(
+                        context,
+                        widget.data,
+                        prefill: Recurring(
+                          id: '',
+                          name: existing.title,
+                          amount: existing.amount,
+                          isDebit: existing.isDebit,
+                          startsOn: DateTime(existing.txnAt.year, existing.txnAt.month + 1, existing.txnAt.day),
+                          categoryId: existing.categoryId,
+                          accountId: existing.accountId,
+                        ),
+                      ),
+                      icon: const Icon(Icons.event_repeat),
+                      label: const Text('Comes every month? Make it a repeat'),
+                    ),
+                  );
+                },
+              ),
             if (existing != null) ...[
               const SizedBox(height: 16),
               EntryHistorySection(data: widget.data, txnId: existing.id, onUndone: () => _reopen(existing.id)),

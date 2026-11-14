@@ -7,8 +7,17 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../config.dart';
+import '../logic/recurring.dart';
 import '../logic/summary.dart'
-    show LoanBalance, ShareTotals, allocateSettle, groupPairwise, loanBalances, samePersonCandidates, shareTotals;
+    show
+        LoanBalance,
+        ShareTotals,
+        allocateSettle,
+        groupPairwise,
+        loanBalances,
+        samePersonCandidates,
+        shareTotals,
+        splitEqually;
 import '../models.dart';
 
 /// Live copy of the signed-in user's data, kept up to date by Supabase Realtime.
@@ -20,6 +29,18 @@ class AppData extends ChangeNotifier {
         transactions = rows.map(Txn.fromMap).toList()..sort((a, b) => b.txnAt.compareTo(a.txnAt));
         loaded = true;
         notifyListeners();
+        _scheduleRecurring();
+      }, onError: _onError),
+      db.from('recurring').stream(primaryKey: ['id']).order('created_at').listen((rows) {
+        recurring = rows.map(Recurring.fromMap).toList();
+        notifyListeners();
+        _scheduleRecurring();
+      }, onError: _onError),
+      db.from('recurring_runs').stream(primaryKey: ['id']).listen((rows) {
+        recurringRuns = rows.map(RecurringRun.fromMap).toList();
+        _runsLoaded = true;
+        notifyListeners();
+        _scheduleRecurring();
       }, onError: _onError),
       db.from('categories').stream(primaryKey: ['id']).order('name', ascending: true).listen((rows) {
         categories = rows.map(Category.fromMap).toList();
@@ -119,6 +140,8 @@ class AppData extends ChangeNotifier {
     this.myId,
     this.unread = const [],
     this.profile = const {},
+    this.recurring = const [],
+    this.recurringRuns = const [],
   }) : _client = null,
        loaded = true {
     _subs = [];
@@ -206,11 +229,179 @@ class AppData extends ChangeNotifier {
   /// Friends' parts of group payments, for the totals.
   ShareTotals get shareTotalsNow => _shareTotals ??= shareTotals(shares, parts: parts);
 
+  // ------------------------------------------------------------------ repeats
+
+  List<Recurring> recurring = const [];
+  List<RecurringRun> recurringRuns = const [];
+  var _runsLoaded = false;
+  Timer? _recurringTimer;
+  var _recurringBusy = false;
+
+  Recurring? recurringById(String? id) => recurring.where((r) => r.id == id).firstOrNull;
+
+  /// What is due and what to do now (see [planRecurring]).
+  RecurringPlan get recurringPlan => planRecurring(recurring, recurringRuns, transactions, DateTime.now());
+
+  /// The repeat a payment settled, if any.
+  RecurringRun? runForTxn(String txnId) => recurringRuns.where((r) => r.txnId == txnId).firstOrNull;
+
+  void _scheduleRecurring() {
+    if (_client == null || !loaded || !_runsLoaded || recurring.isEmpty) return;
+    _recurringTimer?.cancel();
+    _recurringTimer = Timer(const Duration(seconds: 2), runRecurring);
+  }
+
+  /// Files bank payments under their repeats and adds cash repeats that are due. Safe to run any time, from
+  /// any number of phones: each due date is claimed once in the database.
+  Future<void> runRecurring() async {
+    if (_recurringBusy) return;
+    _recurringBusy = true;
+    try {
+      final plan = recurringPlan;
+      for (final m in plan.matches) {
+        await settleDue(m.recurring, m.due, kind: 'matched', txn: m.txn);
+      }
+      for (final a in plan.autoAdds) {
+        await settleDue(a.recurring, a.due, kind: 'added');
+      }
+    } catch (e) {
+      error = e;
+    } finally {
+      _recurringBusy = false;
+    }
+  }
+
+  static String _date(DateTime d) =>
+      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+  /// Settles one due date: 'matched' to a payment you have, 'added' (enters it, in cash unless the repeat has
+  /// an account), or 'skipped'. Returns false if it was already settled (by another phone, say).
+  Future<bool> settleDue(Recurring r, DateTime due, {required String kind, Txn? txn, String? accountId}) async {
+    String? txnId = txn?.id;
+    if (kind == 'added') {
+      // A fixed key per repeat and date: the entry exists at most once, whoever adds it.
+      final key = 'recur:${r.id}:${_date(due)}';
+      final account = accountId ?? r.accountId ?? cashAccount?.id;
+      final isCash = account != null && account == cashAccount?.id;
+      await _db
+          .from('transactions')
+          .upsert(
+            {
+              'amount': r.amount,
+              'direction': r.isDebit ? 'debit' : 'credit',
+              'merchant': r.name,
+              'method': isCash ? 'cash' : 'other',
+              'txn_at': DateTime(due.year, due.month, due.day, 9).toUtc().toIso8601String(),
+              'category_id': r.categoryId,
+              'account_id': account,
+              'source': 'manual',
+              'email_id': key,
+              'note': 'Repeats ${r.everyLabel}',
+            },
+            onConflict: 'user_id,email_id',
+            ignoreDuplicates: true,
+          );
+      final row = await _db.from('transactions').select('id').eq('email_id', key).maybeSingle();
+      txnId = row?['id'] as String?;
+      if (txnId == null) return false;
+    }
+    try {
+      await _db.from('recurring_runs').insert({
+        'recurring_id': r.id,
+        'due_on': _date(due),
+        'kind': kind,
+        'txn_id': txnId,
+      });
+    } on PostgrestException catch (e) {
+      if (e.code == '23505') return false; // already settled
+      rethrow;
+    }
+    recurringRuns = [
+      ...recurringRuns,
+      RecurringRun(id: 'local', recurringId: r.id, dueOn: due, kind: kind, txnId: txnId),
+    ];
+    if (kind == 'matched' && txn != null && txn.categoryId == null && r.categoryId != null) {
+      await _db.from('transactions').update({'category_id': r.categoryId, 'needs_review': false}).eq('id', txn.id);
+    }
+    // A shared bill: split it in its group, like any group expense you paid.
+    final g = group(r.groupId);
+    if (g != null && txnId != null && r.isDebit && kind != 'skipped') {
+      final amount = txn?.amount ?? r.amount;
+      await addGroupExpense(
+        group: g,
+        description: r.name,
+        amount: amount,
+        paidBy: 'me',
+        shares: splitEqually(amount, ['me', ...g.members]),
+        at: txn?.txnAt ?? DateTime(due.year, due.month, due.day, 9),
+        categoryId: r.categoryId,
+        linkTxnId: txnId,
+      );
+    }
+    notifyListeners();
+    return true;
+  }
+
+  /// Takes back a settled due date: it is due again. An entry the repeat added is removed with it; a bank
+  /// payment it was matched to stays as it is.
+  Future<void> unsettle(RecurringRun run) async {
+    final r = recurringById(run.recurringId);
+    if (run.kind == 'added' && run.txnId != null) {
+      final ge = groupExpenses.where((e) => e.txnId == run.txnId).toList();
+      for (final e in ge) {
+        await deleteGroupExpense(e);
+      }
+      await _db.from('transactions').delete().eq('id', run.txnId!);
+    } else if (r?.groupId != null && run.txnId != null) {
+      for (final e in groupExpenses.where((e) => e.txnId == run.txnId && e.groupId == r!.groupId)) {
+        await deleteGroupExpense(e);
+      }
+    }
+    await _db.from('recurring_runs').delete().eq('id', run.id);
+    recurringRuns = recurringRuns.where((x) => x.id != run.id).toList();
+    notifyListeners();
+  }
+
+  Future<void> saveRecurring({
+    String? id,
+    required String name,
+    required double amount,
+    required bool isDebit,
+    required String every,
+    required DateTime startsOn,
+    bool varies = false,
+    bool autoAdd = false,
+    String? categoryId,
+    String? accountId,
+    String? groupId,
+  }) async {
+    final row = {
+      'name': name.trim(),
+      'amount': amount,
+      'direction': isDebit ? 'debit' : 'credit',
+      'every': every,
+      'starts_on': _date(startsOn),
+      'varies': varies,
+      'auto_add': autoAdd,
+      'category_id': categoryId,
+      'account_id': accountId,
+      'group_id': groupId,
+    };
+    if (id == null) {
+      await _db.from('recurring').insert(row);
+    } else {
+      await _db.from('recurring').update(row).eq('id', id);
+    }
+  }
+
+  /// Stops a repeat; what it already settled stays.
+  Future<void> stopRecurring(String id) => _db.from('recurring').update({'active': false}).eq('id', id);
+
   // ------------------------------------------------------------------ groups
 
   List<Group> groups = const [];
   List<GroupExpense> groupExpenses = const [];
-  Group? group(String id) => groups.where((g) => g.id == id).firstOrNull;
+  Group? group(String? id) => id == null ? null : groups.where((g) => g.id == id).firstOrNull;
   List<GroupExpense> expensesOf(String groupId) =>
       groupExpenses.where((e) => e.groupId == groupId).toList()..sort((a, b) => b.at.compareTo(a.at));
 
