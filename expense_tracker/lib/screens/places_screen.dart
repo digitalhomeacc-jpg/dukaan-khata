@@ -7,6 +7,7 @@ import '../ui/category_picker.dart';
 import '../ui/category_style.dart';
 import '../ui/format.dart';
 import '../ui/same_person_card.dart';
+import '../ui/selection.dart';
 import 'friends_screen.dart';
 import 'txn_editor.dart';
 
@@ -239,345 +240,368 @@ class PlaceDetailScreen extends StatelessWidget {
       ),
     );
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(g.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-        actions: [
-          IconButton(tooltip: 'Rename', icon: const Icon(Icons.edit_outlined), onPressed: () => _rename(context, g)),
-          if (looksLikePerson(g.name))
-            IconButton(
-              tooltip: 'Also known as…',
-              icon: const Icon(Icons.person_add_alt),
-              onPressed: () => showAlsoKnownAs(context, data, g.name),
-            ),
-        ],
-      ),
-      body: CustomScrollView(
-        slivers: [
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
-            sliver: SliverList.list(
-              children: [
-                // Summary card
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(colors: [scheme.primaryContainer, scheme.secondaryContainer]),
-                    borderRadius: BorderRadius.circular(20),
+    return SelectionHost(
+      data: data,
+      builder: (context, bar) => Scaffold(
+        appBar:
+            bar(g.txns.map((t) => t.id)) ??
+            AppBar(
+              title: Text(g.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+              actions: [
+                IconButton(
+                  tooltip: 'Rename',
+                  icon: const Icon(Icons.edit_outlined),
+                  onPressed: () => _rename(context, g),
+                ),
+                if (looksLikePerson(g.name))
+                  IconButton(
+                    tooltip: 'Also known as…',
+                    icon: const Icon(Icons.person_add_alt),
+                    onPressed: () => showAlsoKnownAs(context, data, g.name),
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          CategoryAvatar(data.category(g.categoryId), size: 44),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+              ],
+            ),
+        body: CustomScrollView(
+          slivers: [
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+              sliver: SliverList.list(
+                children: [
+                  // Summary card
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(colors: [scheme.primaryContainer, scheme.secondaryContainer]),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            CategoryAvatar(data.category(g.categoryId), size: 44),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(g.name, style: text.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+                                  Text(
+                                    [
+                                      if (g.vpas.isNotEmpty) 'UPI ••${g.vpas.join(', ••')}',
+                                      'since ${DateFormat('MMM yyyy').format(g.first)}',
+                                    ].join(' · '),
+                                    style: text.bodySmall,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        Row(
+                          children: [
+                            stat('money out', money(g.total), color: scheme.error),
+                            stat('money in', money(g.received), color: Colors.green.shade700),
+                            stat(g.net >= 0 ? 'net in' : 'net out', money(g.net.abs())),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          '${g.count} payments · avg ${money(g.average)} · about '
+                          '${g.perMonth >= 1 ? g.perMonth.toStringAsFixed(g.perMonth >= 10 ? 0 : 1) : '<1'}× a month · last ${dayLabel(g.lastPaid)}',
+                          style: text.bodySmall,
+                        ),
+                      ],
+                    ),
+                  ),
+                  LinkedNamesCard(data: data, person: g.name),
+                  if (looksLikePerson(g.name)) SamePersonCard(data: data, person: g.name),
+                  const SizedBox(height: 16),
+                  // Who is this?
+                  Text('Who is this?', style: text.titleSmall),
+                  const SizedBox(height: 8),
+                  SegmentedButton<String>(
+                    showSelectedIcon: false,
+                    segments: const [
+                      ButtonSegment(value: 'shop', label: Text('Shop')),
+                      ButtonSegment(value: 'friend', label: Text('Friend')),
+                      ButtonSegment(value: 'family', label: Text('Family')),
+                      ButtonSegment(value: 'me', label: Text('Me')),
+                    ],
+                    emptySelectionAllowed: true,
+                    selected: {?role},
+                    onSelectionChanged: (s) async {
+                      if (s.isEmpty) return;
+                      final r = s.first;
+                      await data.setPersonRole(g.name, r);
+                      if (r == 'me') await data.markOwnAccount(g.keys);
+                    },
+                  ),
+                  const SizedBox(height: 6),
+                  Text(switch (role) {
+                    'shop' => 'A shop, restaurant or service (delivery, driver…): payments are your spending.',
+                    'friend' =>
+                      'A friend. Choose below whether their payments are your spends or go to your balance with them.',
+                    'family' =>
+                      'Family: money from them is income (Money from home), money to them is Family spending.',
+                    'me' => 'Your own account: money to and from it is a move, not spending or income.',
+                    _ => 'Tell the app who this is: it then counts their money the right way.',
+                  }, style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
+                  if (role == 'friend') ...[
+                    const SizedBox(height: 12),
+                    OutlinedButton.icon(
+                      onPressed: () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => ListenableBuilder(
+                            listenable: data,
+                            builder: (_, _) => FriendDetailScreen(
+                              data: data,
+                              person: data.personNames[AppData.keyOf(g.name)] ?? g.name,
+                            ),
+                          ),
+                        ),
+                      ),
+                      icon: const Icon(Icons.account_balance_wallet_outlined),
+                      label: Text('Balance with ${g.name.split(' ').first}: opening, settle up'),
+                    ),
+                  ],
+                  if (role == 'friend' && friendsCat != null) ...[
+                    const SizedBox(height: 12),
+                    SegmentedButton<bool>(
+                      showSelectedIcon: false,
+                      segments: const [
+                        ButtonSegment(
+                          value: false,
+                          label: Text('My spends'),
+                          icon: Icon(Icons.shopping_bag_outlined, size: 18),
+                        ),
+                        ButtonSegment(
+                          value: true,
+                          label: Text('Friends ledger'),
+                          icon: Icon(Icons.handshake_outlined, size: 18),
+                        ),
+                      ],
+                      selected: {inLedger},
+                      onSelectionChanged: (s) =>
+                          data.categorizeGroup(g.txns, s.first ? friendsCat.id : null, names: g.keys, vpas: g.vpas),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      inLedger
+                          ? 'All payments with them count as owed (lent / borrowed). You can still change single ones.'
+                          : 'Payments to them are things they bought for you: give each a category (Quick sort helps).',
+                      style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+                    ),
+                  ],
+                  if (role != 'me' && !inLedger) ...[
+                    const SizedBox(height: 16),
+                    Text(
+                      role == 'friend' ? 'Category for all their payments (optional)' : 'Category for all its payments',
+                      style: text.titleSmall,
+                    ),
+                    const SizedBox(height: 8),
+                    CategoryField(
+                      data: data,
+                      categoryId: g.categoryId,
+                      hint: [
+                        'All ${g.txns.length} payments',
+                        if (g.vpas.isNotEmpty)
+                          'and new ones to ${g.vpas.map((v) => '••$v').join(', ')}'
+                        else
+                          'and new ones by this name',
+                      ].join(' '),
+                      onTap: () async {
+                        final pick = await pickCategory(context, data, selected: g.categoryId, title: g.name);
+                        if (pick == null || !context.mounted) return;
+                        // Some already sorted one by one? Then ask whether to keep them.
+                        final unsorted = g.txns.where((t) => t.categoryId == null).toList();
+                        var which = g.txns;
+                        if (unsorted.isNotEmpty && unsorted.length < g.txns.length) {
+                          final onlyRest = await showDialog<bool>(
+                            context: context,
+                            builder: (c) => SimpleDialog(
+                              title: const Text('Which payments?'),
                               children: [
-                                Text(g.name, style: text.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
-                                Text(
-                                  [
-                                    if (g.vpas.isNotEmpty) 'UPI ••${g.vpas.join(', ••')}',
-                                    'since ${DateFormat('MMM yyyy').format(g.first)}',
-                                  ].join(' · '),
-                                  style: text.bodySmall,
+                                SimpleDialogOption(
+                                  onPressed: () => Navigator.pop(c, true),
+                                  child: ListTile(
+                                    title: Text('Only the ${unsorted.length} with no category'),
+                                    subtitle: const Text('Keeps the ones you already sorted'),
+                                  ),
+                                ),
+                                SimpleDialogOption(
+                                  onPressed: () => Navigator.pop(c, false),
+                                  child: ListTile(title: Text('All ${g.txns.length} payments')),
                                 ),
                               ],
                             ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-                      Row(
-                        children: [
-                          stat('money out', money(g.total), color: scheme.error),
-                          stat('money in', money(g.received), color: Colors.green.shade700),
-                          stat(g.net >= 0 ? 'net in' : 'net out', money(g.net.abs())),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        '${g.count} payments · avg ${money(g.average)} · about '
-                        '${g.perMonth >= 1 ? g.perMonth.toStringAsFixed(g.perMonth >= 10 ? 0 : 1) : '<1'}× a month · last ${dayLabel(g.lastPaid)}',
-                        style: text.bodySmall,
-                      ),
-                    ],
-                  ),
-                ),
-                LinkedNamesCard(data: data, person: g.name),
-                if (looksLikePerson(g.name)) SamePersonCard(data: data, person: g.name),
-                const SizedBox(height: 16),
-                // Who is this?
-                Text('Who is this?', style: text.titleSmall),
-                const SizedBox(height: 8),
-                SegmentedButton<String>(
-                  showSelectedIcon: false,
-                  segments: const [
-                    ButtonSegment(value: 'shop', label: Text('Shop')),
-                    ButtonSegment(value: 'friend', label: Text('Friend')),
-                    ButtonSegment(value: 'family', label: Text('Family')),
-                    ButtonSegment(value: 'me', label: Text('Me')),
-                  ],
-                  emptySelectionAllowed: true,
-                  selected: {?role},
-                  onSelectionChanged: (s) async {
-                    if (s.isEmpty) return;
-                    final r = s.first;
-                    await data.setPersonRole(g.name, r);
-                    if (r == 'me') await data.markOwnAccount(g.keys);
-                  },
-                ),
-                const SizedBox(height: 6),
-                Text(switch (role) {
-                  'shop' => 'A shop, restaurant or service (delivery, driver…): payments are your spending.',
-                  'friend' =>
-                    'A friend. Choose below whether their payments are your spends or go to your balance with them.',
-                  'family' => 'Family: money from them is income (Money from home), money to them is Family spending.',
-                  'me' => 'Your own account: money to and from it is a move, not spending or income.',
-                  _ => 'Tell the app who this is: it then counts their money the right way.',
-                }, style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
-                if (role == 'friend') ...[
-                  const SizedBox(height: 12),
-                  OutlinedButton.icon(
-                    onPressed: () => Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => ListenableBuilder(
-                          listenable: data,
-                          builder: (_, _) =>
-                              FriendDetailScreen(data: data, person: data.personNames[AppData.keyOf(g.name)] ?? g.name),
-                        ),
-                      ),
-                    ),
-                    icon: const Icon(Icons.account_balance_wallet_outlined),
-                    label: Text('Balance with ${g.name.split(' ').first}: opening, settle up'),
-                  ),
-                ],
-                if (role == 'friend' && friendsCat != null) ...[
-                  const SizedBox(height: 12),
-                  SegmentedButton<bool>(
-                    showSelectedIcon: false,
-                    segments: const [
-                      ButtonSegment(
-                        value: false,
-                        label: Text('My spends'),
-                        icon: Icon(Icons.shopping_bag_outlined, size: 18),
-                      ),
-                      ButtonSegment(
-                        value: true,
-                        label: Text('Friends ledger'),
-                        icon: Icon(Icons.handshake_outlined, size: 18),
-                      ),
-                    ],
-                    selected: {inLedger},
-                    onSelectionChanged: (s) =>
-                        data.categorizeGroup(g.txns, s.first ? friendsCat.id : null, names: g.keys, vpas: g.vpas),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    inLedger
-                        ? 'All payments with them count as owed (lent / borrowed). You can still change single ones.'
-                        : 'Payments to them are things they bought for you: give each a category (Quick sort helps).',
-                    style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
-                  ),
-                ],
-                if (role != 'me' && !inLedger) ...[
-                  const SizedBox(height: 16),
-                  Text(
-                    role == 'friend' ? 'Category for all their payments (optional)' : 'Category for all its payments',
-                    style: text.titleSmall,
-                  ),
-                  const SizedBox(height: 8),
-                  CategoryField(
-                    data: data,
-                    categoryId: g.categoryId,
-                    hint: [
-                      'All ${g.txns.length} payments',
-                      if (g.vpas.isNotEmpty)
-                        'and new ones to ${g.vpas.map((v) => '••$v').join(', ')}'
-                      else
-                        'and new ones by this name',
-                    ].join(' '),
-                    onTap: () async {
-                      final pick = await pickCategory(context, data, selected: g.categoryId, title: g.name);
-                      if (pick == null || !context.mounted) return;
-                      // Some already sorted one by one? Then ask whether to keep them.
-                      final unsorted = g.txns.where((t) => t.categoryId == null).toList();
-                      var which = g.txns;
-                      if (unsorted.isNotEmpty && unsorted.length < g.txns.length) {
-                        final onlyRest = await showDialog<bool>(
-                          context: context,
-                          builder: (c) => SimpleDialog(
-                            title: const Text('Which payments?'),
-                            children: [
-                              SimpleDialogOption(
-                                onPressed: () => Navigator.pop(c, true),
-                                child: ListTile(
-                                  title: Text('Only the ${unsorted.length} with no category'),
-                                  subtitle: const Text('Keeps the ones you already sorted'),
-                                ),
-                              ),
-                              SimpleDialogOption(
-                                onPressed: () => Navigator.pop(c, false),
-                                child: ListTile(title: Text('All ${g.txns.length} payments')),
-                              ),
-                            ],
-                          ),
+                          );
+                          if (onlyRest == null) return;
+                          if (onlyRest) which = unsorted;
+                        }
+                        await data.categorizeGroup(
+                          which,
+                          pick.id,
+                          vpas: g.vpas,
+                          names: g.vpas.isEmpty || !looksLikePerson(g.name) ? g.keys : const {},
                         );
-                        if (onlyRest == null) return;
-                        if (onlyRest) which = unsorted;
-                      }
-                      await data.categorizeGroup(
-                        which,
-                        pick.id,
-                        vpas: g.vpas,
-                        names: g.vpas.isEmpty || !looksLikePerson(g.name) ? g.keys : const {},
-                      );
-                    },
-                  ),
-                ],
-                if (months.length > 1) ...[
-                  const SizedBox(height: 20),
-                  Text('Money out by month', style: text.titleSmall),
-                  const SizedBox(height: 8),
-                  SizedBox(
-                    height: 90,
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        for (final m in months.reversed)
-                          Expanded(
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 2),
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.end,
-                                children: [
-                                  Expanded(
-                                    child: Align(
-                                      alignment: Alignment.bottomCenter,
-                                      child: FractionallySizedBox(
-                                        heightFactor: maxMonth == 0 ? 0.02 : (m.value / maxMonth).clamp(0.02, 1.0),
-                                        child: Container(
-                                          decoration: BoxDecoration(
-                                            color: scheme.primary,
-                                            borderRadius: BorderRadius.circular(4),
+                      },
+                    ),
+                  ],
+                  if (months.length > 1) ...[
+                    const SizedBox(height: 20),
+                    Text('Money out by month', style: text.titleSmall),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      height: 90,
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          for (final m in months.reversed)
+                            Expanded(
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 2),
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.end,
+                                  children: [
+                                    Expanded(
+                                      child: Align(
+                                        alignment: Alignment.bottomCenter,
+                                        child: FractionallySizedBox(
+                                          heightFactor: maxMonth == 0 ? 0.02 : (m.value / maxMonth).clamp(0.02, 1.0),
+                                          child: Container(
+                                            decoration: BoxDecoration(
+                                              color: scheme.primary,
+                                              borderRadius: BorderRadius.circular(4),
+                                            ),
                                           ),
                                         ),
                                       ),
                                     ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(DateFormat('MMM').format(m.key), style: const TextStyle(fontSize: 10)),
-                                ],
+                                    const SizedBox(height: 4),
+                                    Text(DateFormat('MMM').format(m.key), style: const TextStyle(fontSize: 10)),
+                                  ],
+                                ),
                               ),
                             ),
-                          ),
-                      ],
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 20),
-                Row(
-                  children: [
-                    Expanded(child: Text('Ledger', style: text.titleSmall)),
-                    SizedBox(
-                      width: 74,
-                      child: Text(person ? 'You gave' : 'Out', textAlign: TextAlign.end, style: text.labelSmall),
-                    ),
-                    SizedBox(
-                      width: 74,
-                      child: Text(person ? 'You got' : 'In', textAlign: TextAlign.end, style: text.labelSmall),
-                    ),
-                    SizedBox(
-                      width: 86,
-                      child: Text('Balance', textAlign: TextAlign.end, style: text.labelSmall),
+                        ],
+                      ),
                     ),
                   ],
-                ),
-                const Divider(),
-              ],
+                  const SizedBox(height: 20),
+                  Row(
+                    children: [
+                      Expanded(child: Text('Ledger', style: text.titleSmall)),
+                      SizedBox(
+                        width: 74,
+                        child: Text(person ? 'You gave' : 'Out', textAlign: TextAlign.end, style: text.labelSmall),
+                      ),
+                      SizedBox(
+                        width: 74,
+                        child: Text(person ? 'You got' : 'In', textAlign: TextAlign.end, style: text.labelSmall),
+                      ),
+                      SizedBox(
+                        width: 86,
+                        child: Text('Balance', textAlign: TextAlign.end, style: text.labelSmall),
+                      ),
+                    ],
+                  ),
+                  const Divider(),
+                ],
+              ),
             ),
-          ),
-          SliverList.builder(
-            itemCount: ledger.length,
-            itemBuilder: (context, i) {
-              final l = ledger[i];
-              final newMonth =
-                  i == 0 ||
-                  ledger[i - 1].txn.txnAt.month != l.txn.txnAt.month ||
-                  ledger[i - 1].txn.txnAt.year != l.txn.txnAt.year;
-              final cat = data.category(l.txn.categoryId);
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (newMonth)
-                    Container(
-                      width: double.infinity,
-                      color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                      child: Text(DateFormat('MMMM yyyy').format(l.txn.txnAt), style: text.labelMedium),
-                    ),
-                  InkWell(
-                    onTap: () => openTxnEditor(context, data, existing: l.txn),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+            SliverList.builder(
+              itemCount: ledger.length,
+              itemBuilder: (context, i) {
+                final l = ledger[i];
+                final newMonth =
+                    i == 0 ||
+                    ledger[i - 1].txn.txnAt.month != l.txn.txnAt.month ||
+                    ledger[i - 1].txn.txnAt.year != l.txn.txnAt.year;
+                final cat = data.category(l.txn.categoryId);
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (newMonth)
+                      Container(
+                        width: double.infinity,
+                        color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                        child: Text(DateFormat('MMMM yyyy').format(l.txn.txnAt), style: text.labelMedium),
+                      ),
+                    Builder(
+                      builder: (context) {
+                        final sel = TxnSelection.maybeOf(context);
+                        final picked = sel?.ids.contains(l.txn.id) ?? false;
+                        return InkWell(
+                          onTap: () => sel?.active == true
+                              ? sel!.toggle(l.txn.id)
+                              : openTxnEditor(context, data, existing: l.txn),
+                          onLongPress: sel == null ? null : () => sel.toggle(l.txn.id),
+                          child: Container(
+                            color: picked ? scheme.primaryContainer.withValues(alpha: 0.4) : null,
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            child: Row(
                               children: [
-                                Text(DateFormat('d MMM, h:mm a').format(l.txn.txnAt), style: text.bodyMedium),
-                                Text(
-                                  [
-                                    cat?.isLoan == true ? 'Friends ledger' : (cat?.name ?? 'No category'),
-                                    if (l.txn.bankName != null) 'as ${l.txn.bankName}',
-                                    if ((l.txn.note ?? '').isNotEmpty) l.txn.note!,
-                                  ].join(' · '),
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: text.bodySmall?.copyWith(
-                                    color: cat == null ? scheme.error : scheme.onSurfaceVariant,
+                                if (sel?.active == true) SelectTick(selected: picked),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(DateFormat('d MMM, h:mm a').format(l.txn.txnAt), style: text.bodyMedium),
+                                      Text(
+                                        [
+                                          cat?.isLoan == true ? 'Friends ledger' : (cat?.name ?? 'No category'),
+                                          if (l.txn.bankName != null) 'as ${l.txn.bankName}',
+                                          if ((l.txn.note ?? '').isNotEmpty) l.txn.note!,
+                                        ].join(' · '),
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: text.bodySmall?.copyWith(
+                                          color: cat == null ? scheme.error : scheme.onSurfaceVariant,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                SizedBox(
+                                  width: 74,
+                                  child: Text(
+                                    l.out > 0 ? money(l.out) : '',
+                                    textAlign: TextAlign.end,
+                                    style: TextStyle(color: scheme.error, fontWeight: FontWeight.w600),
+                                  ),
+                                ),
+                                SizedBox(
+                                  width: 74,
+                                  child: Text(
+                                    l.into > 0 ? money(l.into) : '',
+                                    textAlign: TextAlign.end,
+                                    style: TextStyle(color: Colors.green.shade700, fontWeight: FontWeight.w600),
+                                  ),
+                                ),
+                                SizedBox(
+                                  width: 86,
+                                  child: Text(
+                                    '${l.net < 0 ? '−' : ''}${money(l.net.abs())}',
+                                    textAlign: TextAlign.end,
+                                    style: text.bodySmall?.copyWith(fontFeatures: const [FontFeature.tabularFigures()]),
                                   ),
                                 ),
                               ],
                             ),
                           ),
-                          SizedBox(
-                            width: 74,
-                            child: Text(
-                              l.out > 0 ? money(l.out) : '',
-                              textAlign: TextAlign.end,
-                              style: TextStyle(color: scheme.error, fontWeight: FontWeight.w600),
-                            ),
-                          ),
-                          SizedBox(
-                            width: 74,
-                            child: Text(
-                              l.into > 0 ? money(l.into) : '',
-                              textAlign: TextAlign.end,
-                              style: TextStyle(color: Colors.green.shade700, fontWeight: FontWeight.w600),
-                            ),
-                          ),
-                          SizedBox(
-                            width: 86,
-                            child: Text(
-                              '${l.net < 0 ? '−' : ''}${money(l.net.abs())}',
-                              textAlign: TextAlign.end,
-                              style: text.bodySmall?.copyWith(fontFeatures: const [FontFeature.tabularFigures()]),
-                            ),
-                          ),
-                        ],
-                      ),
+                        );
+                      },
                     ),
-                  ),
-                ],
-              );
-            },
-          ),
-          const SliverToBoxAdapter(child: SizedBox(height: 40)),
-        ],
+                  ],
+                );
+              },
+            ),
+            const SliverToBoxAdapter(child: SizedBox(height: 40)),
+          ],
+        ),
       ),
     );
   }

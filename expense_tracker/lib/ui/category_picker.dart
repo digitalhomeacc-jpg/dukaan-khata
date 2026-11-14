@@ -269,12 +269,15 @@ class _CategorySheetState extends State<_CategorySheet> {
                           runSpacing: 6,
                           children: [
                             for (final d in detailsOf(g))
-                              ChoiceChip(
-                                label: Text(d.name),
-                                selected: d.id == widget.selected,
-                                showCheckmark: false,
-                                visualDensity: VisualDensity.compact,
-                                onSelected: (_) => _done(d.id),
+                              GestureDetector(
+                                onLongPress: () => moveCategory(context, data, d),
+                                child: ChoiceChip(
+                                  label: Text(d.name),
+                                  selected: d.id == widget.selected,
+                                  showCheckmark: false,
+                                  visualDensity: VisualDensity.compact,
+                                  onSelected: (_) => _done(d.id),
+                                ),
                               ),
                           ],
                         ),
@@ -350,4 +353,59 @@ class CategoryField extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Moves a category into another group, or out to be a main category of its own.
+Future<void> moveCategory(BuildContext context, AppData data, Category cat) async {
+  final hasDetails = data.categories.any((c) => c.parentId == cat.id);
+  final groups = data.categories.where((c) => c.parentId == null && !c.isLoan && c.id != cat.id).toList()
+    ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+  if (hasDetails) {
+    await showDialog<void>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: Text('“${cat.name}” is a group'),
+        content: const Text(
+          'It has details inside it. Move those details out first, then it can go into another group.',
+        ),
+        actions: [TextButton(onPressed: () => Navigator.pop(c), child: const Text('OK'))],
+      ),
+    );
+    return;
+  }
+  final picked = await showDialog<({String? parent})>(
+    context: context,
+    builder: (c) => SimpleDialog(
+      title: Text('Move “${cat.name}” to'),
+      children: [
+        SimpleDialogOption(
+          onPressed: () => Navigator.pop(c, (parent: null)),
+          child: ListTile(
+            leading: const Icon(Icons.create_new_folder_outlined),
+            title: const Text('Its own group'),
+            subtitle: const Text('A main category'),
+            trailing: cat.parentId == null ? const Icon(Icons.check) : null,
+          ),
+        ),
+        for (final g in groups)
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(c, (parent: g.id)),
+            child: ListTile(
+              leading: Icon(iconFor(g), color: colorFor(g)),
+              title: Text(g.name),
+              trailing: cat.parentId == g.id ? const Icon(Icons.check) : null,
+            ),
+          ),
+      ],
+    ),
+  );
+  if (picked == null || picked.parent == cat.parentId) return;
+  await data.saveCategory(
+    id: cat.id,
+    name: cat.name,
+    icon: cat.icon,
+    color: cat.color,
+    isLoan: cat.isLoan,
+    parentId: picked.parent,
+  );
 }

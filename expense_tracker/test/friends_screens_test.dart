@@ -188,6 +188,37 @@ void main() {
     expect(only.single.balance, -1264);
   });
 
+  testWidgets('select several payments on a person\'s page and change them together', (tester) async {
+    final now = DateTime.now();
+    final data = AppData.preview(
+      categories: const [Category(id: 'f', name: 'Food & Dining', icon: 'restaurant', color: 0xFFFF5722)],
+      transactions: [
+        for (final (i, a) in const [2000.0, 400.0, 1180.0].indexed)
+          Txn(
+            id: 'd$i',
+            amount: a,
+            isDebit: true,
+            txnAt: now.subtract(Duration(days: i)),
+            merchant: 'Digvijay Kale',
+          ),
+      ],
+    );
+    await pump(tester, PlaceDetailScreen(data: data, keys: const {'digvijay kale'}));
+    await tester.scrollUntilVisible(find.text('₹400'), 200, scrollable: find.byType(Scrollable).first);
+    await tester.longPress(find.text('₹400'));
+    await tester.pumpAndSettle();
+    expect(find.text('1 selected'), findsOneWidget);
+    await tester.tap(find.text('₹1,180'));
+    await tester.pumpAndSettle();
+    expect(find.text('2 selected'), findsOneWidget);
+    await tester.tap(find.byTooltip('Select all'));
+    await tester.pumpAndSettle();
+    expect(find.text('3 selected'), findsOneWidget);
+    await tester.tap(find.text('Category'));
+    await tester.pumpAndSettle();
+    expect(find.text('Category for 3 payments'), findsOneWidget);
+  });
+
   testWidgets('people review lists people, not shops', (tester) async {
     await pump(tester, PeopleReviewScreen(data: sample()));
     expect(find.text('Shresth Sharma'), findsOneWidget);

@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../data/app_data.dart';
 import '../models.dart';
+import '../ui/category_picker.dart';
 import '../ui/category_style.dart';
 
 class CategoriesScreen extends StatelessWidget {
@@ -53,7 +54,28 @@ class CategoriesScreen extends StatelessWidget {
                     ? const Text('Not counted as spending or income')
                     : null,
                 onTap: () => _edit(context, cat),
-                trailing: IconButton(icon: const Icon(Icons.delete_outline), onPressed: () => _delete(context, cat)),
+                trailing: PopupMenuButton<String>(
+                  onSelected: (v) => switch (v) {
+                    'move' => moveCategory(context, data, cat),
+                    'edit' => _edit(context, cat),
+                    _ => _delete(context, cat),
+                  },
+                  itemBuilder: (_) => [
+                    if (!cat.isLoan)
+                      const PopupMenuItem(
+                        value: 'move',
+                        child: ListTile(leading: Icon(Icons.drive_file_move_outline), title: Text('Move to group…')),
+                      ),
+                    const PopupMenuItem(
+                      value: 'edit',
+                      child: ListTile(leading: Icon(Icons.edit_outlined), title: Text('Edit')),
+                    ),
+                    const PopupMenuItem(
+                      value: 'delete',
+                      child: ListTile(leading: Icon(Icons.delete_outline), title: Text('Delete')),
+                    ),
+                  ],
+                ),
               ),
           ],
         ),

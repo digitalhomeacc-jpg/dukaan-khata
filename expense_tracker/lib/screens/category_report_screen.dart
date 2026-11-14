@@ -6,6 +6,7 @@ import '../logic/summary.dart';
 import '../models.dart';
 import '../ui/category_style.dart';
 import '../ui/format.dart';
+import '../ui/selection.dart';
 import 'transactions_screen.dart';
 
 /// The longest range a report covers.
@@ -347,46 +348,51 @@ class _CategoryTxnsScreen extends StatelessWidget {
     final months = byMonth.entries.toList()..sort((a, b) => b.key.compareTo(a.key));
     final top = months.fold(0.0, (m, e) => e.value > m ? e.value : m);
     final total = txns.fold(0.0, (s, t) => s + shares.own(t));
-    return Scaffold(
-      appBar: AppBar(
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+    return SelectionHost(
+      data: data,
+      builder: (context, bar) => Scaffold(
+        appBar:
+            bar(txns.map((t) => t.id)) ??
+            AppBar(
+              title: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title),
+                  Text(subtitle, style: text.bodySmall),
+                ],
+              ),
+            ),
+        body: ListView(
+          padding: const EdgeInsets.only(bottom: 32),
           children: [
-            Text(title),
-            Text(subtitle, style: text.bodySmall),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+              child: Text('${money(total)} · ${txns.length} payments', style: text.titleMedium),
+            ),
+            if (months.length > 1)
+              for (final m in months)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 3),
+                  child: Row(
+                    children: [
+                      SizedBox(width: 64, child: Text(DateFormat('MMM yy').format(m.key), style: text.bodySmall)),
+                      Expanded(
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(3),
+                          child: LinearProgressIndicator(value: top == 0 ? 0 : m.value / top, minHeight: 8),
+                        ),
+                      ),
+                      SizedBox(
+                        width: 84,
+                        child: Text(money(m.value.roundToDouble()), textAlign: TextAlign.end, style: text.bodySmall),
+                      ),
+                    ],
+                  ),
+                ),
+            const Divider(height: 24),
+            for (final t in txns) TxnTile(txn: t, data: data),
           ],
         ),
-      ),
-      body: ListView(
-        padding: const EdgeInsets.only(bottom: 32),
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-            child: Text('${money(total)} · ${txns.length} payments', style: text.titleMedium),
-          ),
-          if (months.length > 1)
-            for (final m in months)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 3),
-                child: Row(
-                  children: [
-                    SizedBox(width: 64, child: Text(DateFormat('MMM yy').format(m.key), style: text.bodySmall)),
-                    Expanded(
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(3),
-                        child: LinearProgressIndicator(value: top == 0 ? 0 : m.value / top, minHeight: 8),
-                      ),
-                    ),
-                    SizedBox(
-                      width: 84,
-                      child: Text(money(m.value.roundToDouble()), textAlign: TextAlign.end, style: text.bodySmall),
-                    ),
-                  ],
-                ),
-              ),
-          const Divider(height: 24),
-          for (final t in txns) TxnTile(txn: t, data: data),
-        ],
       ),
     );
   }

@@ -5,6 +5,7 @@ import '../logic/summary.dart';
 import '../models.dart';
 import '../ui/category_style.dart';
 import '../ui/format.dart';
+import '../ui/selection.dart';
 import 'budgets_screen.dart';
 import 'import_statement_screen.dart';
 import 'month_bar.dart';
@@ -67,140 +68,145 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
     final unsorted = unsortedByPayee(data.transactions, data.notSpendingCategoryIds);
     final uncategorised = unsorted.fold(0, (s, g) => s + g.txns.length);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: MonthBar(month: _month, onChanged: (m) => setState(() => _month = m)),
-        centerTitle: true,
-        actions: [
-          if (widget.accountId != null && account != null && account.kind == AccountKind.bank)
-            IconButton(
-              tooltip: 'Import bank statement',
-              icon: const Icon(Icons.upload_file),
-              onPressed: () => openImportStatement(context, data, account: account),
-            ),
-          if (widget.accountId == null)
-            PopupMenuButton<String?>(
-              tooltip: 'Show one account',
-              icon: Icon(_accountId == null ? Icons.filter_list : Icons.filter_list_alt),
-              initialValue: _accountId,
-              onSelected: (id) => setState(() => _accountId = id == '' ? null : id),
-              itemBuilder: (_) => [
-                const PopupMenuItem(value: '', child: Text('All accounts')),
-                for (final a in data.accounts)
-                  PopupMenuItem(
-                    value: a.id,
-                    child: ListTile(dense: true, leading: Icon(accountIcon(a)), title: Text(a.name)),
+    return SelectionHost(
+      data: data,
+      builder: (context, bar) => Scaffold(
+        appBar:
+            bar(shown.map((t) => t.id)) ??
+            AppBar(
+              title: MonthBar(month: _month, onChanged: (m) => setState(() => _month = m)),
+              centerTitle: true,
+              actions: [
+                if (widget.accountId != null && account != null && account.kind == AccountKind.bank)
+                  IconButton(
+                    tooltip: 'Import bank statement',
+                    icon: const Icon(Icons.upload_file),
+                    onPressed: () => openImportStatement(context, data, account: account),
+                  ),
+                if (widget.accountId == null)
+                  PopupMenuButton<String?>(
+                    tooltip: 'Show one account',
+                    icon: Icon(_accountId == null ? Icons.filter_list : Icons.filter_list_alt),
+                    initialValue: _accountId,
+                    onSelected: (id) => setState(() => _accountId = id == '' ? null : id),
+                    itemBuilder: (_) => [
+                      const PopupMenuItem(value: '', child: Text('All accounts')),
+                      for (final a in data.accounts)
+                        PopupMenuItem(
+                          value: a.id,
+                          child: ListTile(dense: true, leading: Icon(accountIcon(a)), title: Text(a.name)),
+                        ),
+                    ],
                   ),
               ],
             ),
-        ],
-      ),
-      body: !data.loaded
-          ? Center(
-              child: data.error == null
-                  ? const CircularProgressIndicator()
-                  : Padding(padding: const EdgeInsets.all(24), child: Text('Could not load: ${data.error}')),
-            )
-          : CustomScrollView(
-              slivers: [
-                if (account != null)
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                      child: InputChip(
-                        avatar: Icon(accountIcon(account), size: 18),
-                        label: Text(account.name),
-                        onDeleted: widget.accountId == null ? () => setState(() => _accountId = null) : null,
-                      ),
-                    ),
-                  ),
-                if (account != null && check != null)
-                  SliverToBoxAdapter(
-                    child: BalanceCheckCard(data: data, account: account, check: check),
-                  ),
-                SliverToBoxAdapter(child: _SummaryCard(summary: summary)),
-                if (_accountId == null)
-                  for (final p in budgetProgress(data.budgets.where((b) => b.categoryId == null), summary))
+        body: !data.loaded
+            ? Center(
+                child: data.error == null
+                    ? const CircularProgressIndicator()
+                    : Padding(padding: const EdgeInsets.all(24), child: Text('Could not load: ${data.error}')),
+              )
+            : CustomScrollView(
+                slivers: [
+                  if (account != null)
                     SliverToBoxAdapter(
                       child: Padding(
-                        padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-                        child: BudgetBar(progress: p),
-                      ),
-                    ),
-                if (uncategorised > 0 && _filter != _Filter.uncategorised)
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                      child: Card.filled(
-                        child: ListTile(
-                          leading: const Icon(Icons.auto_awesome_motion_outlined),
-                          title: Text(
-                            '$uncategorised ${uncategorised == 1 ? 'payment needs' : 'payments need'} a category',
-                          ),
-                          subtitle: Text('Quick sort · ${unsorted.length} payees, biggest first'),
-                          trailing: const Icon(Icons.chevron_right),
-                          onTap: () => openQuickSort(context, data),
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                        child: InputChip(
+                          avatar: Icon(accountIcon(account), size: 18),
+                          label: Text(account.name),
+                          onDeleted: widget.accountId == null ? () => setState(() => _accountId = null) : null,
                         ),
                       ),
                     ),
-                  ),
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
-                    child: TextField(
-                      decoration: const InputDecoration(
-                        prefixIcon: Icon(Icons.search),
-                        hintText: 'Search merchant, note or category',
-                        isDense: true,
+                  if (account != null && check != null)
+                    SliverToBoxAdapter(
+                      child: BalanceCheckCard(data: data, account: account, check: check),
+                    ),
+                  SliverToBoxAdapter(child: _SummaryCard(summary: summary)),
+                  if (_accountId == null)
+                    for (final p in budgetProgress(data.budgets.where((b) => b.categoryId == null), summary))
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                          child: BudgetBar(progress: p),
+                        ),
                       ),
-                      onChanged: (v) => setState(() => _query = v.trim()),
-                    ),
-                  ),
-                ),
-                SliverToBoxAdapter(
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                    child: Row(
-                      children: [
-                        for (final f in _Filter.values)
-                          Padding(
-                            padding: const EdgeInsets.only(right: 8),
-                            child: ChoiceChip(
-                              label: Text(switch (f) {
-                                _Filter.all => 'All',
-                                _Filter.spent => 'Spent',
-                                _Filter.received => 'Received',
-                                _Filter.uncategorised => 'No category',
-                              }),
-                              selected: _filter == f,
-                              onSelected: (_) => setState(() => _filter = f),
+                  if (uncategorised > 0 && _filter != _Filter.uncategorised)
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                        child: Card.filled(
+                          child: ListTile(
+                            leading: const Icon(Icons.auto_awesome_motion_outlined),
+                            title: Text(
+                              '$uncategorised ${uncategorised == 1 ? 'payment needs' : 'payments need'} a category',
                             ),
+                            subtitle: Text('Quick sort · ${unsorted.length} payees, biggest first'),
+                            trailing: const Icon(Icons.chevron_right),
+                            onTap: () => openQuickSort(context, data),
                           ),
-                      ],
+                        ),
+                      ),
                     ),
-                  ),
-                ),
-                if (days.isEmpty)
-                  SliverFillRemaining(hasScrollBody: false, child: _EmptyState(hasAny: data.transactions.isNotEmpty)),
-                for (final day in days) ...[
                   SliverToBoxAdapter(
-                    child: _DayHeader(
-                      day: day.key,
-                      txns: day.value,
-                      loanCategoryIds: loans,
-                      shares: data.shareTotalsNow,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+                      child: TextField(
+                        decoration: const InputDecoration(
+                          prefixIcon: Icon(Icons.search),
+                          hintText: 'Search merchant, note or category',
+                          isDense: true,
+                        ),
+                        onChanged: (v) => setState(() => _query = v.trim()),
+                      ),
                     ),
                   ),
-                  SliverList.builder(
-                    itemCount: day.value.length,
-                    itemBuilder: (context, i) =>
-                        TxnTile(txn: day.value[i], data: data, balanceAfter: running[day.value[i].id]),
+                  SliverToBoxAdapter(
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                      child: Row(
+                        children: [
+                          for (final f in _Filter.values)
+                            Padding(
+                              padding: const EdgeInsets.only(right: 8),
+                              child: ChoiceChip(
+                                label: Text(switch (f) {
+                                  _Filter.all => 'All',
+                                  _Filter.spent => 'Spent',
+                                  _Filter.received => 'Received',
+                                  _Filter.uncategorised => 'No category',
+                                }),
+                                selected: _filter == f,
+                                onSelected: (_) => setState(() => _filter = f),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
                   ),
+                  if (days.isEmpty)
+                    SliverFillRemaining(hasScrollBody: false, child: _EmptyState(hasAny: data.transactions.isNotEmpty)),
+                  for (final day in days) ...[
+                    SliverToBoxAdapter(
+                      child: _DayHeader(
+                        day: day.key,
+                        txns: day.value,
+                        loanCategoryIds: loans,
+                        shares: data.shareTotalsNow,
+                      ),
+                    ),
+                    SliverList.builder(
+                      itemCount: day.value.length,
+                      itemBuilder: (context, i) =>
+                          TxnTile(txn: day.value[i], data: data, balanceAfter: running[day.value[i].id]),
+                    ),
+                  ],
+                  const SliverToBoxAdapter(child: SizedBox(height: 96)),
                 ],
-                const SliverToBoxAdapter(child: SizedBox(height: 96)),
-              ],
-            ),
+              ),
+      ),
     );
   }
 }
@@ -323,8 +329,12 @@ class TxnTile extends StatelessWidget {
     final amountColor = txn.excluded || isLoan || notMine
         ? scheme.outline
         : (txn.isDebit ? scheme.onSurface : Colors.green.shade700);
+    final sel = TxnSelection.maybeOf(context);
+    final picked = sel?.ids.contains(txn.id) ?? false;
     return ListTile(
-      leading: CategoryAvatar(cat),
+      selected: picked,
+      selectedTileColor: scheme.primaryContainer.withValues(alpha: 0.4),
+      leading: sel?.active == true ? SelectTick(selected: picked) : CategoryAvatar(cat),
       title: Text(txn.title, maxLines: 1, overflow: TextOverflow.ellipsis),
       subtitle: Text(txn.excluded ? 'Not counted · $details' : details, maxLines: 1, overflow: TextOverflow.ellipsis),
       trailing: Row(
@@ -353,7 +363,8 @@ class TxnTile extends StatelessWidget {
           ),
         ],
       ),
-      onTap: () => openTxnEditor(context, data, existing: txn),
+      onTap: () => sel?.active == true ? sel!.toggle(txn.id) : openTxnEditor(context, data, existing: txn),
+      onLongPress: sel == null ? null : () => sel.toggle(txn.id),
     );
   }
 }

@@ -326,6 +326,23 @@ void main() {
     expect(find.textContaining('Added 1 payment'), findsOneWidget);
   });
 
+  testWidgets('a category can be moved into another group', (tester) async {
+    final data = sample();
+    await pump(tester, CategoriesScreen(data: data));
+    final shopping = data.categories.firstWhere((c) => c.name == 'Shopping');
+    await tester.tap(
+      find.descendant(
+        of: find.widgetWithText(ListTile, shopping.name).first,
+        matching: find.byType(PopupMenuButton<String>),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Move to group…'));
+    await tester.pumpAndSettle();
+    expect(find.text('Move “Shopping” to'), findsOneWidget);
+    expect(find.text('Its own group'), findsOneWidget);
+  });
+
   testWidgets('editor for an email transaction', (tester) async {
     final data = sample();
     await pump(tester, TxnEditor(data: data, existing: data.transactions.first));
