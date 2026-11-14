@@ -1379,4 +1379,20 @@ void main() {
       expect(after[x['id']], x['vno']);
     }
   });
+
+  test('split payment with the rest due: ₹10 bill, ₹2 cash + ₹5 PhonePe, ₹3 stays on the khata', () async {
+    final m = items.values.first;
+    final c = await lr.create(name: 'Split Due', group: LedgerGroup.customer);
+    final cash0 = await lr.balanceAt(vs.sys('cash')), upi0 = await lr.balanceAt(vs.sys('upi_h'));
+    // paid now ₹7 by cash, of which ₹5 by PhonePe (as the form saves it)
+    final id = await vs.save(
+        VoucherInput(type: VoucherType.sale, date: '2026-11-20', partyId: c, payLedgerId: vs.sys('cash'), paid: rs(7),
+            items: [ItemLine(m.id, 1, rs(10))]),
+        owner);
+    await vs.saveSplit(id, owner, ledgerId: vs.sys('upi_h'), amount: rs(5));
+    expect(await lr.balanceAt(vs.sys('cash')) - cash0, rs(2));
+    expect(await lr.balanceAt(vs.sys('upi_h')) - upi0, rs(5));
+    expect(await lr.balanceAt(c), rs(3), reason: 'the rest is due on his khata');
+    expect(await vs.deepCheck(), isEmpty);
+  });
 }
