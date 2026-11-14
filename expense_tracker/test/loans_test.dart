@@ -6,6 +6,40 @@ LoanEvent ev(LoanEventKind k, double a, DateTime at, {String loan = 'L'}) =>
     LoanEvent(id: '$k$a$at', loanId: loan, kind: k, amount: a, at: at);
 
 void main() {
+  test('upcoming dues by date: next dues, then later EMIs up to what is owed', () {
+    final now = DateTime(2026, 11, 14);
+    final loans = [
+      Loan(
+        id: 'k',
+        lender: 'kreditbee',
+        name: 'KreditBee',
+        emiAmount: 4161,
+        outstanding: 10000,
+        outstandingAt: DateTime(2026, 11, 1),
+        nextDueAmount: 4161,
+        nextDueDate: DateTime(2026, 12, 10),
+      ),
+      Loan(
+        id: 's',
+        lender: 'slice',
+        name: 'Slice borrow',
+        kind: LoanKind.creditLine,
+        outstanding: 28792.91,
+        outstandingAt: DateTime(2026, 11, 14),
+        nextDueAmount: 4940.24,
+        nextDueDate: DateTime(2026, 12, 5),
+      ),
+    ];
+    final d = upcomingDues(loans, const [], now: now);
+    expect(d.map((x) => (x.loan.name, x.date.day, x.date.month, x.amount)).toList(), [
+      ('Slice borrow', 5, 12, 4940.24),
+      ('KreditBee', 10, 12, 4161.0),
+      ('KreditBee', 10, 1, 4161.0),
+      ('KreditBee', 10, 2, 1678.0), // only what is left of 10,000
+    ]);
+    expect(d.where((x) => x.estimate).length, 2);
+  });
+
   final now = DateTime(2026, 11, 13);
 
   test('credit line: borrowed and bought minus repaid; reminder already paid', () {

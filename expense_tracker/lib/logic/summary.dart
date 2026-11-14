@@ -397,6 +397,41 @@ DateTime nextDueOn(int dueDay, DateTime from) {
   return thisMonth.isBefore(d) ? onMonth(d.year, d.month + 1) : thisMonth;
 }
 
+/// Loan dues coming up, by date: each loan's next due, then its later EMIs (one a month) where known.
+List<({DateTime date, double amount, Loan loan, bool estimate})> upcomingDues(
+  Iterable<Loan> loans,
+  Iterable<LoanEvent> events, {
+  int months = 12,
+  DateTime? now,
+}) {
+  final out = <({DateTime date, double amount, Loan loan, bool estimate})>[];
+  for (final loan in loans.where((l) => !l.closed)) {
+    final s = loanStatus(loan, events, now: now);
+    final first = s.nextDueDate;
+    if (first == null || s.nextDueAmount == null || s.owed <= 0) continue;
+    var left = s.owed;
+    if (!s.nextDuePaid) {
+      out.add((date: first, amount: s.nextDueAmount!, loan: loan, estimate: false));
+      left -= s.nextDueAmount!;
+    }
+    // Later months: the EMI, never more than what is still owed.
+    final emi = loan.emiAmount;
+    if (emi == null || emi <= 0) continue;
+    var count = s.emisLeft == null ? months : s.emisLeft! - (s.nextDuePaid ? 0 : 1);
+    for (var k = 1; k <= months && count > 0 && left > 0.5; k++, count--) {
+      final amount = left < emi ? left : emi;
+      out.add((
+        date: DateTime(first.year, first.month + k, first.day),
+        amount: _round(amount),
+        loan: loan,
+        estimate: true,
+      ));
+      left -= amount;
+    }
+  }
+  return out..sort((a, b) => a.date.compareTo(b.date));
+}
+
 LoanStatus loanStatus(Loan loan, Iterable<LoanEvent> allEvents, {DateTime? now}) {
   final today = _day(now ?? DateTime.now());
   final events = allEvents.where((e) => e.loanId == loan.id).toList()..sort((a, b) => a.at.compareTo(b.at));

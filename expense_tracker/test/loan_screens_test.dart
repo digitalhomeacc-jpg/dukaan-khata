@@ -74,9 +74,16 @@ void main() {
   testWidgets('Accounts tab shows lender loans with details', (tester) async {
     final data = sample();
     await pump(tester, AccountsScreen(data: data));
-    await tester.scrollUntilVisible(find.text('KreditBee'), 200, scrollable: find.byType(Scrollable).first);
-    expect(find.text('Slice borrow'), findsOneWidget);
-    expect(find.text('KreditBee'), findsOneWidget);
+    // The summary on top: total owed and what is due next.
+    await tester.scrollUntilVisible(find.text('You owe in all'), 200, scrollable: find.byType(Scrollable).first);
+    expect(find.text('Coming up'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.text('4 of 12 EMIs paid · 8 left'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('Slice borrow'), findsWidgets);
+    expect(find.text('KreditBee'), findsWidgets);
     expect(find.text('4 of 12 EMIs paid · 8 left'), findsOneWidget);
     expect(find.text('₹16,800'), findsOneWidget); // 8 × 2,100
     expect(find.text('₹1,636'), findsOneWidget); // slice: 1,500 + 136

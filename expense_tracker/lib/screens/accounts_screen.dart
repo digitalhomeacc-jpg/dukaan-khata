@@ -146,6 +146,7 @@ class AccountsScreen extends StatelessWidget {
                 'Loans from apps that send emails (such as Slice) appear here by themselves.',
               ),
             ),
+          LoansSummaryCard(data: data),
           for (final l in data.loans.where((l) => !l.closed)) LenderLoanCard(data: data, loan: l),
           if (archived.isNotEmpty)
             ExpansionTile(

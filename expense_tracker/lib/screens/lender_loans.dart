@@ -27,6 +27,123 @@ const lenderPresets = <String, ({String name, LoanKind kind, List<String> aliase
 };
 
 /// One lender loan on the Loans tab.
+/// All loans at a glance: what you owe in total and what is due when.
+class LoansSummaryCard extends StatelessWidget {
+  const LoansSummaryCard({super.key, required this.data});
+
+  final AppData data;
+
+  @override
+  Widget build(BuildContext context) {
+    final loans = data.loans.where((l) => !l.closed).toList();
+    if (loans.isEmpty) return const SizedBox.shrink();
+    final text = Theme.of(context).textTheme;
+    final scheme = Theme.of(context).colorScheme;
+    final owed = loans.fold(0.0, (v, l) => v + loanStatus(l, data.loanEvents).owed);
+    final dues = upcomingDues(loans, data.loanEvents);
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final in30 = dues.where((d) => d.date.isBefore(today.add(const Duration(days: 31))));
+    final due30 = in30.fold(0.0, (v, d) => v + d.amount);
+    final overdue = dues.where((d) => d.date.isBefore(today)).fold(0.0, (v, d) => v + d.amount);
+    final byMonth = <DateTime, double>{};
+    for (final d in dues) {
+      final m = DateTime(d.date.year, d.date.month);
+      byMonth[m] = (byMonth[m] ?? 0) + d.amount;
+    }
+    final estimated = dues.any((d) => d.estimate);
+
+    Widget stat(String label, String value, {Color? color}) => Expanded(
+      child: Column(
+        children: [
+          FittedBox(
+            child: Text(
+              value,
+              style: text.titleMedium?.copyWith(fontWeight: FontWeight.w700, color: color),
+            ),
+          ),
+          Text(label, style: text.bodySmall, textAlign: TextAlign.center),
+        ],
+      ),
+    );
+
+    return Card.filled(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                stat('You owe in all', money(owed.roundToDouble()), color: scheme.error),
+                stat('Due in 30 days', money(due30.roundToDouble())),
+                stat('Loans', '${loans.length}'),
+              ],
+            ),
+            if (overdue > 0) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Overdue: ${money(overdue)}',
+                style: text.bodyMedium?.copyWith(color: scheme.error, fontWeight: FontWeight.w600),
+              ),
+            ],
+            if (dues.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Text('Coming up', style: text.titleSmall),
+              for (final d in dues.take(6))
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 3),
+                  child: Row(
+                    children: [
+                      SizedBox(width: 64, child: Text(DateFormat('d MMM').format(d.date), style: text.bodyMedium)),
+                      Expanded(child: Text(d.loan.name, maxLines: 1, overflow: TextOverflow.ellipsis)),
+                      Text(
+                        '${d.estimate ? '≈ ' : ''}${money(d.amount)}',
+                        style: text.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: d.date.isBefore(today) ? scheme.error : null,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              Theme(
+                data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+                child: ExpansionTile(
+                  tilePadding: EdgeInsets.zero,
+                  title: Text('Due by month', style: text.titleSmall),
+                  children: [
+                    for (final m in (byMonth.entries.toList()..sort((a, b) => a.key.compareTo(b.key))))
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 3),
+                        child: Row(
+                          children: [
+                            Expanded(child: Text(DateFormat('MMMM yyyy').format(m.key))),
+                            Text(money(m.value.roundToDouble()), style: const TextStyle(fontWeight: FontWeight.w600)),
+                          ],
+                        ),
+                      ),
+                    if (estimated)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6, bottom: 8),
+                        child: Text(
+                          '≈ later EMIs are estimated from each loan\'s EMI. Loans without a fixed EMI (like Slice) '
+                          'show only their next due.',
+                          style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class LenderLoanCard extends StatelessWidget {
   const LenderLoanCard({super.key, required this.data, required this.loan});
 
