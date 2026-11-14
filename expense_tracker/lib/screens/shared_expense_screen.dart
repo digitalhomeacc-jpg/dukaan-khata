@@ -2,7 +2,6 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../data/app_data.dart';
-import '../logic/summary.dart';
 import '../ui/category_style.dart';
 import '../ui/format.dart';
 

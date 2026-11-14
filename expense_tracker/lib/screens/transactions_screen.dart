@@ -285,8 +285,9 @@ class TxnTile extends StatelessWidget {
     final from =
         a?.name ?? (txn.bank == null ? null : '${txn.bank}${txn.accountLast4 != null ? ' ••${txn.accountLast4}' : ''}');
     final other = data.account(txn.counterAccountId);
-    if (txn.excluded && other != null)
+    if (txn.excluded && other != null) {
       return txn.isDebit ? '${from ?? '?'} → ${other.name}' : '${other.name} → ${from ?? '?'}';
+    }
     return from;
   }
 

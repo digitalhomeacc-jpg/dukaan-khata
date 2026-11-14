@@ -329,8 +329,9 @@ Future<void> showAcceptInvite(BuildContext context, AppData data, {String? code}
           TextButton(onPressed: () => Navigator.pop(c), child: const Text('Cancel')),
           FilledButton(
             onPressed: () async {
-              if (codeCtl.text.trim().isEmpty || nameCtl.text.trim().isEmpty)
+              if (codeCtl.text.trim().isEmpty || nameCtl.text.trim().isEmpty) {
                 return set(() => error = 'Enter the code and the name');
+              }
               try {
                 await data.acceptInvite(codeCtl.text, nameCtl.text);
                 if (c.mounted) Navigator.pop(c);
@@ -438,8 +439,9 @@ class FriendDetailScreen extends StatelessWidget {
         mode: LaunchMode.externalApplication,
       );
     } catch (e) {
-      if (context.mounted)
+      if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not make an invite: $e')));
+      }
     }
   }
 

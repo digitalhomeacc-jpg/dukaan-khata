@@ -476,10 +476,11 @@ class _LoanFormState extends State<_LoanForm> {
     );
     if (yes != true) return;
     await widget.data.deleteLoan(widget.existing!.id);
-    if (mounted)
+    if (mounted) {
       Navigator.of(context)
         ..pop()
         ..pop();
+    }
   }
 
   Widget _number(
