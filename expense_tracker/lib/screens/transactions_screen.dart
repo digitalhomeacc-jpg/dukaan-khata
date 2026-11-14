@@ -485,10 +485,36 @@ class BalanceCheckCard extends StatelessWidget {
                       : 'The bank has less: money went out that the app has not seen (e.g. a card charge, ATM or bank fee).',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton(onPressed: () => _match(context), child: const Text('Use bank balance')),
-                ),
+                // Matched the bank before? Then something on the day it stopped is missing or extra: go there,
+                // rather than moving the opening balance (that would make all the earlier days wrong).
+                if (differenceStartedOn(data.transactions, account, data.balanceReadings) case final start?) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    'It matched the bank until ${dayLabel(start.day.subtract(const Duration(days: 1)))}. Look at '
+                    '${dayLabel(start.day)}: an entry there is missing, extra, or the wrong way round '
+                    '(e.g. a failed ATM withdrawal that was put back).',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600),
+                  ),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: FilledButton.tonal(
+                      onPressed: () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => ListenableBuilder(
+                            listenable: data,
+                            builder: (_, _) =>
+                                DayLedgerScreen(data: data, account: account, day: start.day, bankBalance: start.bank),
+                          ),
+                        ),
+                      ),
+                      child: Text('Open ${dayLabel(start.day)}'),
+                    ),
+                  ),
+                ] else
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton(onPressed: () => _match(context), child: const Text('Use bank balance')),
+                  ),
               ],
             ],
           ),

@@ -140,4 +140,23 @@ void main() {
       expect(summarizeBetween([t], DateTime(2026, 11), DateTime(2026, 12), shares: shares).spent, 250);
     });
   });
+
+  test('the day a difference started, when it matched the bank before (e.g. an ATM withdrawal put back)', () {
+    final a = Account(id: 'h', name: 'HDFC', openingBalance: 5, openingDate: DateTime(2026, 7, 1));
+    final txns = [
+      Txn(id: 'w1', amount: 3500, isDebit: true, txnAt: DateTime(2026, 7, 8, 6), accountId: 'h'),
+      Txn(id: 'w2', amount: 3500, isDebit: true, txnAt: DateTime(2026, 7, 8, 7), accountId: 'h'), // really put back
+      Txn(id: 'in', amount: 7000, isDebit: false, txnAt: DateTime(2026, 7, 8, 5), accountId: 'h'),
+    ];
+    final readings = [
+      BalanceReading(id: 'r1', accountId: 'h', balance: 5, asOf: DateTime(2026, 7, 7, 23, 59)),
+      BalanceReading(id: 'r2', accountId: 'h', balance: 3505, asOf: DateTime(2026, 7, 8, 23, 59)),
+      BalanceReading(id: 'r3', accountId: 'h', balance: 3505, asOf: DateTime(2026, 7, 9, 23, 59)),
+    ];
+    final s = differenceStartedOn(txns, a, readings);
+    expect(s?.day, DateTime(2026, 7, 8));
+    expect(s?.bank, 3505);
+    // Never matched: nothing to point at (the opening balance may simply be wrong).
+    expect(differenceStartedOn(txns, a, readings.skip(1)), isNull);
+  });
 }

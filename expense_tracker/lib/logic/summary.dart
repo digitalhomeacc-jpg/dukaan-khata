@@ -259,6 +259,36 @@ double _rawEffect(Txn t, Account account) {
   return e;
 }
 
+/// The day the app stopped matching the bank, when it matched on an earlier day: the place to look for a
+/// missing or extra entry. Null when there is no earlier matching day (then an opening balance may be off).
+({DateTime day, double bank})? differenceStartedOn(
+  Iterable<Txn> txns,
+  Account account,
+  Iterable<BalanceReading> readings,
+) {
+  final lastOfDay = <DateTime, BalanceReading>{};
+  for (final r in readings.where((r) => r.accountId == account.id && account.counts(r.asOf))) {
+    final d = DateTime(r.asOf.year, r.asOf.month, r.asOf.day);
+    final cur = lastOfDay[d];
+    if (cur == null || r.asOf.isAfter(cur.asOf)) lastOfDay[d] = r;
+  }
+  final days = lastOfDay.keys.toList()..sort();
+  var matchedBefore = false;
+  ({DateTime day, double bank})? start;
+  for (final d in days) {
+    final r = lastOfDay[d]!;
+    final at = r.asOf.hour == 23 && r.asOf.minute == 59 ? DateTime(d.year, d.month, d.day, 23, 59, 59) : r.asOf;
+    final ok = (r.balance - balanceAt(txns, account, at)).abs() < 1;
+    if (ok) {
+      matchedBefore = true;
+      start = null;
+    } else if (matchedBefore && start == null) {
+      start = (day: d, bank: r.balance);
+    }
+  }
+  return start;
+}
+
 /// The app's balance for [account] at [time].
 double balanceAt(Iterable<Txn> txns, Account account, DateTime time) {
   var bal = account.openingBalance;

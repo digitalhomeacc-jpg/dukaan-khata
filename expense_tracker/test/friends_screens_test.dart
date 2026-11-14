@@ -234,12 +234,15 @@ void main() {
 
   testWidgets('every friend opens their friend page, with Connect and all their payments', (tester) async {
     final now = DateTime.now();
-    final data = AppData.preview(
-      categories: const [Category(id: 'fr', name: 'Friends', icon: 'group', color: 0xFF3F51B5, isLoan: true)],
-      transactions: [Txn(id: 'a', amount: 300, isDebit: true, txnAt: now, merchant: 'Geet Kalantri', source: 'email')],
-    )
-      ..people = const {'geet kalantri': 'friend'}
-      ..personNames = const {'geet kalantri': 'Geet Kalantri'};
+    final data =
+        AppData.preview(
+            categories: const [Category(id: 'fr', name: 'Friends', icon: 'group', color: 0xFF3F51B5, isLoan: true)],
+            transactions: [
+              Txn(id: 'a', amount: 300, isDebit: true, txnAt: now, merchant: 'Geet Kalantri', source: 'email'),
+            ],
+          )
+          ..people = const {'geet kalantri': 'friend'}
+          ..personNames = const {'geet kalantri': 'Geet Kalantri'};
     await pump(tester, FriendsScreen(data: data));
     await tester.scrollUntilVisible(find.text('Geet Kalantri'), 200, scrollable: find.byType(Scrollable).first);
     await tester.tap(find.text('Geet Kalantri'));
