@@ -452,23 +452,24 @@ extension ReceiptPdf on Exporter {
   }
 
   
-  /// Opens the print dialog with the 80 mm receipt (choose the thermal printer).
-  static Future<void> print(AppController app, String voucherId) =>
-      Printing.layoutPdf(
-        onLayout: (_) => build(app, voucherId),
-        name: 'receipt',
-      );
+    /// Opens the system share/print sheet on mobile/PWA, or falls back to print/download.
+  static Future<void> print(AppController app, String voucherId) => share(app, voucherId);
 
-  /// Sends the receipt to another app (e.g. a Bluetooth printer app).
+  /// Sends the receipt to another app (e.g. a Bluetooth printer app or system print/share sheet).
   static Future<void> share(AppController app, String voucherId) async {
     final bytes = await build(app, voucherId);
+    final name = Exporter._fileName('receipt_$voucherId', 'pdf');
     try {
       await SharePlus.instance.share(ShareParams(
-        files: [XFile.fromData(bytes, mimeType: 'application/pdf', name: 'receipt.pdf')],
-        fileNameOverrides: ['receipt.pdf'],
+        files: [XFile.fromData(bytes, mimeType: 'application/pdf', name: name)],
+        fileNameOverrides: [name],
       ));
     } catch (_) {
-      await Printing.sharePdf(bytes: bytes, filename: 'receipt.pdf');
+      try {
+        await Printing.layoutPdf(onLayout: (_) async => bytes, name: name);
+      } catch (_) {
+        await Printing.sharePdf(bytes: bytes, filename: name);
+      }
     }
   }
 }
