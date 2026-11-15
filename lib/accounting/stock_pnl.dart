@@ -238,47 +238,40 @@ class StockPnlEngine {
       final hasHist = histList.isNotEmpty;
       final histAllMatched = hasHist && histList.every((h) => partyOldMatches(h.$1));
 
+      // Compute the full-FY real cost rate (matching Customers > Supplier > Real Cost) when old entries match opening balance
+      double fyHistQty = 0, fyHistNet = 0;
+      if (histAllMatched && it.openingRate <= 0) {
+        for (final (supId, qh, ah) in histList) {
+          fyHistQty += qh;
+          fyHistNet += ah * (1.0 - rateOf(supId));
+        }
+      }
+      final useRealCost = fyHistQty > 0.0001 && (fyHistQty + p.purQty) > 0.0001;
+      final realAvg = useRealCost ? (fyHistNet + p.netPur) / (fyHistQty + p.purQty) : 0.0;
+
       if (prevClose != null) {
         p.openVal = prevClose[it.id] ?? 0;
+      } else if (useRealCost) {
+        p.openVal = (p.openQty * realAvg).round();
+        if (p.purQty > 0) {
+          p.discR = p.purVal - (p.purQty * realAvg).round();
+          p.disc = p.discR.toDouble();
+        }
       } else {
         var rate = it.openingRate.toDouble();
         if (p.openQty > 0 && rate <= 0) {
-          if (histAllMatched) {
-            double hQty = 0, hNet = 0;
-            for (final (supId, qh, ah) in histList) {
-              hQty += qh;
-              hNet += ah * (1.0 - rateOf(supId));
-            }
-            if (hQty > 0.0001) {
-              rate = hNet / hQty;
-            } else {
-              p.flags.add('opening_rate_missing');
-              rate = it.purchaseRate.toDouble();
-            }
-          } else {
-            p.flags.add('opening_rate_missing');
-            rate = it.purchaseRate.toDouble();
-          }
+          p.flags.add('opening_rate_missing');
+          rate = it.purchaseRate.toDouble();
         } else if (hasHist && !histAllMatched) {
           p.flags.add('opening_rate_missing');
         }
         p.openVal = (p.openQty * rate).round();
       }
 
-      // If this item has matched FY history purchases (like Wonder / Wonder Plus),
-      // compute real cost / unit across the full financial year (matching Real Cost screen)
-      double fyHistQty = 0, fyHistNet = 0;
-      if (histAllMatched) {
-        for (final (supId, qh, ah) in histList) {
-          fyHistQty += qh;
-          fyHistNet += ah * (1.0 - rateOf(supId));
-        }
-      }
-
       final qty = p.openQty + p.purQty;
       final val = p.openVal + p.netPur;
-      if (fyHistQty > 0.0001 && (fyHistQty + p.purQty) > 0.0001) {
-        p.avg = (fyHistNet + p.netPur) / (fyHistQty + p.purQty);
+      if (useRealCost) {
+        p.avg = realAvg;
       } else if (qty > 0.0001) {
         p.avg = val / qty;
       } else {
