@@ -341,6 +341,7 @@ class WhatsApp {
 /// (or shared to a printer app). English, like every printed bill.
 extension ReceiptPdf on Exporter {
   static Future<Uint8List> build(AppController app, String voucherId) async {
+    await app.loadPdfNames();
     final (v, lines) = await app.vouchers.load(voucherId);
     // every item, hidden ones too (an old bill may use one)
     final items = [for (final r in await app.db.getAll('SELECT * FROM items WHERE business_id = ?', [app.businessId])) Item.fromRow(r)];
@@ -450,22 +451,24 @@ extension ReceiptPdf on Exporter {
     return doc.save();
   }
 
+  
   /// Opens the print dialog with the 80 mm receipt (choose the thermal printer).
-  static Future<void> print(AppController app, String voucherId) async {
-    final bytes = await build(app, voucherId);
-    await Printing.layoutPdf(
-      onLayout: (_) async => bytes,
-      format: const PdfPageFormat(80 * PdfPageFormat.mm, double.infinity, marginAll: 4 * PdfPageFormat.mm),
-      name: 'receipt',
-    );
-  }
+  static Future<void> print(AppController app, String voucherId) =>
+      Printing.layoutPdf(
+        onLayout: (_) => build(app, voucherId),
+        name: 'receipt',
+      );
 
   /// Sends the receipt to another app (e.g. a Bluetooth printer app).
   static Future<void> share(AppController app, String voucherId) async {
     final bytes = await build(app, voucherId);
-    await SharePlus.instance.share(ShareParams(
-      files: [XFile.fromData(bytes, mimeType: 'application/pdf', name: 'receipt.pdf')],
-      fileNameOverrides: ['receipt.pdf'],
-    ));
+    try {
+      await SharePlus.instance.share(ShareParams(
+        files: [XFile.fromData(bytes, mimeType: 'application/pdf', name: 'receipt.pdf')],
+        fileNameOverrides: ['receipt.pdf'],
+      ));
+    } catch (_) {
+      await Printing.sharePdf(bytes: bytes, filename: 'receipt.pdf');
+    }
   }
 }
