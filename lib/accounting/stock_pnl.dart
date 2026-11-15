@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:sqlite_async/sqlite_async.dart';
 
 import '../core/money.dart';
@@ -34,7 +32,7 @@ class ItemPnl {
   double disc = 0; // company discounts on this item's purchases (paise, unrounded)
   int discR = 0, closeVal = 0, cost = 0;
   double avg = 0; // net cost per unit (paise)
-  final flags = <String>[]; // opening_rate_missing | old_balance_mismatch | no_cost | negative_stock
+  final flags = <String>[]; // opening_rate_missing | no_cost | negative_stock
 
   int get netPur => purVal - discR;
   int get profit => sales - cost;
@@ -96,11 +94,9 @@ class StockPnlEngine {
     final from = _later(fyStart(to), Books.start);
     // opening values: the books' opening rates, or last year's closing
     Map<String, int>? prevClose;
-    Map<String, List<String>>? prevFlags;
     if (from.compareTo(Books.start) > 0) {
       final prev = await compute(_dayBefore(from));
       prevClose = {for (final i in prev.items) i.item.id: i.closeVal};
-      prevFlags = {for (final i in prev.items) if (i.flags.isNotEmpty) i.item.id: [...i.flags]};
     }
     final out = StockPnl(from, to);
     final b = businessId;
@@ -192,7 +188,7 @@ class StockPnlEngine {
       discByItem[id] = (discByItem[id] ?? 0) + (r['a'] as num).toInt() * rateOf(r['p'] as String?);
     }
 
-    // 1. Check opening balance vs old entries per supplier (same check as OldMismatchScreen / parties_screen)
+    // Check which suppliers' old entries match their opening balance
     final oldTotalByParty = <String, int>{};
     for (final r in await db.getAll(
         "SELECT party_id, amount, paid, pay_ledger_id FROM vouchers WHERE business_id = ? AND vtype = 'history' "
@@ -202,53 +198,14 @@ class StockPnlEngine {
       final p = r['party_id'] as String;
       oldTotalByParty[p] = (oldTotalByParty[p] ?? 0) + (d - c);
     }
-    final openBalByParty = <String, int>{}, curBalByParty = <String, int>{};
-    for (final r in await db.getAll(
-        'SELECT l.id, l.opening_balance, '
-        '(l.opening_balance + COALESCE((SELECT SUM(vl.debit - vl.credit) FROM voucher_lines vl WHERE vl.ledger_id = l.id AND vl.deleted = 0), 0)) AS bal '
-        'FROM ledgers l WHERE l.business_id = ?',
-        [b])) {
-      final id = r['id'] as String;
-      openBalByParty[id] = (r['opening_balance'] as int?) ?? 0;
-      curBalByParty[id] = (r['bal'] as num?)?.toInt() ?? 0;
+    final openBalByParty = <String, int>{};
+    for (final r in await db.getAll('SELECT id, opening_balance FROM ledgers WHERE business_id = ?', [b])) {
+      openBalByParty[r['id'] as String] = (r['opening_balance'] as int?) ?? 0;
     }
+    bool partyOldMatches(String? p) =>
+        p != null && oldTotalByParty.containsKey(p) && oldTotalByParty[p] == (openBalByParty[p] ?? 0);
 
-    // 2. Check latest uploaded supplier statement running balance & unmatched lines (from stmt_check:<partyId>)
-    final stmtOkByParty = <String, bool>{};
-    for (final r in await db.getAll(
-        "SELECT voucher_id, snapshot FROM audit_log WHERE business_id = ? AND voucher_id LIKE 'stmt_check:%' ORDER BY at",
-        [b])) {
-      final id = (r['voucher_id'] as String).substring(11);
-      try {
-        final after = (jsonDecode(r['snapshot'] as String) as Map)['after'] as Map?;
-        if (after != null) {
-          final stmtBal = int.tryParse('${after['balance'] ?? ''}') ?? 0;
-          final missing = int.tryParse('${after['missing'] ?? '0'}') ?? 0;
-          final extra = int.tryParse('${after['extra'] ?? '0'}') ?? 0;
-          final ourBal = curBalByParty[id] ?? 0;
-          stmtOkByParty[id] = (stmtBal == -ourBal) && missing == 0 && extra == 0;
-        }
-      } catch (_) {}
-    }
-
-    bool partyFullyMatches(String? p) {
-      if (p == null || !oldTotalByParty.containsKey(p)) return false;
-      if (oldTotalByParty[p] != (openBalByParty[p] ?? 0)) return false;
-      if (stmtOkByParty.containsKey(p) && stmtOkByParty[p] == false) return false;
-      return true;
-    }
-
-    // Also track any supplier of this item (in-books or pre-books) whose uploaded statement running balance mismatches
-    final itemSuppliers = <String, Set<String>>{};
-    for (final r in await db.getAll(
-        'SELECT DISTINCT il.item_id, v.party_id AS p FROM inventory_lines il JOIN vouchers v ON v.id = il.voucher_id '
-        'WHERE il.business_id = ? AND il.deleted = 0 AND v.deleted = 0 AND v.party_id IS NOT NULL '
-        "AND (v.vtype IN ('purchase', 'purchase_return') OR (v.vtype = 'history' AND v.pay_ledger_id = 'hist:purchase'))",
-        [b])) {
-      (itemSuppliers[r['item_id'] as String] ??= {}).add(r['p'] as String);
-    }
-
-    // Pre-books (history) purchases per item within the financial year, grouped by supplier
+    // Pre-books (history) purchases per item within this financial year, grouped by supplier
     final histPurByItem = <String, List<(String?, double, int)>>{};
     for (final r in await db.getAll(
         'SELECT il.item_id, v.party_id AS p, SUM(il.qty) AS q, SUM(il.amount) AS a '
@@ -278,55 +235,51 @@ class StockPnlEngine {
       p.discR = p.disc.round();
 
       final histList = histPurByItem[it.id] ?? const [];
-      final sups = itemSuppliers[it.id] ?? const <String>{};
-      final hasHistMismatch = histList.any((h) => h.$1 != null && !partyFullyMatches(h.$1)) ||
-          sups.any((s) => stmtOkByParty[s] == false);
+      final hasHist = histList.isNotEmpty;
+      final histAllMatched = hasHist && histList.every((h) => partyOldMatches(h.$1));
 
       if (prevClose != null) {
         p.openVal = prevClose[it.id] ?? 0;
-        if (hasHistMismatch && !p.flags.contains('old_balance_mismatch')) {
-          p.flags.add('old_balance_mismatch');
-        }
-        for (final f in prevFlags?[it.id] ?? const <String>[]) {
-          if ((f == 'opening_rate_missing' || f == 'old_balance_mismatch') && !p.flags.contains(f)) {
-            p.flags.add(f);
-          }
-        }
       } else {
         var rate = it.openingRate.toDouble();
-        if (p.openQty > 0) {
-          if (hasHistMismatch) {
-            // As soon as opening balance or uploaded statement running balance mismatches, revert to warning
-            p.flags.add('old_balance_mismatch');
-            if (rate <= 0) {
-              p.flags.add('opening_rate_missing');
-              rate = it.purchaseRate.toDouble();
-            }
-          } else if (rate <= 0) {
-            // When both opening balance and running statement balance match, calculate net opening rate from this FY's old entries
-            double hQty = 0, hNetVal = 0;
+        if (p.openQty > 0 && rate <= 0) {
+          if (histAllMatched) {
+            double hQty = 0, hNet = 0;
             for (final (supId, qh, ah) in histList) {
-              if (partyFullyMatches(supId)) {
-                hQty += qh;
-                hNetVal += ah * (1.0 - rateOf(supId));
-              }
+              hQty += qh;
+              hNet += ah * (1.0 - rateOf(supId));
             }
             if (hQty > 0.0001) {
-              rate = hNetVal / hQty;
+              rate = hNet / hQty;
             } else {
               p.flags.add('opening_rate_missing');
               rate = it.purchaseRate.toDouble();
             }
+          } else {
+            p.flags.add('opening_rate_missing');
+            rate = it.purchaseRate.toDouble();
           }
-        } else if (hasHistMismatch) {
-          p.flags.add('old_balance_mismatch');
+        } else if (hasHist && !histAllMatched) {
+          p.flags.add('opening_rate_missing');
         }
         p.openVal = (p.openQty * rate).round();
       }
 
+      // If this item has matched FY history purchases (like Wonder / Wonder Plus),
+      // compute real cost / unit across the full financial year (matching Real Cost screen)
+      double fyHistQty = 0, fyHistNet = 0;
+      if (histAllMatched) {
+        for (final (supId, qh, ah) in histList) {
+          fyHistQty += qh;
+          fyHistNet += ah * (1.0 - rateOf(supId));
+        }
+      }
+
       final qty = p.openQty + p.purQty;
       final val = p.openVal + p.netPur;
-      if (qty > 0.0001) {
+      if (fyHistQty > 0.0001 && (fyHistQty + p.purQty) > 0.0001) {
+        p.avg = (fyHistNet + p.netPur) / (fyHistQty + p.purQty);
+      } else if (qty > 0.0001) {
         p.avg = val / qty;
       } else {
         p.avg = (it.openingRate > 0 ? it.openingRate : it.purchaseRate).toDouble();
