@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../accounting/models.dart';
 import '../accounting/voucher_service.dart';
+import '../core/audit.dart';
 import '../core/money.dart';
 import '../core/theme.dart';
 import '../shared/pdf_text.dart';
@@ -15,12 +16,14 @@ import '../state/app_controller.dart';
 import 'voucher_screen.dart';
 
 /// कंपनी स्टेटमेंट जुळवा: the supplier's own account statement (PDF) set
-/// against our khata – what is on theirs but not ours, and the other way.
+/// against our khata - what is on theirs but not ours, and the other way.
 class SupplierMatchScreen extends StatefulWidget {
   final Ledger supplier;
   const SupplierMatchScreen({super.key, required this.supplier});
+
   static Future<void> open(BuildContext context, Ledger supplier) =>
       Navigator.push(context, MaterialPageRoute(builder: (_) => SupplierMatchScreen(supplier: supplier)));
+
   @override
   State<SupplierMatchScreen> createState() => _SupplierMatchScreenState();
 }
@@ -30,8 +33,10 @@ class _SupplierMatchScreenState extends State<SupplierMatchScreen> {
   SupplierMatch? match; // from the books start on
   int ourBalance = 0, ourOpening = 0;
   int oldImported = 0; // old entries already on the khata from a statement
-  /// Our units per statement unit (company: tonnes, us: bags → 20). Kept per supplier.
+
+  /// Our units per statement unit (company: tonnes, us: bags -> 20). Kept per supplier.
   double get factor => App.read(context).prefInt('stmt_factor_${widget.supplier.id}', 20).toDouble();
+
   String? progress;
   bool busy = false;
   String? error;
@@ -66,8 +71,9 @@ class _SupplierMatchScreenState extends State<SupplierMatchScreen> {
     // invoices of the last week before the books start may be goods that came after it
     final weekBefore = isoDate(parseIso(Books.start).subtract(const Duration(days: 7)));
     final early = all.where((l) => Books.isHistory(l.date) && l.date.compareTo(weekBefore) >= 0).toList();
-    final st = await app.ledgers.statement(widget.supplier.id, from: Books.start, to: all.last.date.compareTo(todayIso()) > 0 ? all.last.date : todayIso());
-    // goods on each bill, in our unit (bags) – to match the company's tonnes
+    final st = await app.ledgers.statement(widget.supplier.id,
+        from: Books.start, to: all.last.date.compareTo(todayIso()) > 0 ? all.last.date : todayIso());
+    // goods on each bill, in our unit (bags) - to match the company's tonnes
     final qty = {
       for (final q in await app.db.getAll(
           'SELECT il.voucher_id, SUM(il.qty) AS q FROM inventory_lines il JOIN vouchers v ON v.id = il.voucher_id '
@@ -77,16 +83,33 @@ class _SupplierMatchScreenState extends State<SupplierMatchScreen> {
     };
     final ours = [
       for (final r in st.rows)
-        KhataEntry(r.voucherId, r.date, '${app.t('vt_${r.type.code}')}${r.details.isEmpty ? '' : ' · ${r.details}'}', r.credit, r.debit,
+        KhataEntry(r.voucherId, r.date,
+            '${app.t('vt_${r.type.code}')}${r.details.isEmpty ? '' : ' · ${r.details}'}', r.credit, r.debit,
             qty: qty[r.voucherId] ?? 0)
     ];
     final fresh = await app.ledgers.byId(widget.supplier.id);
     final imported = await app.db.get(
-        "SELECT COUNT(*) AS n FROM vouchers WHERE party_id = ? AND vtype = 'history' AND deleted = 0", [widget.supplier.id]);
+        "SELECT COUNT(*) AS n FROM vouchers WHERE party_id = ? AND vtype = 'history' AND deleted = 0",
+        [widget.supplier.id]);
+    final m = SupplierMatch.match(inBooks, ours, early: early, factor: factor);
+    // Record the latest uploaded statement's closing balance & date so StockPnlEngine can verify running balance too
+    await AuditLog.write(app.db,
+        businessId: app.businessId!,
+        recordId: 'stmt_check:${widget.supplier.id}',
+        action: 'edit',
+        kind: 'stmt_check',
+        title: widget.supplier.name,
+        after: {
+          'date': all.last.date,
+          'balance': '${all.last.balance}',
+          'missing': '${m.missing.length}',
+          'extra': '${m.extra.length}',
+          'rate_diff': '${m.rateDiff.length}',
+        });
     if (!mounted) return;
     setState(() {
       oldImported = imported['n'] as int;
-      match = SupplierMatch.match(inBooks, ours, early: early, factor: factor);
+      match = m;
       ourBalance = fresh?.balance ?? 0;
       ourOpening = fresh?.openingBalance ?? 0;
     });
@@ -110,7 +133,7 @@ class _SupplierMatchScreenState extends State<SupplierMatchScreen> {
     final app = App.read(context);
     final t = app.t;
     final old = _oldLines;
-    // which of our items each statement product is (PPC → Wonder PPC …)
+    // which of our items each statement product is (PPC -> Wonder PPC ...)
     final products = {for (final l in old) if (l.kind == 'invoice') StatementImport.productOf(l.text)}..remove('');
     final all = await app.stock.list();
     final map = <String, String?>{for (final p in products) p: StatementImport.guessItem(p, all)?.id};
@@ -185,7 +208,7 @@ class _SupplierMatchScreenState extends State<SupplierMatchScreen> {
     if (mounted) setState(() => busy = false);
   }
 
-  /// मागील बाकी = the company's balance before the books start (owner, asks first).
+  /// सुरुवातीची बाकी = the company's balance before the books start (owner, asks first).
   Future<void> _setOpening(int theirs) async {
     final app = App.read(context);
     final t = app.t;
@@ -215,14 +238,23 @@ class _SupplierMatchScreenState extends State<SupplierMatchScreen> {
   Future<void> _addDiscount(SupplierLine l) async {
     final app = App.read(context);
     await app.vouchers.save(
-        VoucherInput(type: VoucherType.payment, date: l.date, partyId: widget.supplier.id, discount: l.credit, narration: '${app.t('co_discount_short')} – ${l.text}'),
-        app.actor);
+      VoucherInput(
+        type: VoucherType.payment,
+        date: l.date,
+        partyId: widget.supplier.id,
+        payLedgerId: app.vouchers.sys('cash'),
+        amount: 0,
+        discount: l.credit,
+        narration: l.text,
+      ),
+      app.actor,
+    );
   }
 
   Future<void> _addAllDiscounts() async {
-    final t = App.read(context).t;
+    final app = App.read(context);
     final list = match!.missing.where((l) => l.kind == 'discount').toList();
-    if (!await confirm(context, t('sm_all_discounts_q').replaceAll('{n}', '${list.length}').replaceAll('{amt}', Money.fmt(list.fold(0, (s, l) => s + l.credit))))) return;
+    if (list.isEmpty) return;
     setState(() => busy = true);
     try {
       for (final l in list) {
@@ -240,7 +272,7 @@ class _SupplierMatchScreenState extends State<SupplierMatchScreen> {
     final app = App.of(context);
     final t = app.t;
     final m = match;
-    String bal(int theirs) => '₹${Money.fmt(theirs.abs())} ${theirs >= 0 ? t('we_owe') : t('sm_advance')}';
+    String bal(int b) => '₹${Money.fmt(b.abs())} ${b >= 0 ? t('we_owe') : t('they_owe')}';
     return Scaffold(
       appBar: AppBar(title: Text('${t('sm_title')} · ${widget.supplier.name}')),
       body: ListView(padding: const EdgeInsets.fromLTRB(12, 8, 12, 24), children: [
@@ -265,7 +297,7 @@ class _SupplierMatchScreenState extends State<SupplierMatchScreen> {
             child: Padding(
               padding: const EdgeInsets.all(14),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('${shortDate(lines!.first.date)} – ${shortDate(lines!.last.date)} · ${lines!.length} ${t('sm_lines')}',
+                Text('${shortDate(lines!.first.date)} - ${shortDate(lines!.last.date)} · ${lines!.length} ${t('sm_lines')}',
                     style: Theme.of(context).textTheme.bodySmall),
                 const SizedBox(height: 8),
                 _cmp(t('sm_closing'), bal(lines!.last.balance), bal(-ourBalance), lines!.last.balance == -ourBalance),
@@ -292,12 +324,12 @@ class _SupplierMatchScreenState extends State<SupplierMatchScreen> {
                 _cmp(t('sm_credited'), '₹${Money.fmt(m.stCredited)}', '₹${Money.fmt(m.ourPaid)}', m.stCredited == m.ourPaid),
                 const SizedBox(height: 6),
                 Text(
-                    m.missing.isEmpty && m.extra.isEmpty
-                        ? '✓ ${t('sm_all_match').replaceAll('{n}', '${m.matched}')}'
-                        : t('sm_result').replaceAll('{ok}', '${m.matched}').replaceAll('{a}', '${m.missing.length}').replaceAll('{b}', '${m.extra.length}'),
-                    style: TextStyle(fontWeight: FontWeight.w700, color: m.missing.isEmpty && m.extra.isEmpty ? AppColors.paid : AppColors.haldi)),
+                  m.missing.isEmpty && m.extra.isEmpty
+                      ? '✓ ${t('sm_all_match').replaceAll('{n}', '${m.matched}')}'
+                      : t('sm_result').replaceAll('{ok}', '${m.matched}').replaceAll('{a}', '${m.missing.length}').replaceAll('{b}', '${m.extra.length}'),
+                  style: TextStyle(fontWeight: FontWeight.w700, color: m.missing.isEmpty && m.extra.isEmpty ? AppColors.paid : AppColors.haldi)),
                 const SizedBox(height: 8),
-                // 1 टन = 20 बॅग (tap to change for this supplier)
+                // 1 टन = 20 गोणी (tap to change for this supplier)
                 ActionChip(
                   key: const Key('sm_factor'),
                   avatar: const Icon(Icons.scale_outlined, size: 18),
@@ -322,7 +354,7 @@ class _SupplierMatchScreenState extends State<SupplierMatchScreen> {
               ]),
             ),
           ),
-          // everything before the books start → old entries (change no number)
+          // everything before the books start -> old entries (change no number)
           if (_oldLines.isNotEmpty && app.actor.isOwner)
             Card(
               child: Padding(
@@ -356,7 +388,7 @@ class _SupplierMatchScreenState extends State<SupplierMatchScreen> {
                   dense: true,
                   title: Text('${shortDate(l.date)} · ${fmtQty(l.qty)} ${t('sm_unit_them')} = ${fmtQty(e.qty)} ${t('sm_unit_us')}'),
                   subtitle: Text('${t('sm_theirs')} ₹${Money.fmt(l.debit)} · ${t('sm_ours')} ₹${Money.fmt(e.bought)}'),
-                  trailing: Text('${diff > 0 ? '+' : '−'}₹${Money.fmt(diff.abs())}',
+                  trailing: Text('${diff > 0 ? '+' : '-'}₹${Money.fmt(diff.abs())}',
                       style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15, color: AppColors.haldi)),
                   onTap: () async {
                     await VoucherScreen.edit(context, e.voucherId);
@@ -371,10 +403,11 @@ class _SupplierMatchScreenState extends State<SupplierMatchScreen> {
               Align(
                 alignment: Alignment.centerLeft,
                 child: TextButton.icon(
-                    key: const Key('sm_all_discounts'),
-                    onPressed: busy ? null : _addAllDiscounts,
-                    icon: const Icon(Icons.done_all),
-                    label: Text(t('sm_all_discounts'))),
+                  key: const Key('sm_all_discounts'),
+                  onPressed: busy ? null : _addAllDiscounts,
+                  icon: const Icon(Icons.done_all),
+                  label: Text(t('sm_all_discounts')),
+                ),
               ),
             for (final l in m.missing)
               Card(
@@ -400,7 +433,7 @@ class _SupplierMatchScreenState extends State<SupplierMatchScreen> {
                                     await VoucherScreen.open(context, VoucherType.payment,
                                         partyId: widget.supplier.id, amount: l.credit, narration: l.text, date: l.date);
                                   default:
-                                    // the invoice as a purchase: our item, MT → bags, the exact total
+                                    // the invoice as a purchase: our item, MT -> bags, the exact total
                                     final item = StatementImport.guessItem(StatementImport.productOf(l.text), await app.stock.list());
                                     if (!context.mounted) return;
                                     // dated the day the goods come in (today), not the invoice date:
@@ -446,7 +479,7 @@ class _SupplierMatchScreenState extends State<SupplierMatchScreen> {
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
-              Text('${App.of(context).t('sm_theirs')}: $theirs   ·   ${App.of(context).t('sm_ours')}: $ours', style: Theme.of(context).textTheme.bodySmall),
+              Text('${App.of(context).t('sm_theirs')}: $theirs  ·  ${App.of(context).t('sm_ours')}: $ours', style: Theme.of(context).textTheme.bodySmall),
             ]),
           ),
         ]),
