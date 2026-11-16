@@ -108,15 +108,20 @@ class Exporter {
     _bold ??= pw.Font.ttf(await rootBundle.load('assets/fonts/NotoSansDevanagari-Bold.ttf'));
   }
 
-  static Future<Uint8List> pdf(ReportTable t, {String shop = ''}) => pdfMulti([t], shop: shop);
+  static Future<Uint8List> pdf(ReportTable t, {String shop = '', bool roll = false}) => pdfMulti([t], shop: shop, roll: roll);
+
+  /// The small billing printer's paper: 80 mm wide (about 72 mm printed), as long as needed.
+  static const roll80 = PdfPageFormat(80 * PdfPageFormat.mm, double.infinity, marginAll: 3 * PdfPageFormat.mm);
 
   /// Several tables one below the other (रोजमेळ: cash, PhonePe, bank, उधारी),
   /// each with its own title and totals.
-  static Future<Uint8List> pdfMulti(List<ReportTable> tables, {String shop = '', String? heading}) async {
+  /// [roll]: for the 80 mm billing printer – small type, one long strip.
+  static Future<Uint8List> pdfMulti(List<ReportTable> tables, {String shop = '', String? heading, bool roll = false}) async {
     await _fonts();
     final doc = pw.Document(theme: pw.ThemeData.withFont(base: _regular, bold: _bold));
     final single = tables.length == 1 && heading == null;
     final wide = tables.any((t) => t.columns.length > 8);
+    final fs = roll ? 6.5 : 9.0, pad = roll ? 1.5 : 3.0;
     pw.Widget table(ReportTable t) {
       final flex = {for (var i = 0; i < t.columns.length; i++) i: pw.FlexColumnWidth(t.columns[i].flex.toDouble())};
       pw.Alignment al(int i) => t.columns[i].align == ColAlign.right ? pw.Alignment.centerRight : pw.Alignment.centerLeft;
@@ -124,40 +129,47 @@ class Exporter {
       pw.TextAlign ta(int i) => t.columns[i].align == ColAlign.right ? pw.TextAlign.right : pw.TextAlign.left;
       return pw.Table(
         columnWidths: flex,
-        border: pw.TableBorder.all(color: PdfColors.grey400, width: 0.5),
+        // thermal paper: lines between rows only (no grey fills, which print as smudges)
+        border: roll
+            ? const pw.TableBorder(
+                top: pw.BorderSide(width: 0.6),
+                bottom: pw.BorderSide(width: 0.6),
+                horizontalInside: pw.BorderSide(width: 0.3, color: PdfColors.grey600))
+            : pw.TableBorder.all(color: PdfColors.grey400, width: 0.5),
         children: [
           pw.TableRow(
-            decoration: const pw.BoxDecoration(color: PdfColors.grey200),
+            decoration: roll ? null : const pw.BoxDecoration(color: PdfColors.grey200),
             children: [
               for (var i = 0; i < t.columns.length; i++)
                 pw.Container(
                   alignment: al(i),
-                  padding: const pw.EdgeInsets.all(3),
-                  child: pw.Text(latin(t.columns[i].title), textAlign: ta(i), style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
+                  padding: pw.EdgeInsets.all(pad),
+                  child: pw.Text(latin(t.columns[i].title), textAlign: ta(i), style: pw.TextStyle(fontSize: fs, fontWeight: pw.FontWeight.bold)),
                 ),
             ],
           ),
           for (var r = 0; r < t.rows.length; r++)
             pw.TableRow(
-              decoration: t.highlight.contains(r) ? const pw.BoxDecoration(color: PdfColors.amber50) : null,
+              decoration: t.highlight.contains(r) && !roll ? const pw.BoxDecoration(color: PdfColors.amber50) : null,
               children: [
                 for (var i = 0; i < t.columns.length; i++)
                   pw.Container(
                     alignment: al(i),
-                    padding: const pw.EdgeInsets.all(3),
-                    child: pw.Text(i < t.rows[r].length ? latin(t.rows[r][i]) : '', textAlign: ta(i), style: const pw.TextStyle(fontSize: 9)),
+                    padding: pw.EdgeInsets.all(pad),
+                    child: pw.Text(i < t.rows[r].length ? latin(t.rows[r][i]) : '', textAlign: ta(i),
+                        style: pw.TextStyle(fontSize: fs, fontWeight: t.highlight.contains(r) && roll ? pw.FontWeight.bold : null)),
                   ),
               ],
             ),
           if (t.totals != null)
             pw.TableRow(
-              decoration: const pw.BoxDecoration(color: PdfColors.grey200),
+              decoration: roll ? null : const pw.BoxDecoration(color: PdfColors.grey200),
               children: [
                 for (var i = 0; i < t.columns.length; i++)
                   pw.Container(
                     alignment: al(i),
-                    padding: const pw.EdgeInsets.all(3),
-                    child: pw.Text(latin(t.totals![i]), textAlign: ta(i), style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
+                    padding: pw.EdgeInsets.all(pad),
+                    child: pw.Text(latin(t.totals![i]), textAlign: ta(i), style: pw.TextStyle(fontSize: fs, fontWeight: pw.FontWeight.bold)),
                   ),
               ],
             ),
@@ -165,6 +177,34 @@ class Exporter {
       );
     }
 
+    if (roll) {
+      // one long strip, the way the billing printer feeds paper
+      doc.addPage(pw.Page(
+        pageFormat: roll80,
+        build: (_) => pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.stretch, children: [
+          if (shop.isNotEmpty)
+            pw.Text(latin(shop), textAlign: pw.TextAlign.center, style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold)),
+          if (single) ...[
+            pw.Text(latin(tables.first.title), textAlign: pw.TextAlign.center, style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
+            if (tables.first.subtitle.isNotEmpty)
+              pw.Text(latin(tables.first.subtitle), textAlign: pw.TextAlign.center, style: const pw.TextStyle(fontSize: 6.5)),
+          ] else if (heading != null)
+            pw.Text(latin(heading), textAlign: pw.TextAlign.center, style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
+          pw.SizedBox(height: 4),
+          for (final t in tables) ...[
+            if (!single) ...[
+              pw.SizedBox(height: 5),
+              pw.Text(latin(t.title), style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)),
+              if (t.subtitle.isNotEmpty) pw.Text(latin(t.subtitle), style: const pw.TextStyle(fontSize: 6.5)),
+              pw.SizedBox(height: 2),
+            ],
+            table(t),
+          ],
+          pw.SizedBox(height: 10),
+        ]),
+      ));
+      return doc.save();
+    }
     doc.addPage(pw.MultiPage(
       // a long khata (hundreds of old entries) runs to many pages – the library stops at 20 by default
       maxPages: 2000,
@@ -245,11 +285,48 @@ class Exporter {
     await shareFiles([XFile.fromData(bytes, mimeType: 'application/pdf', name: name)]);
   }
 
-  static Future<void> printPdfMulti(List<ReportTable> tables, {required String heading, String shop = ''}) async => tables.length == 1
-      ? printPdf(tables.single, shop: shop)
-      : _printPdf(await pdfMulti(tables, shop: shop, heading: heading), heading);
+  static Future<void> printPdfMulti(List<ReportTable> tables, {required String heading, String shop = ''}) async {
+    if (tables.length == 1) return printPdf(tables.single, shop: shop);
+    final roll = await _askPaper();
+    if (roll == null) return;
+    await _printPdf(await pdfMulti(tables, shop: shop, heading: heading, roll: roll), heading, format: roll ? roll80 : PdfPageFormat.a4);
+  }
 
-  static Future<void> printPdf(ReportTable t, {String shop = ''}) async => _printPdf(await pdf(t, shop: shop), t.title);
+  static Future<void> printPdf(ReportTable t, {String shop = ''}) async {
+    final roll = await _askPaper();
+    if (roll == null) return;
+    await _printPdf(await pdf(t, shop: shop, roll: roll), t.title, format: roll ? roll80 : PdfPageFormat.a4);
+  }
+
+  /// Which printer: the small 80 mm billing printer (true) or A4 paper (false).
+  /// The last choice comes first. null = cancelled.
+  static Future<bool?> _askPaper() async {
+    final ctx = navigatorKey.currentContext;
+    if (ctx == null || !ctx.mounted) return false;
+    final app = App.read(ctx);
+    final t = app.t;
+    final last = app.prefStr('print_paper') == 'roll';
+    final r = await showDialog<bool>(
+      context: ctx,
+      builder: (c) => SimpleDialog(
+        title: Text(t('print_which')),
+        children: [
+          for (final roll in last ? const [true, false] : const [false, true])
+            SimpleDialogOption(
+              key: Key(roll ? 'paper_roll' : 'paper_a4'),
+              onPressed: () => Navigator.pop(c, roll),
+              child: ListTile(
+                leading: Icon(roll ? Icons.receipt_long : Icons.description_outlined),
+                title: Text(t(roll ? 'print_roll' : 'print_a4')),
+                subtitle: Text(t(roll ? 'print_roll_sub' : 'print_a4_sub')),
+              ),
+            ),
+        ],
+      ),
+    );
+    if (r != null) await app.setPrefStr('print_paper', r ? 'roll' : 'a4');
+    return r;
+  }
 
   static Future<void> shareExcel(List<ReportTable> tables, String title) async {
     final bytes = excel(tables);
@@ -412,6 +489,7 @@ extension ReceiptPdf on Exporter {
     Ledger? party,
     Ledger? pay,
     int? balance,
+    int itemsPerSlip = 12,
   }) async {
     await Exporter._fonts();
     String t(String k) => const Strings(true).t(k);
@@ -442,59 +520,85 @@ extension ReceiptPdf on Exporter {
           pw.Text(b, style: style ?? normal),
         ]);
 
+    // a long bill goes on several slips (पावती 1/2, 2/2 …): each repeats the
+    // header, number, date and customer; the totals come on the last one
+    final parts = <List<ItemLine>>[];
+    for (var i = 0; i < lines.length; i += itemsPerSlip) {
+      parts.add(lines.sublist(i, i + itemsPerSlip > lines.length ? lines.length : i + itemsPerSlip));
+    }
+    if (parts.isEmpty) parts.add(const []);
+    final n = parts.length;
+
     final doc = pw.Document(theme: pw.ThemeData.withFont(base: Exporter._regular, bold: Exporter._bold));
-    doc.addPage(pw.Page(
-      // 80 mm roll: about 72 mm printable; the page is as long as the receipt
-      pageFormat: const PdfPageFormat(80 * PdfPageFormat.mm, double.infinity, marginAll: 4 * PdfPageFormat.mm),
-      build: (_) => pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.stretch, children: [
-        pw.Text(l(shop), style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold), textAlign: pw.TextAlign.center),
-        if (address.isNotEmpty) pw.Text(l(address), style: small, textAlign: pw.TextAlign.center),
-        if (phone.isNotEmpty || (isGst && gstin.isNotEmpty))
-          pw.Text([if (phone.isNotEmpty) 'Ph ${phone}', if (isGst && gstin.isNotEmpty) 'GSTIN ${gstin}'].join('  '),
-              style: small, textAlign: pw.TextAlign.center),
-        pw.SizedBox(height: 3),
-        pw.Text(title, style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold), textAlign: pw.TextAlign.center),
-        dash(),
-        two('No. ${v.shownNo}', '${shortDate(v.date)}${time == null ? '' : '  ${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}'}'),
-        pw.Text(party == null ? (v.type == VoucherType.purchase ? t('cash_purchase') : t('cash_sale')) : name(party), style: bold),
-        if (party?.phone != null) pw.Text(party!.phone!, style: small),
-        if (isGst && party?.gstin != null) pw.Text('GSTIN ${party!.gstin}', style: small),
-        dash(),
-        if (bill) ...[
-          for (final x in lines) ...[
-            pw.Text(itemName(x.itemId), style: normal),
-            two('  ${fmtQty(x.qty)} ${unit(x.itemId)} x ${Money.fmt(x.rate)}', Money.fmt(x.amount)),
-          ],
-          if (lines.isNotEmpty) dash(),
-          if (lines.isNotEmpty && (isGst || v.hamali != 0 || v.transport != 0)) two(t('goods_total'), Money.fmt(goods)),
-          if (isGst) ...[
-            two('CGST ${v.gstRate / 200}%', Money.fmt(v.gst ~/ 2)),
-            two('SGST ${v.gstRate / 200}%', Money.fmt(v.gst - v.gst ~/ 2)),
-          ],
-          if (v.hamali != 0) two(t('hamali'), Money.fmt(v.hamali)),
-          // the customer's copy never says whose vehicle went
-          if (v.transport != 0) two(t('transport'), Money.fmt(v.transport)),
-          if (lines.isNotEmpty && v.amount - goods - v.hamali - v.transport - v.gst != 0)
-            two(t('round_off'), Money.fmt(v.amount - goods - v.hamali - v.transport - v.gst)),
-          two('TOTAL', 'Rs ${Money.fmt(v.amount)}', style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold)),
-          if (v.paid != 0) two('${t('paid')}${pay == null ? '' : ' (${name(pay)})'}', Money.fmt(v.paid)),
-          if (v.amount - v.paid != 0) two(t('due'), Money.fmt(v.amount - v.paid), style: bold),
-        ] else ...[
-          two('AMOUNT', 'Rs ${Money.fmt(v.amount)}', style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold)),
-          if (pay != null) two(t('pay_mode'), name(pay)),
-        ],
-        if (balance != null) ...[
+    for (var k = 0; k < n; k++) {
+      final part = parts[k];
+      final last = k == n - 1;
+      final partTotal = part.fold<int>(0, (s, x) => s + x.amount);
+      doc.addPage(pw.Page(
+        // 80 mm roll: about 72 mm printable; each slip is as long as it needs
+        pageFormat: const PdfPageFormat(80 * PdfPageFormat.mm, double.infinity, marginAll: 4 * PdfPageFormat.mm),
+        build: (_) => pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.stretch, children: [
+          pw.Text(l(shop), style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold), textAlign: pw.TextAlign.center),
+          if (address.isNotEmpty) pw.Text(l(address), style: small, textAlign: pw.TextAlign.center),
+          if (phone.isNotEmpty || (isGst && gstin.isNotEmpty))
+            pw.Text([if (phone.isNotEmpty) 'Ph $phone', if (isGst && gstin.isNotEmpty) 'GSTIN $gstin'].join('  '),
+                style: small, textAlign: pw.TextAlign.center),
+          pw.SizedBox(height: 3),
+          pw.Text(title, style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold), textAlign: pw.TextAlign.center),
           dash(),
-          // where the account stands now, from this customer's / supplier's side
-          two(balance >= 0 ? 'Total due from you' : 'Total due to you', 'Rs ${Money.fmt(balance, abs: true)}', style: bold),
-        ],
-        if (v.haste != null) pw.Text('${t('haste')}: ${l(v.haste!)}', style: small),
-        if ((v.narration ?? '').isNotEmpty) pw.Text(l(v.narration!), style: small),
-        dash(),
-        pw.Text('Thank you!', style: normal, textAlign: pw.TextAlign.center),
-        pw.SizedBox(height: 10),
-      ]),
-    ));
+          two('No. ${v.shownNo}${n > 1 ? '   (${k + 1}/$n)' : ''}',
+              '${shortDate(v.date)}${time == null ? '' : '  ${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}'}',
+              style: n > 1 ? bold : null),
+          pw.Text(party == null ? (v.type == VoucherType.purchase ? t('cash_purchase') : t('cash_sale')) : name(party), style: bold),
+          if (party?.phone != null) pw.Text(party!.phone!, style: small),
+          if (isGst && party?.gstin != null) pw.Text('GSTIN ${party!.gstin}', style: small),
+          dash(),
+          if (bill) ...[
+            for (final x in part) ...[
+              pw.Text(itemName(x.itemId), style: normal),
+              two('  ${fmtQty(x.qty)} ${unit(x.itemId)} x ${Money.fmt(x.rate)}', Money.fmt(x.amount)),
+            ],
+            if (part.isNotEmpty) dash(),
+            if (!last) ...[
+              // not the end of the bill yet
+              two('This slip (${part.length} items)', Money.fmt(partTotal), style: bold),
+              pw.SizedBox(height: 2),
+              pw.Text('Continued on slip ${k + 2}/$n ...', style: small, textAlign: pw.TextAlign.center),
+            ] else ...[
+              if (n > 1) two('${t('goods_total')} (${lines.length} items, $n slips)', Money.fmt(goods))
+              else if (lines.isNotEmpty && (isGst || v.hamali != 0 || v.transport != 0)) two(t('goods_total'), Money.fmt(goods)),
+              if (isGst) ...[
+                two('CGST ${v.gstRate / 200}%', Money.fmt(v.gst ~/ 2)),
+                two('SGST ${v.gstRate / 200}%', Money.fmt(v.gst - v.gst ~/ 2)),
+              ],
+              if (v.hamali != 0) two(t('hamali'), Money.fmt(v.hamali)),
+              // the customer's copy never says whose vehicle went
+              if (v.transport != 0) two(t('transport'), Money.fmt(v.transport)),
+              if (lines.isNotEmpty && v.amount - goods - v.hamali - v.transport - v.gst != 0)
+                two(t('round_off'), Money.fmt(v.amount - goods - v.hamali - v.transport - v.gst)),
+              two('TOTAL', 'Rs ${Money.fmt(v.amount)}', style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold)),
+              if (v.paid != 0) two('${t('paid')}${pay == null ? '' : ' (${name(pay)})'}', Money.fmt(v.paid)),
+              if (v.amount - v.paid != 0) two(t('due'), Money.fmt(v.amount - v.paid), style: bold),
+            ],
+          ] else ...[
+            two('AMOUNT', 'Rs ${Money.fmt(v.amount)}', style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold)),
+            if (pay != null) two(t('pay_mode'), name(pay)),
+          ],
+          if (last) ...[
+            if (balance != null) ...[
+              dash(),
+              // where the account stands now, from this customer's / supplier's side
+              two(balance >= 0 ? 'Total due from you' : 'Total due to you', 'Rs ${Money.fmt(balance, abs: true)}', style: bold),
+            ],
+            if (v.haste != null) pw.Text('${t('haste')}: ${l(v.haste!)}', style: small),
+            if ((v.narration ?? '').isNotEmpty) pw.Text(l(v.narration!), style: small),
+            dash(),
+            pw.Text('Thank you!', style: normal, textAlign: pw.TextAlign.center),
+          ],
+          pw.SizedBox(height: 10),
+        ]),
+      ));
+    }
     return doc.save();
   }
 
@@ -503,7 +607,7 @@ extension ReceiptPdf on Exporter {
   static Future<void> print(AppController app, String voucherId) async => Exporter._printPdf(
         await build(app, voucherId),
         'receipt',
-        format: const PdfPageFormat(80 * PdfPageFormat.mm, double.infinity, marginAll: 4 * PdfPageFormat.mm),
+        format: Exporter.roll80,
       );
 
   /// Sends the receipt to another app (e.g. a Bluetooth printer app).
