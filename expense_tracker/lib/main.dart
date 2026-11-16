@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'config.dart';
+import 'ui/theme.dart';
 import 'screens/home_shell.dart';
 import 'screens/login_screen.dart';
 
@@ -32,15 +33,11 @@ class ExpenseApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    ThemeData theme(Brightness b) => ThemeData(
-      colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF00897B), brightness: b),
-      inputDecorationTheme: const InputDecorationTheme(border: OutlineInputBorder()),
-    );
     return MaterialApp(
       title: 'Expense Tracker',
       debugShowCheckedModeBanner: false,
-      theme: theme(Brightness.light),
-      darkTheme: theme(Brightness.dark),
+      theme: appTheme(Brightness.light),
+      darkTheme: appTheme(Brightness.dark),
       localizationsDelegates: GlobalMaterialLocalizations.delegates,
       supportedLocales: const [Locale('en', 'IN'), Locale('en')],
       home: AppConfig.isConfigured ? const AuthGate() : const _NotConfigured(),

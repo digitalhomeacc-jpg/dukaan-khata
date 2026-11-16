@@ -4,6 +4,7 @@
 import 'package:expense_tracker/data/app_data.dart';
 import 'package:expense_tracker/models.dart';
 import 'package:expense_tracker/screens/home_shell.dart';
+import 'package:expense_tracker/ui/theme.dart';
 import 'package:material_ui/material_ui.dart';
 
 void main() {
@@ -131,10 +132,8 @@ void main() {
   runApp(
     MaterialApp(
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF00897B)),
-        inputDecorationTheme: const InputDecorationTheme(border: OutlineInputBorder()),
-      ),
+      theme: appTheme(Brightness.light),
+      darkTheme: appTheme(Brightness.dark),
       home: HomeShell(data: data),
     ),
   );

@@ -1,0 +1,462 @@
+-- Run once in Supabase → SQL Editor (safe to run again). Brings the database up to date: 0037–0041.
+
+-- ===================================================================== 0037_friend_matching_by_ref
+-- Connected friends: one payment between you is one shared record, backed by both banks.
+--
+-- A UPI / IMPS transfer carries the same 12-digit reference in both people's bank alerts and statements, so
+-- that is matched first. Statement lines have no time (the app puts them at 6 am) and two banks can date the
+-- same transfer a day apart, so without a reference they match within 3 days instead of 24 hours. Where one
+-- record is backed only by your bank and an identical one only by your friend's, they are the same money and
+-- are merged into one record backed by both: the balance only loses the double count.
+
+alter table public.shared_entries add column if not exists merged_into uuid references public.shared_entries on delete set null;
+
+-- The 12-digit references in a payment's bank text.
+create or replace function public.txn_refs(p_txn uuid)
+returns text[] language sql stable security definer set search_path = public as $$
+  select coalesce(array_agg(distinct m[1]), '{}')
+    from public.transactions t,
+         regexp_matches(coalesce(t.details, '') || ' ' || coalesce(t.email_body, '') || ' ' || coalesce(t.email_ref, ''),
+                        '(?<![0-9])([0-9]{12})(?![0-9])', 'g') m
+   where t.id = p_txn
+$$;
+
+-- Could these two payments be the same money? The same reference: yes. Different references: never. No
+-- reference on one side (cash, added by hand): only if close enough in time.
+create or replace function public.same_money(p_a uuid, p_b uuid, p_a_at timestamptz, p_b_at timestamptz)
+returns boolean language plpgsql stable security definer set search_path = public as $$
+declare ra text[] := public.txn_refs(p_a); rb text[] := public.txn_refs(p_b);
+begin
+  if cardinality(ra) > 0 and cardinality(rb) > 0 then return ra && rb; end if;
+  return abs(extract(epoch from p_a_at - p_b_at)) <= extract(epoch from public.same_payment_window(p_a, p_b));
+end $$;
+
+-- How far apart two payments may be and still be the same one.
+create or replace function public.same_payment_window(p_a uuid, p_b uuid)
+returns interval language sql stable security definer set search_path = public as $$
+  select case when exists (select 1 from public.transactions where id in (p_a, p_b) and source = 'statement')
+              then interval '3 days' else interval '1 day' end
+$$;
+
+-- Merges records of the same money: one backed only by the creditor's bank, one only by the debtor's.
+create or replace function public.merge_shared_duplicates(p_link uuid)
+returns integer language plpgsql security definer set search_path = public as $$
+declare r record; n integer := 0;
+begin
+  for r in
+    select c.id cid, d.id did, c.creditor_txn ctx, d.debtor_txn dtx
+      from public.shared_entries c
+      join public.shared_entries d
+        on d.link_id = c.link_id and d.id <> c.id and d.amount = c.amount
+       and d.creditor = c.creditor and d.debtor = c.debtor
+       and d.deleted_at is null and d.kind <> 'expense' and d.remove_requested_by is null
+       and d.debtor_txn is not null and d.creditor_txn is null
+     where c.link_id = p_link and c.deleted_at is null and c.kind <> 'expense' and c.remove_requested_by is null
+       and c.creditor_txn is not null and c.debtor_txn is null
+       and public.same_money(c.creditor_txn, d.debtor_txn, c.at, d.at)
+     order by (public.txn_refs(c.creditor_txn) && public.txn_refs(d.debtor_txn)) desc, abs(extract(epoch from c.at - d.at))
+  loop
+    -- Each record joins at most one other (the loop sees rows as they were when it started).
+    if not exists (select 1 from public.shared_entries where id in (r.cid, r.did) and (deleted_at is not null or
+                   (id = r.cid and debtor_txn is not null) or (id = r.did and creditor_txn is not null))) then
+      update public.shared_entries set deleted_at = now(), merged_into = r.cid, debtor_txn = null where id = r.did;
+      update public.shared_entries
+         set debtor_txn = r.dtx, confirmed_amount = amount, confirmed_at = now(), changed_by = null
+       where id = r.cid;
+      delete from public.match_questions where entry_id in (r.cid, r.did);
+      n := n + 1;
+    end if;
+  end loop;
+  return n;
+end $$;
+
+-- A friend payment in my bank: attach it to the record of the same money, or record a new one.
+create or replace function public.sync_friend_txn(p_txn uuid)
+returns void language plpgsql security definer set search_path = public as $$
+declare t record; fk text; lk record; mine_creditor boolean; e uuid; refs text[];
+begin
+  select tr.*, c.kind as cat_kind into t
+    from public.transactions tr left join public.categories c on c.id = tr.category_id where tr.id = p_txn;
+  if t is null or t.cat_kind is distinct from 'loan' or t.excluded or t.loan_role is not null or t.paid_by is not null then return; end if;
+  if exists (select 1 from public.shared_entries where creditor_txn = p_txn or debtor_txn = p_txn) then return; end if;
+  fk := public.friend_key_of(t.user_id, t.merchant_key);
+  select * into lk from public.link_for(t.user_id, fk);
+  if lk.link_id is null then return; end if;
+  mine_creditor := t.direction = 'debit';   -- I paid them: they owe me (or I paid back)
+  refs := public.txn_refs(p_txn);
+
+  -- The friend may already have it: the same reference, else same amount and direction close in time.
+  select se.id into e from public.shared_entries se
+   where se.link_id = lk.link_id and se.deleted_at is null and se.kind <> 'expense' and se.amount = t.amount
+     and se.creditor = case when mine_creditor then t.user_id else lk.other end
+     and (case when mine_creditor then se.creditor_txn else se.debtor_txn end) is null
+     and (coalesce(se.creditor_txn, se.debtor_txn) is null
+          or public.same_money(p_txn, coalesce(se.creditor_txn, se.debtor_txn), t.txn_at, se.at))
+   order by (cardinality(refs) > 0 and refs && public.txn_refs(coalesce(se.creditor_txn, se.debtor_txn))) desc,
+            abs(extract(epoch from se.at - t.txn_at))
+   limit 1;
+  if e is not null then
+    if mine_creditor then update public.shared_entries set creditor_txn = p_txn where id = e;
+    else update public.shared_entries set debtor_txn = p_txn where id = e; end if;
+    -- Backed by both banks now: nothing left to agree on.
+    update public.shared_entries set confirmed_amount = amount, confirmed_at = now(), changed_by = null
+     where id = e and creditor_txn is not null and debtor_txn is not null and confirmed_at is null;
+    delete from public.match_questions where entry_id = e;
+    perform public.merge_shared_duplicates(lk.link_id);
+    return;
+  end if;
+
+  insert into public.shared_entries (link_id, creditor, debtor, amount, kind, description, at, created_by, creditor_txn, debtor_txn)
+  values (lk.link_id,
+          case when mine_creditor then t.user_id else lk.other end,
+          case when mine_creditor then lk.other else t.user_id end,
+          t.amount, 'payment', null, t.txn_at, t.user_id,
+          case when mine_creditor then p_txn end, case when mine_creditor then null else p_txn end);
+  perform public.merge_shared_duplicates(lk.link_id);
+end $$;
+
+-- A new record from the friend: find the same payment in my bank (same reference: certain), or ask if unsure.
+create or replace function public.match_entry_for(p_entry uuid, p_user uuid)
+returns void language plpgsql security definer set search_path = public as $$
+declare se record; i_am_creditor boolean; friend_name text; cand record; n integer := 0; refs text[];
+begin
+  select * into se from public.shared_entries where id = p_entry;
+  if se is null or se.deleted_at is not null or se.kind = 'expense' then return; end if;
+  i_am_creditor := se.creditor = p_user;
+  if (i_am_creditor and se.creditor_txn is not null) or (not i_am_creditor and se.debtor_txn is not null) then return; end if;
+  select case when l.a = p_user then lower(l.a_name_for_b) else lower(l.b_name_for_a) end into friend_name
+    from public.friend_links l where l.id = se.link_id;
+  refs := public.txn_refs(coalesce(se.creditor_txn, se.debtor_txn));
+
+  for cand in
+    select t.id, public.friend_key_of(p_user, t.merchant_key) = friend_name as named,
+           cardinality(refs) > 0 and refs && public.txn_refs(t.id) as same_ref
+      from public.transactions t
+     where t.user_id = p_user and t.amount = se.amount and not t.excluded and t.loan_role is null
+       and t.direction = case when i_am_creditor then 'debit' else 'credit' end
+       and (coalesce(se.creditor_txn, se.debtor_txn) is null and abs(extract(epoch from t.txn_at - se.at)) <= 86400
+            or public.same_money(t.id, coalesce(se.creditor_txn, se.debtor_txn), t.txn_at, se.at))
+       and not exists (select 1 from public.shared_entries x where x.deleted_at is null and (x.creditor_txn = t.id or x.debtor_txn = t.id))
+     order by (cardinality(refs) > 0 and refs && public.txn_refs(t.id)) desc,
+              (public.friend_key_of(p_user, t.merchant_key) = friend_name) desc, abs(extract(epoch from t.txn_at - se.at))
+  loop
+    if (cand.same_ref or cand.named) and n = 0 then
+      -- The same transfer (same reference), or same amount and days from this friend: link without asking.
+      if i_am_creditor then update public.shared_entries set creditor_txn = cand.id where id = p_entry;
+      else update public.shared_entries set debtor_txn = cand.id where id = p_entry; end if;
+      return;
+    end if;
+    -- Amount and days fit but the name does not (e.g. a parent's account): ask.
+    insert into public.match_questions (user_id, entry_id, txn_id) values (p_user, p_entry, cand.id)
+    on conflict do nothing;
+    n := n + 1;
+    exit when n >= 3;
+  end loop;
+end $$;
+
+-- Records already doubled up: merge them now.
+do $$ declare l uuid; begin
+  for l in select id from public.friend_links where b is not null loop
+    perform public.merge_shared_duplicates(l);
+  end loop;
+end $$;
+
+-- ===================================================================== 0038_friend_openings
+-- Connected friends: an agreed opening balance, what was owed at the end of a day. The balance is this amount plus
+-- the entries after that day; entries on or before it (including ones a bank import brings in later) are history.
+-- Either person proposes it, the other says OK; until then nothing changes. The latest agreed one counts.
+create table if not exists public.friend_openings (
+  id           uuid primary key default gen_random_uuid(),
+  link_id      uuid not null references public.friend_links on delete cascade,
+  as_of        date not null,                      -- owed at the end of this day; later entries count
+  owed_by      uuid references auth.users on delete cascade,  -- who owes on that day; null: all square
+  amount       numeric(14,2) not null default 0 check (amount >= 0),
+  note         text,
+  created_by   uuid not null default auth.uid() references auth.users on delete cascade,
+  created_at   timestamptz not null default now(),
+  confirmed_at timestamptz,
+  rejected_by  uuid references auth.users on delete set null,
+  deleted_at   timestamptz,
+  check ((owed_by is null) = (amount = 0))
+);
+create index if not exists friend_openings_link on public.friend_openings (link_id, as_of desc);
+alter table public.friend_openings enable row level security;
+
+drop policy if exists "see openings" on public.friend_openings;
+create policy "see openings" on public.friend_openings for select
+  using (exists (select 1 from public.friend_links l where l.id = link_id and auth.uid() in (l.a, l.b)));
+do $$ begin
+  alter publication supabase_realtime add table public.friend_openings;
+exception when duplicate_object then null; end $$;
+
+-- Propose an opening balance (changes go through these functions only).
+create or replace function public.propose_friend_opening(p_link uuid, p_as_of date, p_owed_by uuid, p_amount numeric, p_note text)
+returns uuid language plpgsql security definer set search_path = public as $$
+declare l record; new_id uuid; amt numeric := round(coalesce(p_amount, 0), 2);
+begin
+  select * into l from public.friend_links fl where fl.id = p_link and fl.b is not null and auth.uid() in (fl.a, fl.b);
+  if l is null then raise exception 'not connected'; end if;
+  if amt < 0 then raise exception 'amount must not be negative'; end if;
+  if amt > 0 and (p_owed_by is null or p_owed_by not in (l.a, l.b)) then raise exception 'who owes?'; end if;
+  -- One proposal waits at a time: a new one replaces the one not answered yet.
+  update public.friend_openings set deleted_at = now()
+   where link_id = p_link and confirmed_at is null and deleted_at is null;
+  insert into public.friend_openings (link_id, as_of, owed_by, amount, note, created_by)
+  values (p_link, p_as_of, case when amt = 0 then null else p_owed_by end, amt, nullif(btrim(coalesce(p_note, '')), ''), auth.uid())
+  returning friend_openings.id into new_id;
+  return new_id;
+end $$;
+grant execute on function public.propose_friend_opening(uuid, date, uuid, numeric, text) to authenticated;
+
+-- The other person says OK or no. Returns true when saved.
+create or replace function public.answer_friend_opening(p_id uuid, p_ok boolean)
+returns boolean language plpgsql security definer set search_path = public as $$
+declare o record;
+begin
+  select f.* into o from public.friend_openings f join public.friend_links l on l.id = f.link_id
+   where f.id = p_id and f.deleted_at is null and f.confirmed_at is null and auth.uid() in (l.a, l.b);
+  if o is null then return false; end if;
+  if o.created_by = auth.uid() then
+    -- Whoever proposed it can only take it back.
+    if not p_ok then update public.friend_openings set deleted_at = now() where id = p_id; return true; end if;
+    raise exception 'waiting for the other person';
+  end if;
+  if p_ok then update public.friend_openings set confirmed_at = now() where id = p_id;
+  else update public.friend_openings set deleted_at = now(), rejected_by = auth.uid() where id = p_id; end if;
+  return true;
+end $$;
+grant execute on function public.answer_friend_opening(uuid, boolean) to authenticated;
+
+-- ===================================================================== 0039_friend_sync_lifecycle
+-- Connected friends: every friend payment is in the shared record, and stays right when it changes.
+--
+-- 1. A friend's bank names you in full ("SANKET PRAMOD PATIL") while they saved you as "Sanket Patil": the
+--    payment matched no connection, so it was in Friends but never in the balance you both see. Now a payee
+--    is the connected friend when it is that friend's own name (the "me" name in their app) or contains every
+--    word of the name you saved them as; the payee name is remembered as "also known as" that friend.
+-- 2. A payment that made a shared record is deleted (a duplicate, an import that removes what the bank does
+--    not have): the record was left behind and still counted. Now it goes too (or, if your friend had already
+--    agreed to it, they are asked to OK the removal).
+-- 3. Such a payment is moved out of Friends, or its amount changes: the record now follows it (a changed
+--    amount waits for your friend's OK, like any change).
+
+-- The connected friend a payee name means for this user, if any (one connection only).
+create or replace function public.friend_link_of_payee(p_user uuid, p_merchant_key text)
+returns table (link_id uuid, other uuid, friend_name text, exact boolean)
+language plpgsql stable security definer set search_path = public as $$
+declare fk text := public.friend_key_of(p_user, p_merchant_key); lk record; n integer;
+begin
+  select * into lk from public.link_for(p_user, fk);
+  if lk.link_id is not null then
+    return query select lk.link_id, lk.other, fk, true;
+    return;
+  end if;
+  if coalesce(p_merchant_key, '') = '' then return; end if;
+  return query
+    with cands as (
+      select l.id, case when l.a = p_user then l.b else l.a end as o,
+             case when l.a = p_user then l.a_name_for_b else l.b_name_for_a end as saved
+        from public.friend_links l
+       where l.b is not null and p_user in (l.a, l.b)
+    ), hits as (
+      select c.id, c.o, c.saved from cands c
+       where exists (select 1 from public.people p where p.user_id = c.o and p.role = 'me'
+                      and (public.is_person(p_merchant_key, p.name_key) or public.is_person(p.name_key, p_merchant_key)))
+          or (array_length(regexp_split_to_array(btrim(lower(c.saved)), '\s+'), 1) >= 2
+              and regexp_split_to_array(btrim(lower(c.saved)), '\s+') <@ regexp_split_to_array(p_merchant_key, '\s+'))
+    )
+    select h.id, h.o, lower(h.saved), false from hits h where (select count(*) from hits) = 1;
+end $$;
+
+-- Does this payment belong in a shared record at all?
+create or replace function public.is_friend_payment(t public.transactions)
+returns boolean language sql stable security definer set search_path = public as $$
+  select coalesce((select c.kind = 'loan' from public.categories c where c.id = t.category_id), false)
+     and not t.excluded and t.loan_role is null and t.paid_by is null
+$$;
+
+-- A payment no longer backs its record: unlink it; a record left with no payment is removed (or, once your
+-- friend agreed to it, they are asked to OK the removal).
+drop function if exists public.unsync_friend_txn(uuid, uuid);
+
+-- [p_payments_only]: only records made from friend payments (not "paid by" expenses), when the payment changed.
+create or replace function public.unsync_friend_txn(p_txn uuid, p_user uuid, p_payments_only boolean default false)
+returns void language plpgsql security definer set search_path = public as $$
+declare e record;
+begin
+  for e in select * from public.shared_entries
+            where (creditor_txn = p_txn or debtor_txn = p_txn) and deleted_at is null and share_id is null
+              and (not p_payments_only or kind <> 'expense') loop
+    update public.shared_entries
+       set creditor_txn = case when creditor_txn = p_txn then null else creditor_txn end,
+           debtor_txn = case when debtor_txn = p_txn then null else debtor_txn end
+     where id = e.id;
+    if (case when e.creditor_txn = p_txn then e.debtor_txn else e.creditor_txn end) is null then
+      if e.confirmed_amount is null then
+        update public.shared_entries set deleted_at = now(), deleted_by = p_user where id = e.id;
+      else
+        update public.shared_entries set remove_requested_by = p_user, changed_by = p_user where id = e.id;
+      end if;
+    end if;
+  end loop;
+end $$;
+
+-- A friend payment in my bank: attach it to the record of the same money, or record a new one.
+create or replace function public.sync_friend_txn(p_txn uuid)
+returns void language plpgsql security definer set search_path = public as $$
+declare t public.transactions; lk record; mine_creditor boolean; e uuid; refs text[];
+begin
+  select tr.* into t from public.transactions tr where tr.id = p_txn;
+  if not found then return; end if;
+  if not public.is_friend_payment(t) then return; end if;
+  if exists (select 1 from public.shared_entries where (creditor_txn = p_txn or debtor_txn = p_txn) and deleted_at is null) then return; end if;
+  select * into lk from public.friend_link_of_payee(t.user_id, t.merchant_key);
+  if lk.link_id is null then return; end if;
+  -- Recognised by name: remember the payee name as this friend, so it is one person everywhere.
+  if not lk.exact then
+    insert into public.friend_aliases (user_id, alias_key, friend_name)
+    select t.user_id, t.merchant_key, case when l.a = t.user_id then l.a_name_for_b else l.b_name_for_a end
+      from public.friend_links l where l.id = lk.link_id
+    on conflict (user_id, alias_key) do nothing;
+  end if;
+  mine_creditor := t.direction = 'debit';   -- I paid them: they owe me (or I paid back)
+  refs := public.txn_refs(p_txn);
+
+  -- The friend may already have it: the same reference, else same amount and direction close in time.
+  select se.id into e from public.shared_entries se
+   where se.link_id = lk.link_id and se.deleted_at is null and se.kind <> 'expense' and se.amount = t.amount
+     and se.creditor = case when mine_creditor then t.user_id else lk.other end
+     and (case when mine_creditor then se.creditor_txn else se.debtor_txn end) is null
+     and (coalesce(se.creditor_txn, se.debtor_txn) is null
+          or public.same_money(p_txn, coalesce(se.creditor_txn, se.debtor_txn), t.txn_at, se.at))
+   order by (cardinality(refs) > 0 and refs && public.txn_refs(coalesce(se.creditor_txn, se.debtor_txn))) desc,
+            abs(extract(epoch from se.at - t.txn_at))
+   limit 1;
+  if e is not null then
+    if mine_creditor then update public.shared_entries set creditor_txn = p_txn where id = e;
+    else update public.shared_entries set debtor_txn = p_txn where id = e; end if;
+    -- Backed by both banks now: nothing left to agree on.
+    update public.shared_entries set confirmed_amount = amount, confirmed_at = now(), changed_by = null
+     where id = e and creditor_txn is not null and debtor_txn is not null and confirmed_at is null;
+    delete from public.match_questions where entry_id = e;
+    perform public.merge_shared_duplicates(lk.link_id);
+    return;
+  end if;
+
+  insert into public.shared_entries (link_id, creditor, debtor, amount, kind, description, at, created_by, creditor_txn, debtor_txn)
+  values (lk.link_id,
+          case when mine_creditor then t.user_id else lk.other end,
+          case when mine_creditor then lk.other else t.user_id end,
+          t.amount, 'payment', null, t.txn_at, t.user_id,
+          case when mine_creditor then p_txn end, case when mine_creditor then null else p_txn end);
+  perform public.merge_shared_duplicates(lk.link_id);
+end $$;
+
+-- Payments added or changed: keep their shared records right.
+create or replace function public.on_txn_friend_sync()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare e record;
+begin
+  if tg_op = 'UPDATE' then
+    if not public.is_friend_payment(new) then
+      perform public.unsync_friend_txn(new.id, new.user_id, true);
+    else
+      -- Another friend now (renamed): leave the old record, then sync below.
+      for e in select se.* from public.shared_entries se
+                where (se.creditor_txn = new.id or se.debtor_txn = new.id) and se.deleted_at is null and se.share_id is null
+                  and se.kind <> 'expense' loop
+        if e.link_id is distinct from (select link_id from public.friend_link_of_payee(new.user_id, new.merchant_key)) then
+          perform public.unsync_friend_txn(new.id, new.user_id, true);
+        elsif new.amount is distinct from old.amount and e.kind = 'payment' then
+          -- The amount changed: the record changes too, for your friend to OK.
+          update public.shared_entries set amount = new.amount where id = e.id;
+        end if;
+      end loop;
+    end if;
+  end if;
+  perform public.sync_friend_txn(new.id);
+  perform public.ask_about_txn(new.id);
+  return null;
+end $$;
+drop trigger if exists txn_friend_sync on public.transactions;
+create trigger txn_friend_sync after insert or update of category_id, merchant, amount, excluded, loan_role on public.transactions
+  for each row execute function public.on_txn_friend_sync();
+
+create or replace function public.on_txn_friend_delete()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  perform public.unsync_friend_txn(old.id, old.user_id);
+  return old;
+end $$;
+drop trigger if exists txn_friend_delete on public.transactions;
+create trigger txn_friend_delete before delete on public.transactions
+  for each row execute function public.on_txn_friend_delete();
+
+-- ===================================================================== 0040_account_adoption
+-- No more surprise accounts. An account you made or renamed in the app had no bank / last 4 digits, so the
+-- first bank email or statement for it created a second account ("HDFC A/c ••6516") and the payments went
+-- there. Now:
+-- 1. A new account for a bank + last 4 digits is not made when you have exactly one account of that bank and
+--    kind without digits: that account takes the digits instead.
+-- 2. A payment that arrives without an account goes to the account with its bank + last 4 digits.
+
+-- The bank email and statement functions create an account with "insert, or update the one with this name".
+-- Giving the new row your account's name makes that your account: it is updated with the bank + digits and
+-- returned to them, so their payments land in it.
+create or replace function public.adopt_account()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare existing text; n integer;
+begin
+  if new.last4 is null or new.bank is null then return new; end if;
+  select name into existing from public.accounts
+   where user_id = new.user_id and lower(bank) = lower(new.bank) and last4 = new.last4
+   order by archived, created_at limit 1;
+  if existing is null then
+    select count(*), min(name) into n, existing from public.accounts
+     where user_id = new.user_id and last4 is null and not archived and kind = new.kind
+       and (lower(coalesce(bank, '')) = lower(new.bank)
+            or (bank is null and lower(name) like '%' || lower(new.bank) || '%'));
+    if n <> 1 then existing := null; end if;
+  end if;
+  if existing is not null then
+    new.name := existing;  -- "insert or update by name" now updates your account
+  end if;
+  return new;
+end $$;
+drop trigger if exists adopt_account on public.accounts;
+create trigger adopt_account before insert on public.accounts
+  for each row execute function public.adopt_account();
+
+create or replace function public.fill_txn_account()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if new.account_id is null and new.bank is not null and new.account_last4 is not null and new.source in ('email', 'statement') then
+    select id into new.account_id from public.accounts
+     where user_id = new.user_id and lower(bank) = lower(new.bank) and last4 = new.account_last4
+     order by archived, created_at limit 1;
+  end if;
+  return new;
+end $$;
+drop trigger if exists fill_txn_account on public.transactions;
+create trigger fill_txn_account before insert on public.transactions
+  for each row execute function public.fill_txn_account();
+
+-- ===================================================================== 0041_duplicates_upi_receipts
+-- Pairs of payments you checked and said are not duplicates (each pair as "id1|id2"), so they are not asked again.
+alter table public.profiles add column if not exists not_duplicates text[] not null default '{}';
+
+-- Your UPI ID, for "pay me" links in reminders to friends.
+alter table public.profiles add column if not exists upi_id text;
+
+-- Receipts: a photo of the bill on any payment, in a private folder per person.
+alter table public.transactions add column if not exists receipt_path text;
+insert into storage.buckets (id, name, public) values ('receipts', 'receipts', false) on conflict (id) do nothing;
+drop policy if exists "own receipts: see" on storage.objects;
+create policy "own receipts: see" on storage.objects for select to authenticated
+  using (bucket_id = 'receipts' and (storage.foldername(name))[1] = auth.uid()::text);
+drop policy if exists "own receipts: add" on storage.objects;
+create policy "own receipts: add" on storage.objects for insert to authenticated
+  with check (bucket_id = 'receipts' and (storage.foldername(name))[1] = auth.uid()::text);
+drop policy if exists "own receipts: remove" on storage.objects;
+create policy "own receipts: remove" on storage.objects for delete to authenticated
+  using (bucket_id = 'receipts' and (storage.foldername(name))[1] = auth.uid()::text);
