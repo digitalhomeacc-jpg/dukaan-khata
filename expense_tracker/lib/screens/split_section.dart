@@ -2,6 +2,7 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../data/app_data.dart';
+import '../logic/summary.dart' show splitEqually;
 import '../models.dart';
 import '../ui/format.dart';
 
@@ -32,45 +33,160 @@ class SplitSection extends StatelessWidget {
   final AppData data;
   final Txn payment;
 
+  /// Pick friends (or type a new name), split equally or set each part; never more than the bill.
   Future<void> _addPerson(BuildContext context) async {
-    final name = TextEditingController();
-    final amount = TextEditingController();
-    final ok = await showDialog<bool>(
+    final existing = data.sharesOf(payment.id);
+    final taken = existing.fold(0.0, (v, s) => v + s.amount);
+    final left = payment.amount - taken; // what is still yours to share
+    final already = {for (final s in existing) AppData.keyOf(s.person)};
+    // Connected friends first, then everyone you share money with; by the name they have in the app.
+    final names = <String>{
+      for (final l in data.links.where((l) => l.active))
+        if (data.me != null && l.nameFor(data.me!).isNotEmpty) l.nameFor(data.me!),
+      for (final f in data.friendBalances) f.person,
+      for (final e in data.personNames.entries)
+        if (data.people[e.key] == 'friend') e.value,
+    }.where((n) => !already.contains(AppData.keyOf(n)) && !data.aliases.containsKey(AppData.keyOf(n))).toList();
+    final picked = <String>[];
+    final typed = TextEditingController();
+    final exact = <String, TextEditingController>{};
+    var equally = true;
+    var includeMe = true;
+    String? error;
+    final messenger = ScaffoldMessenger.of(context);
+    final result = await showModalBottomSheet<Map<String, double>>(
       context: context,
-      builder: (c) => AlertDialog(
-        title: const Text('Add a friend\'s part'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: name,
-              autofocus: true,
-              textCapitalization: TextCapitalization.words,
-              decoration: const InputDecoration(labelText: 'Friend\'s name'),
+      isScrollControlled: true,
+      showDragHandle: true,
+      useSafeArea: true,
+      builder: (c) => StatefulBuilder(
+        builder: (c, setState) {
+          Map<String, double> parts() {
+            if (equally) {
+              final split = splitEqually(left, [if (includeMe) 'me', ...picked]);
+              return {for (final p in picked) p: split[p] ?? 0};
+            }
+            return {for (final p in picked) p: double.tryParse((exact[p]?.text ?? '').replaceAll(',', '')) ?? 0};
+          }
+
+          final total = parts().values.fold(0.0, (v, x) => v + x);
+          void addTyped() {
+            final n = typed.text.trim();
+            if (n.isEmpty) return;
+            // A name you already have (any spelling of it) is that person, not a new one.
+            final known =
+                names.where((x) => AppData.keyOf(x) == AppData.keyOf(n)).firstOrNull ?? data.aliases[AppData.keyOf(n)];
+            setState(() {
+              final name = known ?? n;
+              if (!picked.contains(name)) picked.add(name);
+              typed.clear();
+            });
+          }
+
+          return Padding(
+            padding: EdgeInsets.fromLTRB(16, 0, 16, 16 + MediaQuery.viewInsetsOf(c).bottom),
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text('Split ${money(left)} with friends', style: Theme.of(c).textTheme.titleLarge),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      for (final n in {...names, ...picked})
+                        FilterChip(
+                          label: Text(n),
+                          avatar: data.linkFor(n) != null ? const Icon(Icons.link, size: 16) : null,
+                          selected: picked.contains(n),
+                          onSelected: (v) => setState(() => v ? picked.add(n) : picked.remove(n)),
+                        ),
+                    ],
+                  ),
+                  TextField(
+                    controller: typed,
+                    textCapitalization: TextCapitalization.words,
+                    decoration: InputDecoration(
+                      labelText: 'Someone else',
+                      suffixIcon: IconButton(icon: const Icon(Icons.add), onPressed: () => setState(addTyped)),
+                    ),
+                    onSubmitted: (_) => addTyped(),
+                  ),
+                  const SizedBox(height: 12),
+                  SegmentedButton<bool>(
+                    showSelectedIcon: false,
+                    segments: const [
+                      ButtonSegment(value: true, label: Text('Equally')),
+                      ButtonSegment(value: false, label: Text('Exact amounts')),
+                    ],
+                    selected: {equally},
+                    onSelectionChanged: (v) => setState(() => equally = v.first),
+                  ),
+                  if (equally)
+                    CheckboxListTile(
+                      contentPadding: EdgeInsets.zero,
+                      value: includeMe,
+                      onChanged: (v) => setState(() => includeMe = v ?? true),
+                      title: const Text('I had a share too'),
+                    ),
+                  for (final p in picked)
+                    Row(
+                      children: [
+                        Expanded(child: Text(p)),
+                        if (equally)
+                          Text(money(parts()[p] ?? 0), style: const TextStyle(fontWeight: FontWeight.w600))
+                        else
+                          SizedBox(
+                            width: 120,
+                            child: TextField(
+                              controller: exact.putIfAbsent(p, TextEditingController.new),
+                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                              inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))],
+                              decoration: const InputDecoration(prefixText: '₹ ', isDense: true),
+                              onChanged: (_) => setState(() {}),
+                            ),
+                          ),
+                      ],
+                    ),
+                  if (picked.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(
+                        total > left + 0.005
+                            ? 'Friends\' parts (${money(total)}) are more than ${money(left)}'
+                            : 'Your part stays ${money(payment.amount - taken - total)} · friends owe you ${money(total)}',
+                        style: TextStyle(color: total > left + 0.005 ? Theme.of(c).colorScheme.error : null),
+                      ),
+                    ),
+                  if (error != null) Text(error!, style: TextStyle(color: Theme.of(c).colorScheme.error)),
+                  const SizedBox(height: 12),
+                  FilledButton(
+                    onPressed: () {
+                      final ps = {
+                        for (final e in parts().entries)
+                          if (e.value > 0) e.key: e.value,
+                      };
+                      if (ps.isEmpty) return setState(() => error = 'Pick a friend and their part');
+                      if (total > left + 0.005) return setState(() => error = 'More than the bill');
+                      Navigator.pop(c, ps);
+                    },
+                    child: const Text('Add'),
+                  ),
+                ],
+              ),
             ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: amount,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))],
-              decoration: const InputDecoration(labelText: 'Their part', prefixText: '₹ '),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Until they pay you, it shows under Loans → Friends as money they owe you.',
-              style: Theme.of(c).textTheme.bodySmall,
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Add')),
-        ],
+          );
+        },
       ),
     );
-    final v = double.tryParse(amount.text.replaceAll(',', ''));
-    if (ok == true && name.text.trim().isNotEmpty && v != null && v > 0) {
-      await data.addShare(payment.id, name.text, v);
+    if (result == null) return;
+    for (final e in result.entries) {
+      try {
+        await data.addShare(payment.id, e.key, e.value);
+      } catch (err) {
+        messenger.showSnackBar(SnackBar(content: Text('${e.key}\'s part was not added: $err')));
+      }
     }
   }
 
