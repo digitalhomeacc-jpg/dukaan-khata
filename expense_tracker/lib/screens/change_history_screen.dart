@@ -1,37 +1,35 @@
+import 'dart:convert';
+
+import 'package:intl/intl.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../data/app_data.dart';
 import '../ui/format.dart';
 
-/// Every change to payments and rules, with before and after, grouped by action; any action can be undone.
+/// Change history: every change on its own card — what, who, exactly when, before → after — with what happened
+/// to that record later, search, filters, Undo for each change, and a tap for the record's whole story.
 class ChangeHistoryScreen extends StatefulWidget {
-  const ChangeHistoryScreen({super.key, required this.data, this.loader});
+  const ChangeHistoryScreen({super.key, required this.data, this.loader, this.recordKey, this.title});
 
   final AppData data;
 
   /// Where the rows come from (tests pass their own).
   final Future<List<Map<String, dynamic>>> Function()? loader;
 
+  /// One record's whole story (from tapping a card).
+  final String? recordKey;
+  final String? title;
+
   @override
   State<ChangeHistoryScreen> createState() => _ChangeHistoryScreenState();
 }
 
-class _Batch {
-  _Batch(this.id);
-
-  final int id;
-  final List<Map<String, dynamic>> rows = [];
-
-  DateTime get at => DateTime.parse(rows.first['at'] as String).toLocal();
-  bool get byUser => rows.any((r) => r['by_user'] == true);
-
-  /// Someone else changed an entry between the two of you (in their app).
-  String? friendActor(String? me) => rows
-      .where((r) => r['tbl'] == 'shared_entries' && r['actor'] != null && r['actor'] != me)
-      .map((r) => r['actor'] as String)
-      .firstOrNull;
-  bool get undone => rows.every((r) => r['undone'] == true);
-}
+/// Which record a change-log row is about: a payment (its splits and group expense count as the payment), or
+/// any other row by its key.
+String historyRecordKey(Map<String, dynamic> r) =>
+    (r['txn_id'] as String?) ??
+    (r['tbl'] == 'transactions' ? ((r['row_key'] as Map?)?['id'] as String?) : null) ??
+    '${r['tbl']}:${jsonEncode(r['row_key'])}';
 
 const historyFieldNames = {
   'category_id': 'Category',
@@ -69,11 +67,19 @@ const historyFieldNames = {
 
 class _ChangeHistoryScreenState extends State<ChangeHistoryScreen> {
   late final fmt = HistoryFormat(data);
-  List<_Batch>? _batches;
+  List<Map<String, dynamic>> _rows = [];
+  var _loaded = false;
   String? _error;
   var _mineOnly = true;
+  var _group = 'all';
+  var _onlyChangedLater = false;
+  final _q = TextEditingController();
+  var _more = false;
+  var _loadingMore = false;
+  static const _page = 800;
 
   AppData get data => widget.data;
+  bool get _single => widget.recordKey != null;
 
   @override
   void initState() {
@@ -81,120 +87,75 @@ class _ChangeHistoryScreenState extends State<ChangeHistoryScreen> {
     _load();
   }
 
-  List<Map<String, dynamic>> _rows = [];
-  var _more = false;
-  var _loadingMore = false;
-  static const _page = 800;
-
-  /// Loads the newest page again ([more]: the next older page, added below).
   Future<void> _load({bool more = false}) async {
     try {
       final before = more && _rows.isNotEmpty ? (_rows.last['id'] as num).toInt() : null;
       final rows = widget.loader != null
           ? (more ? <Map<String, dynamic>>[] : await widget.loader!())
-          : await data.loadHistory(limit: _page, beforeId: before, mineOnly: _mineOnly);
-      _rows = more ? [..._rows, ...rows] : rows;
-      _more = widget.loader == null && rows.length == _page;
-      final byId = <int, _Batch>{};
-      final order = <_Batch>[];
-      for (final r in _rows) {
-        final id = (r['batch'] as num).toInt();
-        final b = byId.putIfAbsent(id, () {
-          final nb = _Batch(id);
-          order.add(nb);
-          return nb;
-        });
-        b.rows.add(r);
-      }
-      if (mounted) setState(() => _batches = order);
+          : _single && widget.recordKey!.length == 36
+          ? await data.loadEntryHistory(widget.recordKey!)
+          : await data.loadHistory(limit: _page, beforeId: before, mineOnly: _mineOnly && !_single);
+      if (!mounted) return;
+      setState(() {
+        _rows = more ? [..._rows, ...rows] : rows;
+        _more = widget.loader == null && !_single && rows.length == _page;
+        _loaded = true;
+      });
     } catch (e) {
       if (mounted) setState(() => _error = '$e');
     }
   }
 
-  String _who(_Batch b) {
-    final f = b.friendActor(data.me);
-    if (f != null) return '${fmt.friendName(b.rows.first)} (in their app)';
-    return b.byUser ? 'You' : 'Automatic (bank email, import)';
-  }
+  String _groupOf(Map<String, dynamic> r) => switch (r['tbl']) {
+    'transactions' || 'txn_parts' || 'recurring_runs' => 'payments',
+    'txn_shares' || 'shared_entries' || 'friend_aliases' || 'people' || 'groups' || 'group_expenses' => 'friends',
+    'merchant_rules' || 'vpa_rules' || 'payee_names' => 'rules',
+    _ => 'other',
+  };
 
-  /// "Category → Stuff · 7 payments".
-  String _summary(_Batch b) {
-    final parts = <String>[];
-    final txUpdates = b.rows.where((r) => r['tbl'] == 'transactions' && r['op'] == 'update').toList();
-    if (txUpdates.isNotEmpty) {
-      final fields = <String>{
-        for (final r in txUpdates) ...((r['after'] as Map?)?.keys.cast<String>() ?? const <String>[]),
-      };
-      final described = [
-        for (final f in fields.take(3))
-          () {
-            final values = {for (final r in txUpdates) (r['after'] as Map?)?[f]};
-            final name = historyFieldNames[f] ?? f;
-            return values.length == 1 ? '$name → ${fmt.value(f, values.first)}' : '$name changed';
-          }(),
-      ];
-      parts.add('${described.join(', ')} · ${txUpdates.length} payment${txUpdates.length == 1 ? '' : 's'}');
-    }
-    final added = b.rows.where((r) => r['tbl'] == 'transactions' && r['op'] == 'insert').length;
-    if (added > 0) parts.add('Added $added payment${added == 1 ? '' : 's'}');
-    final deleted = b.rows.where((r) => r['tbl'] == 'transactions' && r['op'] == 'delete').length;
-    if (deleted > 0) parts.add('Deleted $deleted payment${deleted == 1 ? '' : 's'}');
-    for (final r in b.rows.where((r) => r['tbl'] == 'shared_entries')) {
-      parts.add(fmt.sharedLine(r));
-    }
-    final rules = b.rows.where((r) => r['tbl'] != 'transactions' && r['tbl'] != 'shared_entries').length;
-    if (rules > 0) parts.add('$rules rule${rules == 1 ? '' : 's'} (${_ruleKinds(b)})');
-    return parts.join(' · ');
-  }
-
-  String _ruleKinds(_Batch b) {
-    const names = {
-      'merchant_rules': 'category by name',
-      'vpa_rules': 'category by UPI ID',
-      'friend_aliases': 'also known as',
-      'people': 'who is this',
-      'payee_names': 'renamed place',
-      'txn_parts': 'split into categories',
-      'txn_shares': 'split with friends',
-      'categories': 'categories',
-      'accounts': 'accounts',
-      'budgets': 'budgets',
-      'loans': 'loans',
-      'groups': 'groups',
-      'group_expenses': 'group expenses',
+  String _who(Map<String, dynamic> r) {
+    final actor = r['actor'] as String?;
+    if (r['tbl'] == 'shared_entries' && actor != null && actor != data.me) return fmt.friendName(r);
+    if (r['by_user'] == true) return 'You';
+    return switch (((r['context'] as Map?) ?? const {})['source']) {
+      'email' => 'Bank email',
+      'statement' => 'Statement import',
+      _ => 'Automatic',
     };
-    return {
-      for (final r in b.rows)
-        if (r['tbl'] != 'transactions') names[r['tbl']] ?? r['tbl'],
-    }.join(', ');
   }
 
-  List<Widget> _details(_Batch b, TextTheme text, ColorScheme scheme) => [
-    for (final r in b.rows.take(200))
-      Padding(
-        padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(fmt.title(r), style: text.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
-            for (final line in fmt.changes(r))
-              Text(line, style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
-          ],
-        ),
-      ),
-    if (b.rows.length > 200)
-      Padding(padding: const EdgeInsets.all(16), child: Text('…and ${b.rows.length - 200} more')),
+  /// "Zomato · ₹1,799.71 · 15 Nov" for a payment; the rule / friend / account line otherwise.
+  String _title(Map<String, dynamic> r) {
+    final c = (r['context'] as Map?) ?? const {};
+    if (r['tbl'] == 'transactions') {
+      final amount = c['amount'] == null ? '' : ' · ${money((c['amount'] as num).toDouble())}';
+      final date = c['txn_at'] == null ? '' : ' · ${dayLabel(DateTime.parse(c['txn_at'] as String).toLocal())}';
+      return '${c['merchant'] ?? 'Payment'}$amount$date';
+    }
+    return fmt.title(r).replaceFirst(RegExp(r'^(Added|Changed|Deleted): '), '');
+  }
+
+  static const _txnFields = [
+    'txn_at',
+    'merchant',
+    'amount',
+    'direction',
+    'category_id',
+    'account_id',
+    'note',
+    'paid_by',
   ];
 
-  Future<void> _undo(_Batch b) async {
-    final yes = await showDialog<bool>(
+  Future<void> _undo(Map<String, dynamic> r, {bool wholeAction = false}) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final ok = await showDialog<bool>(
       context: context,
       builder: (c) => AlertDialog(
-        title: const Text('Undo this?'),
+        title: Text(wholeAction ? 'Undo the whole action?' : 'Undo this change?'),
         content: Text(
-          '${_summary(b)}\n\nEverything it changed goes back to how it was. Anything you changed again '
-          'afterwards is kept.',
+          wholeAction
+              ? 'Every change made in the same action goes back. Anything changed again later is kept.'
+              : 'Only this change goes back. Anything changed again later is kept.',
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancel')),
@@ -202,113 +163,338 @@ class _ChangeHistoryScreenState extends State<ChangeHistoryScreen> {
         ],
       ),
     );
-    if (yes != true || !mounted) return;
-    final messenger = ScaffoldMessenger.of(context);
+    if (ok != true) return;
     try {
-      final n = await data.undoChange(b.id);
-      messenger.showSnackBar(SnackBar(content: Text('Undone: $n change${n == 1 ? '' : 's'} put back')));
+      final n = wholeAction
+          ? await data.undoChange((r['batch'] as num).toInt())
+          : await data.undoChangeRows([(r['id'] as num).toInt()]);
+      messenger.showSnackBar(SnackBar(content: Text(n == 0 ? 'Already as it was' : 'Undone')));
+      await _load();
     } catch (e) {
       messenger.showSnackBar(SnackBar(content: Text('Could not undo: $e')));
     }
-    await _load();
   }
 
   @override
   Widget build(BuildContext context) {
-    final text = Theme.of(context).textTheme;
     final scheme = Theme.of(context).colorScheme;
-    final batches = (_batches ?? const <_Batch>[])
-        .where((b) => !_mineOnly || b.byUser || b.friendActor(data.me) != null)
-        .toList();
+    // Each record's changes, oldest first: for "changed 2× later" / "deleted later".
+    final story = <String, List<Map<String, dynamic>>>{};
+    for (final r in _rows) {
+      (story[historyRecordKey(r)] ??= []).add(r);
+    }
+    for (final l in story.values) {
+      l.sort((a, b) => (a['id'] as num).compareTo(b['id'] as num));
+    }
+    final q = _q.text.trim().toLowerCase();
+    var list = _rows.where((r) {
+      if (_single && widget.loader != null && historyRecordKey(r) != widget.recordKey) return false;
+      if (!_single && _mineOnly && widget.loader != null && r['by_user'] != true && r['actor'] == null) return false;
+      if (_group != 'all' && _groupOf(r) != _group) return false;
+      if (_onlyChangedLater) {
+        final later = story[historyRecordKey(r)]!.where((x) => (x['id'] as num) > (r['id'] as num));
+        if (!later.any((x) => x['op'] != 'insert')) return false;
+      }
+      if (q.isEmpty) return true;
+      return '${_who(r)} ${_title(r)} ${fmt.changes(r).join(' ')} ${jsonEncode(r['context'])}'.toLowerCase().contains(
+        q,
+      );
+    }).toList();
+    if (_single) list = list.reversed.toList(); // a record's story reads oldest first
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Change history'),
+        title: Text(_single ? (widget.title ?? 'This entry\'s history') : 'Change history'),
         actions: [IconButton(tooltip: 'Refresh', icon: const Icon(Icons.refresh), onPressed: _load)],
       ),
       body: _error != null
           ? Center(
               child: Padding(padding: const EdgeInsets.all(24), child: Text('Could not load: $_error')),
             )
-          : _batches == null
+          : !_loaded
           ? const Center(child: CircularProgressIndicator())
-          : ListView(
-              padding: const EdgeInsets.only(bottom: 32),
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-                  child: SegmentedButton<bool>(
-                    showSelectedIcon: false,
-                    segments: const [
-                      ButtonSegment(value: true, label: Text('My changes')),
-                      ButtonSegment(value: false, label: Text('All, incl. automatic')),
-                    ],
-                    selected: {_mineOnly},
-                    onSelectionChanged: (s) {
-                      setState(() {
-                        _mineOnly = s.first;
-                        _batches = null;
-                      });
-                      _load();
-                    },
-                  ),
-                ),
-                if (batches.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.all(32),
-                    child: Center(child: Text('No changes recorded yet.')),
-                  ),
-                for (final b in batches)
-                  ExpansionTile(
-                    tilePadding: const EdgeInsets.symmetric(horizontal: 16),
-                    leading: Icon(
-                      b.undone
-                          ? Icons.undo
-                          : (b.friendActor(data.me) != null
-                                ? Icons.people_outline
-                                : (b.byUser ? Icons.person_outline : Icons.sync)),
-                      color: b.undone ? scheme.outline : null,
-                    ),
-                    title: Text(
-                      _summary(b),
-                      style: TextStyle(decoration: b.undone ? TextDecoration.lineThrough : null),
-                    ),
-                    subtitle: Text(
-                      '${dayLabel(b.at)}, ${timeLabel(b.at)} · ${_who(b)}'
-                      '${b.undone ? ' · undone' : ''}',
-                      style: text.bodySmall,
-                    ),
-                    children: [
-                      if (!b.undone)
-                        Align(
-                          alignment: Alignment.centerLeft,
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
-                            child: OutlinedButton.icon(
-                              onPressed: () => _undo(b),
-                              icon: const Icon(Icons.undo),
-                              label: const Text('Undo this'),
-                            ),
+          : CustomScrollView(
+              slivers: [
+                if (!_single)
+                  SliverToBoxAdapter(
+                    child: Column(
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                          child: SearchBar(
+                            controller: _q,
+                            hintText: 'Search: name, amount, who…',
+                            leading: const Icon(Icons.search),
+                            elevation: const WidgetStatePropertyAll(0),
+                            onChanged: (_) => setState(() {}),
                           ),
                         ),
-                      ..._details(b, text, scheme),
-                    ],
+                        SizedBox(
+                          height: 52,
+                          child: ListView(
+                            scrollDirection: Axis.horizontal,
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            children: [
+                              FilterChip(
+                                label: Text(_mineOnly ? 'My & friends\' changes' : 'Everything, incl. automatic'),
+                                selected: !_mineOnly,
+                                onSelected: (v) {
+                                  setState(() {
+                                    _mineOnly = !v;
+                                    _loaded = false;
+                                  });
+                                  _load();
+                                },
+                              ),
+                              const SizedBox(width: 6),
+                              FilterChip(
+                                avatar: const Icon(Icons.warning_amber_rounded, size: 16),
+                                label: const Text('Changed later'),
+                                selected: _onlyChangedLater,
+                                onSelected: (v) => setState(() => _onlyChangedLater = v),
+                              ),
+                              for (final (k, l) in [
+                                ('all', 'All'),
+                                ('payments', 'Payments'),
+                                ('friends', 'Friends'),
+                                ('rules', 'Rules'),
+                                ('other', 'Accounts & more'),
+                              ]) ...[
+                                const SizedBox(width: 6),
+                                ChoiceChip(
+                                  label: Text(l),
+                                  selected: _group == k,
+                                  onSelected: (_) => setState(() => _group = k),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
+                if (list.isEmpty)
+                  const SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: Center(child: Text('No changes recorded here.')),
+                  ),
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(12, 4, 12, 24),
+                  sliver: SliverList.builder(
+                    itemCount: list.length,
+                    itemBuilder: (context, i) => _card(list[i], story[historyRecordKey(list[i])]!, scheme),
+                  ),
+                ),
                 if (_more)
-                  Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: OutlinedButton(
-                      onPressed: _loadingMore
-                          ? null
-                          : () async {
-                              setState(() => _loadingMore = true);
-                              await _load(more: true);
-                              if (mounted) setState(() => _loadingMore = false);
-                            },
-                      child: Text(_loadingMore ? 'Loading…' : 'Show older changes'),
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
+                      child: OutlinedButton(
+                        onPressed: _loadingMore
+                            ? null
+                            : () async {
+                                setState(() => _loadingMore = true);
+                                await _load(more: true);
+                                if (mounted) setState(() => _loadingMore = false);
+                              },
+                        child: Text(_loadingMore ? 'Loading…' : 'Show older changes'),
+                      ),
                     ),
                   ),
               ],
             ),
+    );
+  }
+
+  Widget _card(Map<String, dynamic> r, List<Map<String, dynamic>> story, ColorScheme scheme) {
+    final text = Theme.of(context).textTheme;
+    final op = r['op'] as String;
+    final removedShared = r['tbl'] == 'shared_entries' && ((r['after'] as Map?)?['deleted_at'] != null);
+    final (Color color, IconData icon, String action) = switch (op) {
+      'insert' => (Colors.green.shade600, Icons.add_circle, 'Added'),
+      'delete' => (scheme.error, Icons.delete, 'Deleted'),
+      _ when removedShared => (scheme.error, Icons.remove_circle, 'Removed'),
+      _ => (Colors.amber.shade700, Icons.edit, 'Changed'),
+    };
+    final at = DateTime.parse(r['at'] as String).toLocal();
+    final undone = r['undone'] == true;
+    final later = story.where((x) => (x['id'] as num) > (r['id'] as num)).toList();
+    final editsLater = later.where((x) => x['op'] == 'update').length;
+    final deletedLater = op != 'delete' && later.any((x) => x['op'] == 'delete');
+    final before = ((r['before'] as Map?) ?? const {}).cast<String, dynamic>();
+    final after = ((r['after'] as Map?) ?? const {}).cast<String, dynamic>();
+    String show(String f, Object? v) => f == 'category_id' && v == null ? 'No category' : fmt.value(f, v);
+    String label(String f) => historyFieldNames[f] ?? f.replaceAll('_', ' ');
+    final small = text.bodySmall?.copyWith(color: scheme.onSurfaceVariant);
+
+    // Added / deleted: what it was. Changed: before → after.
+    final table = <TableRow>[];
+    if (op == 'update') {
+      for (final f in after.keys) {
+        table.add(
+          TableRow(
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(right: 10, bottom: 4),
+                child: Text(label(f), style: small),
+              ),
+              Padding(
+                padding: const EdgeInsets.only(right: 8, bottom: 4),
+                child: Text(
+                  show(f, before[f]),
+                  style: TextStyle(color: scheme.error, decoration: TextDecoration.lineThrough),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Text(
+                  show(f, after[f]),
+                  style: TextStyle(color: Colors.green.shade700, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
+          ),
+        );
+      }
+    } else if (r['tbl'] != 'shared_entries') {
+      final m = op == 'delete' ? before : after;
+      final keys = r['tbl'] == 'transactions'
+          ? _txnFields.where(m.containsKey)
+          : m.keys.where(
+              (f) => !const {'user_id', 'id', 'txn_id', 'created_at', 'icon', 'color', 'paid_txn_id'}.contains(f),
+            );
+      for (final f in keys) {
+        if (m[f] == null || '${m[f]}'.isEmpty) continue;
+        table.add(
+          TableRow(
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(right: 10, bottom: 4),
+                child: Text(label(f), style: small),
+              ),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Text(
+                  show(f, m[f]),
+                  style: op == 'delete'
+                      ? TextStyle(decoration: TextDecoration.lineThrough, color: scheme.outline)
+                      : null,
+                ),
+              ),
+              const SizedBox.shrink(),
+            ],
+          ),
+        );
+      }
+    }
+
+    Widget badge(String t, Color c, IconData i) => Container(
+      margin: const EdgeInsets.only(top: 8, right: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: c.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: c.withValues(alpha: 0.5)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(i, size: 13, color: c),
+          const SizedBox(width: 4),
+          Text(
+            t,
+            style: TextStyle(fontSize: 12, color: c, fontWeight: FontWeight.w700),
+          ),
+        ],
+      ),
+    );
+
+    return Card.outlined(
+      margin: const EdgeInsets.only(bottom: 8),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(color: color.withValues(alpha: 0.35)),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: _single
+            ? null
+            : () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => ChangeHistoryScreen(
+                    data: data,
+                    recordKey: historyRecordKey(r),
+                    title: _title(r),
+                    loader: widget.loader == null && historyRecordKey(r).length == 36
+                        ? null
+                        : () async => story.reversed.toList(),
+                  ),
+                ),
+              ),
+        child: Opacity(
+          opacity: undone ? 0.55 : 1,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(icon, size: 18, color: color),
+                    const SizedBox(width: 6),
+                    Text(
+                      action,
+                      style: TextStyle(color: color, fontWeight: FontWeight.w800),
+                    ),
+                    Expanded(
+                      child: Text(
+                        '  ·  ${_who(r)}',
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (!undone)
+                      PopupMenuButton<String>(
+                        tooltip: 'Undo',
+                        icon: const Icon(Icons.more_vert, size: 18),
+                        onSelected: (v) => _undo(r, wholeAction: v == 'all'),
+                        itemBuilder: (_) => [
+                          const PopupMenuItem(value: 'one', child: Text('Undo this change')),
+                          if (_rows.where((x) => x['batch'] == r['batch']).length > 1)
+                            const PopupMenuItem(value: 'all', child: Text('Undo the whole action')),
+                        ],
+                      )
+                    else
+                      const SizedBox(width: 12),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  r['tbl'] == 'shared_entries' ? fmt.sharedLine(r) : _title(r),
+                  style: text.titleSmall?.copyWith(fontWeight: FontWeight.w800),
+                ),
+                Text(DateFormat('EEE d MMM yyyy, h:mm a').format(at), style: small),
+                if (table.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Table(
+                    columnWidths: const {0: IntrinsicColumnWidth(), 1: FlexColumnWidth(), 2: FlexColumnWidth()},
+                    children: table,
+                  ),
+                ],
+                Wrap(
+                  children: [
+                    if (undone) badge('undone', scheme.outline, Icons.undo),
+                    if (editsLater > 0)
+                      badge('changed $editsLater× later', Colors.amber.shade800, Icons.warning_amber_rounded),
+                    if (deletedLater) badge('deleted later', scheme.error, Icons.delete_outline),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

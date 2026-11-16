@@ -8,6 +8,7 @@ import '../logic/summary.dart';
 import '../ui/category_style.dart';
 import '../ui/format.dart';
 import 'budgets_screen.dart';
+import 'duplicates_screen.dart';
 import 'goals_screen.dart';
 import 'quick_add.dart';
 import 'quick_sort_screen.dart';
@@ -309,7 +310,7 @@ class HomeScreen extends StatelessWidget {
             ),
 
             // Things that need you
-            if (waiting > 0 || toSort > 0 || late > 0)
+            if (waiting > 0 || toSort > 0 || late > 0 || data.duplicates.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
                 child: Wrap(
@@ -327,6 +328,14 @@ class HomeScreen extends StatelessWidget {
                         avatar: Icon(Icons.event_busy_outlined, size: 18, color: scheme.error),
                         label: Text('$late due, not seen yet'),
                         onPressed: () => openRecurring(context, data),
+                      ),
+                    if (data.duplicates.isNotEmpty)
+                      ActionChip(
+                        avatar: const Icon(Icons.content_copy_outlined, size: 18),
+                        label: Text(
+                          '${data.duplicates.length} possible duplicate${data.duplicates.length == 1 ? '' : 's'}',
+                        ),
+                        onPressed: () => openDuplicates(context, data),
                       ),
                     if (toSort > 0)
                       ActionChip(

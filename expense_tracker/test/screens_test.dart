@@ -340,24 +340,44 @@ void main() {
         'undone': false,
       },
     ];
+    // A later change to the same payment, for the "changed later" badge.
+    rows.insert(0, {
+      'id': 9,
+      'batch': 90,
+      'at': '2026-11-15T06:00:00Z',
+      'tbl': 'transactions',
+      'op': 'update',
+      'row_key': {'id': 't1'},
+      'before': {'note': null},
+      'after': {'note': 'gift'},
+      'context': {'merchant': 'Ravi Kumar', 'amount': 2000},
+      'by_user': true,
+      'undone': false,
+    });
     await pump(tester, ChangeHistoryScreen(data: data, loader: () async => rows));
-    expect(find.textContaining('Category → Shopping · 1 payment'), findsOneWidget);
-    expect(find.textContaining('Added 1 payment'), findsNothing); // automatic, hidden under "My changes"
-    await tester.tap(find.textContaining('Category → Shopping'));
-    await tester.pumpAndSettle();
-    expect(find.text('Undo this'), findsOneWidget);
-    expect(find.text('Category: No category → Shopping'), findsOneWidget);
-    expect(find.textContaining('Category rule for UPI ••upta@n'), findsOneWidget);
-    // A friend's change to an entry between you shows under "My changes" too.
-    await tester.scrollUntilVisible(
-      find.textContaining('Added with your friend'),
-      200,
-      scrollable: find.byType(Scrollable).first,
-    );
+    // Each change on its own card: what, who, before → after.
+    expect(find.textContaining('Ravi Kumar · ₹2,000'), findsWidgets);
+    expect(find.text('Shopping'), findsWidgets); // after
+    expect(find.text('No category'), findsOneWidget); // before, struck through
+    expect(find.text('changed 1× later'), findsOneWidget);
+    await tester.scrollUntilVisible(find.textContaining('Added with your friend'), 300, scrollable: find.byType(Scrollable).first);
     expect(find.textContaining('Added with your friend: Shared expense “Pizza” ₹600 · you owe'), findsOneWidget);
-    await tester.tap(find.text('All, incl. automatic'));
+    // Automatic changes are hidden until asked for.
+    expect(find.textContaining('Zomato'), findsNothing);
+    await tester.scrollUntilVisible(find.text('My & friends\' changes'), -300, scrollable: find.byType(Scrollable).first);
+    await tester.tap(find.text('My & friends\' changes'));
     await tester.pumpAndSettle();
-    expect(find.textContaining('Added 1 payment'), findsOneWidget);
+    await tester.scrollUntilVisible(find.textContaining('Zomato'), 300, scrollable: find.byType(Scrollable).first);
+    expect(find.textContaining('Zomato'), findsOneWidget);
+    // Search, undo.
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, 3000));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(SearchBar), 'gift');
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Ravi Kumar'), findsOneWidget);
+    await tester.tap(find.byIcon(Icons.more_vert).first);
+    await tester.pumpAndSettle();
+    expect(find.text('Undo this change'), findsOneWidget);
   });
 
   testWidgets('a category can be moved into another group', (tester) async {

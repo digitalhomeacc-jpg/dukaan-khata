@@ -6,6 +6,7 @@ import '../ui/format.dart';
 import 'budgets_screen.dart';
 import 'categories_screen.dart';
 import 'change_history_screen.dart';
+import 'duplicates_screen.dart';
 import 'gmail_setup_screen.dart';
 import 'unread_emails_screen.dart';
 
@@ -135,6 +136,13 @@ class SettingsScreen extends StatelessWidget {
             trailing: const Icon(Icons.chevron_right),
             onTap: () =>
                 Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => ChangeHistoryScreen(data: data))),
+          ),
+          ListTile(
+            leading: const Icon(Icons.content_copy_outlined),
+            title: const Text('Possible duplicates'),
+            subtitle: Text('${data.duplicates.length} to check: keep both or delete the extra one'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => openDuplicates(context, data),
           ),
           ListTile(leading: const Icon(Icons.logout), title: const Text('Sign out'), onTap: data.signOut),
           Padding(

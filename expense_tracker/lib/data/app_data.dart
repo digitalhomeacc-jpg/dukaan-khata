@@ -7,6 +7,7 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../config.dart';
+import '../logic/duplicates.dart';
 import '../logic/goals.dart';
 import '../logic/recurring.dart';
 import '../logic/summary.dart'
@@ -1336,6 +1337,24 @@ class AppData extends ChangeNotifier {
   /// "Also known as": payments from this payee name count as that friend.
   /// Payee names you said are not the same person as a friend.
   Set<String> get notSame => {...((profile['not_same'] as List?) ?? const []).cast<String>()};
+
+  /// Pairs you checked and said are not duplicates ("id1|id2").
+  Set<String> get notDuplicates => {...((profile['not_duplicates'] as List?) ?? const []).cast<String>()};
+
+  /// Payments that may be one entered twice (see [suspectedDuplicates]).
+  List<DuplicatePair> get duplicates => suspectedDuplicates(transactions, notDuplicates: notDuplicates);
+
+  /// "These are two real payments": not asked again.
+  Future<void> markNotDuplicates(String a, String b) async {
+    final list = {...notDuplicates, pairKey(a, b)}.toList();
+    profile = {...profile, 'not_duplicates': list};
+    notifyListeners();
+    try {
+      await _db.from('profiles').update({'not_duplicates': list}).eq('id', user!.id);
+    } catch (_) {
+      // Kept on this phone until the database has the column (0041).
+    }
+  }
 
   Future<void> markNotSame(String payeeName) async {
     final list = {...notSame, keyOf(payeeName)}.toList();
