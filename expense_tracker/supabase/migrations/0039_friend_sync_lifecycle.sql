@@ -47,12 +47,16 @@ $$;
 
 -- A payment no longer backs its record: unlink it; a record left with no payment is removed (or, once your
 -- friend agreed to it, they are asked to OK the removal).
-create or replace function public.unsync_friend_txn(p_txn uuid, p_user uuid)
+drop function if exists public.unsync_friend_txn(uuid, uuid);
+
+-- [p_payments_only]: only records made from friend payments (not "paid by" expenses), when the payment changed.
+create or replace function public.unsync_friend_txn(p_txn uuid, p_user uuid, p_payments_only boolean default false)
 returns void language plpgsql security definer set search_path = public as $$
 declare e record;
 begin
   for e in select * from public.shared_entries
-            where (creditor_txn = p_txn or debtor_txn = p_txn) and deleted_at is null and share_id is null loop
+            where (creditor_txn = p_txn or debtor_txn = p_txn) and deleted_at is null and share_id is null
+              and (not p_payments_only or kind <> 'expense') loop
     update public.shared_entries
        set creditor_txn = case when creditor_txn = p_txn then null else creditor_txn end,
            debtor_txn = case when debtor_txn = p_txn then null else debtor_txn end
@@ -125,13 +129,14 @@ declare e record;
 begin
   if tg_op = 'UPDATE' then
     if not public.is_friend_payment(new) then
-      perform public.unsync_friend_txn(new.id, new.user_id);
+      perform public.unsync_friend_txn(new.id, new.user_id, true);
     else
       -- Another friend now (renamed): leave the old record, then sync below.
       for e in select se.* from public.shared_entries se
-                where (se.creditor_txn = new.id or se.debtor_txn = new.id) and se.deleted_at is null and se.share_id is null loop
+                where (se.creditor_txn = new.id or se.debtor_txn = new.id) and se.deleted_at is null and se.share_id is null
+                  and se.kind <> 'expense' loop
         if e.link_id is distinct from (select link_id from public.friend_link_of_payee(new.user_id, new.merchant_key)) then
-          perform public.unsync_friend_txn(new.id, new.user_id);
+          perform public.unsync_friend_txn(new.id, new.user_id, true);
         elsif new.amount is distinct from old.amount and e.kind = 'payment' then
           -- The amount changed: the record changes too, for your friend to OK.
           update public.shared_entries set amount = new.amount where id = e.id;
