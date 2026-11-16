@@ -10,6 +10,7 @@ import '../core/drive_backup.dart';
 import 'self_test.dart';
 import '../core/config.dart';
 import '../core/money.dart';
+import '../shared/export.dart';
 import '../shared/party_import.dart';
 import '../shared/statement_parser.dart';
 import '../shared/widgets.dart';
@@ -121,10 +122,7 @@ class SettingsScreen extends StatelessWidget {
             onTap: () async {
               final bytes = await app.exportBackup();
               final name = 'dukaan_khata_backup_${todayIso()}.json';
-              await SharePlus.instance.share(ShareParams(
-                files: [XFile.fromData(bytes, mimeType: 'application/json', name: name)],
-                fileNameOverrides: [name],
-              ));
+              await Exporter.shareFiles([XFile.fromData(bytes, mimeType: 'application/json', name: name)]);
             },
           ),
           if (app.cloud)
@@ -306,13 +304,13 @@ class SettingsScreen extends StatelessWidget {
       xl.TextCellValue('customer'),
     ]);
     final bytes = book.encode()!;
-    await SharePlus.instance.share(ShareParams(files: [
+    await Exporter.shareFiles([
       XFile.fromData(
         Uint8List.fromList(bytes),
         mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         name: 'opening_balances.xlsx',
       )
-    ], fileNameOverrides: const ['opening_balances.xlsx']));
+    ]);
   }
 
   /// Import customers / suppliers with opening balances from Excel or CSV

@@ -1,4 +1,6 @@
 import 'package:excel/excel.dart' as xl;
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -12,6 +14,7 @@ import '../core/money.dart';
 import '../core/i18n.dart';
 import '../core/translit.dart';
 import '../state/app_controller.dart';
+import 'user_agent.dart';
 
 /// Turns any [ReportTable] into a PDF or Excel file and shares it
 /// (WhatsApp, email, Drive… via the system share sheet).
@@ -36,6 +39,68 @@ class Exporter {
       }
     }
     return toLatin(out);
+  }
+
+  /// The app's navigator – lets a phone browser show the "ready" box below.
+  static final navigatorKey = GlobalKey<NavigatorState>();
+
+  /// A phone's browser (iPhone / Android) – told the same way the printing
+  /// library tells it, so the two never disagree.
+  static bool get _phoneBrowser {
+    if (!kIsWeb) return false;
+    if (defaultTargetPlatform == TargetPlatform.iOS || defaultTargetPlatform == TargetPlatform.android) return true;
+    final ua = browserUserAgent;
+    return ua.contains('Mobile') || ua.contains('iPhone') || ua.contains('iPad') || ua.contains('Android');
+  }
+
+  /// Shares files. A phone browser only opens the share sheet straight after
+  /// a tap, and making the file takes a moment – so there the file is made
+  /// first and a small "ready" box asks for one more tap (its share sheet also
+  /// has Print). Elsewhere it opens at once. No share sheet: downloads it.
+  static Future<void> shareFiles(List<XFile> files, {String? text}) async {
+    Future<void> go() async {
+      try {
+        await SharePlus.instance.share(ShareParams(files: files, fileNameOverrides: [for (final f in files) f.name], text: text));
+      } catch (_) {
+        for (final f in files) {
+          await Printing.sharePdf(bytes: await f.readAsBytes(), filename: f.name);
+        }
+      }
+    }
+
+    final ctx = navigatorKey.currentContext;
+    if (!_phoneBrowser || ctx == null || !ctx.mounted) return go();
+    final t = App.read(ctx).t;
+    await showDialog<void>(
+      context: ctx,
+      builder: (c) => AlertDialog(
+        title: Text(t('file_ready')),
+        content: Text(files.map((f) => f.name).join('\n'), style: Theme.of(c).textTheme.bodySmall),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c), child: Text(t('cancel'))),
+          FilledButton.icon(
+            key: const Key('file_share_now'),
+            icon: const Icon(Icons.ios_share),
+            label: Text(t('file_share_print')),
+            onPressed: () {
+              go(); // started inside this tap, so the browser allows it
+              Navigator.pop(c);
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Prints a PDF: the print window on a laptop; on a phone browser the
+  /// share sheet (choose Print, or a printer app).
+  static Future<void> _printPdf(Uint8List bytes, String name, {PdfPageFormat format = PdfPageFormat.a4}) async {
+    if (_phoneBrowser) return shareFiles([XFile.fromData(bytes, mimeType: 'application/pdf', name: _fileName(name, 'pdf'))]);
+    try {
+      await Printing.layoutPdf(onLayout: (_) async => bytes, name: latin(name), format: format);
+    } catch (_) {
+      await shareFiles([XFile.fromData(bytes, mimeType: 'application/pdf', name: _fileName(name, 'pdf'))]);
+    }
   }
 
   static Future<void> _fonts() async {
@@ -136,10 +201,7 @@ class Exporter {
 
   static Future<void> sharePdfMulti(List<ReportTable> tables, {required String heading, String shop = ''}) async {
     final bytes = await pdfMulti(tables, shop: shop, heading: heading);
-    await SharePlus.instance.share(ShareParams(
-      files: [XFile.fromData(bytes, mimeType: 'application/pdf', name: _fileName(heading, 'pdf'))],
-      fileNameOverrides: [_fileName(heading, 'pdf')],
-    ));
+    await shareFiles([XFile.fromData(bytes, mimeType: 'application/pdf', name: _fileName(heading, 'pdf'))]);
   }
 
   static Uint8List excel(List<ReportTable> tables) {
@@ -172,11 +234,7 @@ class Exporter {
 
   static Future<void> sharePdf(ReportTable t, {String shop = '', String? text}) async {
     final bytes = await pdf(t, shop: shop);
-    await SharePlus.instance.share(ShareParams(
-      files: [XFile.fromData(bytes, mimeType: 'application/pdf', name: _fileName(t.title, 'pdf'))],
-      fileNameOverrides: [_fileName(t.title, 'pdf')],
-      text: text,
-    ));
+    await shareFiles([XFile.fromData(bytes, mimeType: 'application/pdf', name: _fileName(t.title, 'pdf'))], text: text);
   }
 
   static Future<void> shareBill(AppController app, Voucher v, List<ItemLine> lines, List<Item> items, Ledger? party,
@@ -184,35 +242,24 @@ class Exporter {
     await app.loadPdfNames();
     final bytes = await BillPdf.build(app, v, lines, items, party, transporters);
     final name = _fileName('${party?.name ?? 'bill'}_${v.date}_${v.shownNo}', 'pdf');
-    await SharePlus.instance.share(ShareParams(
-      files: [XFile.fromData(bytes, mimeType: 'application/pdf', name: name)],
-      fileNameOverrides: [name],
-    ));
+    await shareFiles([XFile.fromData(bytes, mimeType: 'application/pdf', name: name)]);
   }
 
-  static Future<void> printPdfMulti(List<ReportTable> tables, {required String heading, String shop = ''}) => tables.length == 1
+  static Future<void> printPdfMulti(List<ReportTable> tables, {required String heading, String shop = ''}) async => tables.length == 1
       ? printPdf(tables.single, shop: shop)
-      : Printing.layoutPdf(onLayout: (_) => pdfMulti(tables, shop: shop, heading: heading), name: latin(heading));
+      : _printPdf(await pdfMulti(tables, shop: shop, heading: heading), heading);
 
-  static Future<void> printPdf(ReportTable t, {String shop = ''}) =>
-      Printing.layoutPdf(onLayout: (_) => pdf(t, shop: shop), name: latin(t.title));
+  static Future<void> printPdf(ReportTable t, {String shop = ''}) async => _printPdf(await pdf(t, shop: shop), t.title);
 
   static Future<void> shareExcel(List<ReportTable> tables, String title) async {
     final bytes = excel(tables);
     final name = _fileName(title, 'xlsx');
-    await SharePlus.instance.share(ShareParams(
-      files: [XFile.fromData(bytes, mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', name: name)],
-      fileNameOverrides: [name],
-    ));
+    await shareFiles([XFile.fromData(bytes, mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', name: name)]);
   }
 
   static Future<void> shareImage(Uint8List png, String title, {String? text}) async {
     final name = _fileName(title, 'png');
-    await SharePlus.instance.share(ShareParams(
-      files: [XFile.fromData(png, mimeType: 'image/png', name: name)],
-      fileNameOverrides: [name],
-      text: text,
-    ));
+    await shareFiles([XFile.fromData(png, mimeType: 'image/png', name: name)], text: text);
   }
 }
 
@@ -451,25 +498,15 @@ extension ReceiptPdf on Exporter {
     return doc.save();
   }
 
-  
-    /// Opens the system share/print sheet on mobile/PWA, or falls back to print/download.
-  static Future<void> print(AppController app, String voucherId) => share(app, voucherId);
+  /// 80 mm receipt: the print window on a laptop (choose the thermal
+  /// printer); on a phone the share sheet (Print, or a printer app like RawBT).
+  static Future<void> print(AppController app, String voucherId) async => Exporter._printPdf(
+        await build(app, voucherId),
+        'receipt',
+        format: const PdfPageFormat(80 * PdfPageFormat.mm, double.infinity, marginAll: 4 * PdfPageFormat.mm),
+      );
 
-  /// Sends the receipt to another app (e.g. a Bluetooth printer app or system print/share sheet).
-  static Future<void> share(AppController app, String voucherId) async {
-    final bytes = await build(app, voucherId);
-    final name = Exporter._fileName('receipt_$voucherId', 'pdf');
-    try {
-      await SharePlus.instance.share(ShareParams(
-        files: [XFile.fromData(bytes, mimeType: 'application/pdf', name: name)],
-        fileNameOverrides: [name],
-      ));
-    } catch (_) {
-      try {
-        await Printing.layoutPdf(onLayout: (_) async => bytes, name: name);
-      } catch (_) {
-        await Printing.sharePdf(bytes: bytes, filename: name);
-      }
-    }
-  }
+  /// Sends the receipt to another app (e.g. a Bluetooth printer app).
+  static Future<void> share(AppController app, String voucherId) async =>
+      Exporter.shareFiles([XFile.fromData(await build(app, voucherId), mimeType: 'application/pdf', name: Exporter._fileName('receipt', 'pdf'))]);
 }

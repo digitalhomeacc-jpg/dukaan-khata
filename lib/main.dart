@@ -12,6 +12,7 @@ import 'features/screen_tour.dart';
 import 'features/settings_screen.dart';
 import 'features/stock_screen.dart';
 import 'features/voucher_screen.dart';
+import 'shared/export.dart';
 import 'state/app_controller.dart';
 
 void main() {
@@ -27,6 +28,7 @@ class DukaanKhataApp extends StatelessWidget {
   Widget build(BuildContext context) {
     final app = App.of(context);
     return MaterialApp(
+      navigatorKey: Exporter.navigatorKey,
       title: app.t('app_name'),
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light(),

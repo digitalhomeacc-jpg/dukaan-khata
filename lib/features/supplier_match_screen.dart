@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 
 import '../accounting/models.dart';
 import '../accounting/voucher_service.dart';
-import '../core/audit.dart';
 import '../core/money.dart';
 import '../core/theme.dart';
 import '../shared/pdf_text.dart';
@@ -92,20 +91,6 @@ class _SupplierMatchScreenState extends State<SupplierMatchScreen> {
         "SELECT COUNT(*) AS n FROM vouchers WHERE party_id = ? AND vtype = 'history' AND deleted = 0",
         [widget.supplier.id]);
     final m = SupplierMatch.match(inBooks, ours, early: early, factor: factor);
-    // Record the latest uploaded statement's closing balance & date so StockPnlEngine can verify running balance too
-    await AuditLog.write(app.db,
-        businessId: app.businessId!,
-        recordId: 'stmt_check:${widget.supplier.id}',
-        action: 'edit',
-        kind: 'stmt_check',
-        title: widget.supplier.name,
-        after: {
-          'date': all.last.date,
-          'balance': '${all.last.balance}',
-          'missing': '${m.missing.length}',
-          'extra': '${m.extra.length}',
-          'rate_diff': '${m.rateDiff.length}',
-        });
     if (!mounted) return;
     setState(() {
       oldImported = imported['n'] as int;
@@ -252,9 +237,15 @@ class _SupplierMatchScreenState extends State<SupplierMatchScreen> {
   }
 
   Future<void> _addAllDiscounts() async {
-    final app = App.read(context);
+    final t = App.read(context).t;
     final list = match!.missing.where((l) => l.kind == 'discount').toList();
     if (list.isEmpty) return;
+    // many entries at once: always ask first
+    if (!await confirm(context,
+        t('sm_all_discounts_q').replaceAll('{n}', '${list.length}').replaceAll('{amt}', Money.fmt(list.fold(0, (s, l) => s + l.credit))))) {
+      return;
+    }
+    if (!mounted) return;
     setState(() => busy = true);
     try {
       for (final l in list) {

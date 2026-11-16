@@ -1,5 +1,6 @@
 import 'package:dukaan_khata/accounting/ledger_repo.dart';
 import 'package:dukaan_khata/accounting/models.dart';
+import 'package:dukaan_khata/accounting/reports.dart';
 import 'package:dukaan_khata/accounting/stock_pnl.dart';
 import 'package:dukaan_khata/accounting/voucher_service.dart';
 import 'package:dukaan_khata/core/money.dart';
@@ -82,6 +83,44 @@ void main() {
       final i = r.items.firstWhere((x) => x.item.name == 'No Rate');
       expect(i.flags, contains('opening_rate_missing'));
       expect(i.openVal, rs(50), reason: 'valued at the purchase rate meanwhile');
+      await db.close();
+    } finally {
+      Books.start = keep;
+    }
+  });
+
+  test('no opening rate: opening stock valued from the newest old purchases at their year\'s real cost; '
+      'discount rate identical to the Real cost report; a typed rate always wins', () async {
+    final keep = Books.start;
+    Books.start = '2026-11-08';
+    try {
+      final db = await openTestDb(biz);
+      final vs = VoucherService(db, biz), lr = LedgerRepo(db, biz), sr = StockRepo(db, biz);
+      final w = await sr.save(name: 'Wonder Old', category: 'cement', unit: 'bag', openingQty: 100);
+      final typed = await sr.save(name: 'Typed Rate', category: 'cement', unit: 'bag', openingQty: 10, openingRate: rs(250));
+      final sup = await lr.create(name: 'Wonder', group: LedgerGroup.supplier);
+      Future<void> old(String d, String item, double q, int rate) => vs.save(
+          VoucherInput(type: VoucherType.history, date: d, partyId: sup, payLedgerId: '${historyKindPrefix}purchase', items: [ItemLine(item, q, rs(rate))]),
+          owner);
+      await old('2026-06-01', w, 200, 300); // 60,000
+      await old('2026-10-01', w, 50, 310); // 15,500 – the newest
+      await old('2026-10-02', typed, 10, 999); // ignored: its rate is typed in
+      await vs.save(VoucherInput(type: VoucherType.purchase, date: '2026-11-10', partyId: sup, items: [ItemLine(w, 100, rs(290))]), owner);
+      // the year's discount: 5 % of all the year's goods (60,000 + 15,500 + 9,990 + 29,000 = 1,14,490)
+      await vs.save(VoucherInput(type: VoucherType.payment, date: '2026-12-01', partyId: sup, payLedgerId: vs.sys('cash'),
+          amount: rs(1), discount: rs(5724.50)), owner);
+      final r = await StockPnlEngine(db, biz).compute('2027-03-31');
+      final i = r.items.firstWhere((x) => x.item.id == w);
+      // 50 newest bags @ 310 less 5 % = 14,725 ; 50 more @ 300 less 5 % = 14,250
+      expect(i.openVal, rs(28975));
+      expect(i.openFromOld, isTrue);
+      expect(i.flags, isEmpty);
+      expect(i.discR, rs(1450), reason: '5 % of the ₹29,000 bought in the books');
+      expect(r.items.firstWhere((x) => x.item.id == typed).openVal, rs(2500), reason: 'the typed rate wins');
+      // the Real cost report uses the very same yearly rate
+      final rep = await Reports(db, biz, (k) => k).supplierCost(sup, '2026-04-01', '2027-03-31');
+      expect(rep.subtitle, contains('5.0%'));
+      expect(r.accountsProfit, r.netProfit);
       await db.close();
     } finally {
       Books.start = keep;

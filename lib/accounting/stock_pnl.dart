@@ -1,7 +1,6 @@
 import 'package:sqlite_async/sqlite_async.dart';
 
 import '../core/money.dart';
-import 'ledger_repo.dart' show oldEntryEffect;
 import 'models.dart';
 
 /// मालाप्रमाणे नफा - profit per item and per category, to the paise.
@@ -33,6 +32,9 @@ class ItemPnl {
   int discR = 0, closeVal = 0, cost = 0;
   double avg = 0; // net cost per unit (paise)
   final flags = <String>[]; // opening_rate_missing | no_cost | negative_stock
+  /// Opening stock had no opening rate and was valued from the last old
+  /// (statement) purchases at their real cost – complete, just worth knowing.
+  bool openFromOld = false;
 
   int get netPur => purVal - discR;
   int get profit => sales - cost;
@@ -150,33 +152,47 @@ class StockPnlEngine {
       adj[r['item_id'] as String] = (r['q'] as num).toDouble();
     }
 
-    // company discounts: the year's rate per supplier, applied to this period's purchases
-    final fy = fyStart(to);
-    final fyDisc = <String, int>{}, fyValue = <String, int>{};
-    for (final r in await db.getAll(
-        'SELECT v.party_id AS p, SUM(vl.credit - vl.debit) AS d FROM voucher_lines vl JOIN vouchers v ON v.id = vl.voucher_id '
-        'WHERE vl.business_id = ? AND vl.ledger_id = ? AND vl.deleted = 0 AND v.deleted = 0 AND vl.vdate BETWEEN ? AND ? $_notScheme '
-        'GROUP BY v.party_id',
-        [b, '$b:discount_recd', fy, to])) {
-      if (r['p'] != null) fyDisc[r['p'] as String] = (r['d'] as num).toInt();
+    // company discounts: the year's rate per supplier (the same rule as the
+    // Real cost report): all of that financial year's discounts ÷ all of that
+    // year's purchases from it, old statement lines included
+    final ratesByFy = <String, Map<String, double>>{};
+    Future<Map<String, double>> fyRates(String fyFrom) async {
+      if (ratesByFy[fyFrom] case final r?) return r;
+      final y = int.parse(fyFrom.substring(0, 4)), mo = int.parse(fyFrom.substring(5, 7));
+      final fyEnd = isoDate(DateTime(y + 1, mo, 1).subtract(const Duration(days: 1)));
+      final upto = to.compareTo(fyEnd) < 0 ? to : fyEnd;
+      final disc = <String, int>{}, value = <String, int>{};
+      for (final r in await db.getAll(
+          'SELECT v.party_id AS p, SUM(vl.credit - vl.debit) AS d FROM voucher_lines vl JOIN vouchers v ON v.id = vl.voucher_id '
+          'WHERE vl.business_id = ? AND vl.ledger_id = ? AND vl.deleted = 0 AND v.deleted = 0 AND vl.vdate BETWEEN ? AND ? $_notScheme '
+          'GROUP BY v.party_id',
+          [b, '$b:discount_recd', fyFrom, upto])) {
+        if (r['p'] != null) disc[r['p'] as String] = (r['d'] as num).toInt();
+      }
+      for (final r in await db.getAll(
+          "SELECT party_id AS p, SUM(amount) AS d FROM vouchers v WHERE business_id = ? AND vtype = 'history' AND deleted = 0 "
+          "AND vdate BETWEEN ? AND ? AND (status LIKE 'stmt:discount%' OR (COALESCE(status, '') NOT LIKE 'stmt:%' "
+          "AND pay_ledger_id = 'hist:paid' AND (narration LIKE '%discount%' OR narration LIKE '%सूट%' OR narration LIKE '%सवलत%' "
+          "OR narration LIKE '%scheme%'))) $_notScheme GROUP BY party_id",
+          [b, fyFrom, upto])) {
+        if (r['p'] != null) disc[r['p'] as String] = (disc[r['p'] as String] ?? 0) + (r['d'] as num).toInt();
+      }
+      for (final r in await db.getAll(
+          "SELECT v.party_id AS p, SUM(CASE WHEN v.vtype = 'purchase_return' THEN -il.amount ELSE il.amount END) AS a "
+          'FROM inventory_lines il JOIN vouchers v ON v.id = il.voucher_id WHERE il.business_id = ? AND il.deleted = 0 AND v.deleted = 0 '
+          'AND il.vdate BETWEEN ? AND ? '
+          "AND (v.vtype IN ('purchase', 'purchase_return') OR (v.vtype = 'history' AND v.pay_ledger_id = 'hist:purchase')) GROUP BY v.party_id",
+          [b, fyFrom, upto])) {
+        if (r['p'] != null) value[r['p'] as String] = (r['a'] as num).toInt();
+      }
+      return ratesByFy[fyFrom] = {
+        for (final e in value.entries)
+          if (e.value > 0) e.key: (disc[e.key] ?? 0) / e.value
+      };
     }
-    for (final r in await db.getAll(
-        "SELECT party_id AS p, SUM(amount) AS d FROM vouchers v WHERE business_id = ? AND vtype = 'history' AND deleted = 0 "
-        "AND vdate BETWEEN ? AND ? AND (status LIKE 'stmt:discount%' OR (COALESCE(status, '') NOT LIKE 'stmt:%' "
-        "AND pay_ledger_id = 'hist:paid' AND (narration LIKE '%discount%' OR narration LIKE '%सवलत%' OR narration LIKE '%scheme%'))) "
-        '$_notScheme GROUP BY party_id',
-        [b, fy, to])) {
-      if (r['p'] != null) fyDisc[r['p'] as String] = (fyDisc[r['p'] as String] ?? 0) + (r['d'] as num).toInt();
-    }
-    for (final r in await db.getAll(
-        "SELECT v.party_id AS p, SUM(CASE WHEN v.vtype = 'purchase_return' THEN -il.amount ELSE il.amount END) AS a "
-        'FROM inventory_lines il JOIN vouchers v ON v.id = il.voucher_id WHERE il.business_id = ? AND il.deleted = 0 AND v.deleted = 0 '
-        'AND il.vdate BETWEEN ? AND ? '
-        "AND (v.vtype IN ('purchase', 'purchase_return') OR (v.vtype = 'history' AND v.pay_ledger_id = 'hist:purchase')) GROUP BY v.party_id",
-        [b, fy, to])) {
-      if (r['p'] != null) fyValue[r['p'] as String] = (r['a'] as num).toInt();
-    }
-    double rateOf(String? p) => p == null || (fyValue[p] ?? 0) <= 0 ? 0 : (fyDisc[p] ?? 0) / fyValue[p]!;
+
+    final rates = await fyRates(fyStart(to));
+    double rateOf(String? p) => p == null ? 0 : rates[p] ?? 0;
 
     final discByItem = <String, double>{};
     for (final r in await db.getAll(
@@ -188,34 +204,19 @@ class StockPnlEngine {
       discByItem[id] = (discByItem[id] ?? 0) + (r['a'] as num).toInt() * rateOf(r['p'] as String?);
     }
 
-    // Check which suppliers' old entries match their opening balance
-    final oldTotalByParty = <String, int>{};
-    for (final r in await db.getAll(
-        "SELECT party_id, amount, paid, pay_ledger_id FROM vouchers WHERE business_id = ? AND vtype = 'history' "
-        'AND deleted = 0 AND party_id IS NOT NULL ORDER BY vdate',
-        [b])) {
-      final (_, d, c) = oldEntryEffect(r['pay_ledger_id'] as String?, (r['amount'] as int?) ?? 0, (r['paid'] as int?) ?? 0);
-      final p = r['party_id'] as String;
-      oldTotalByParty[p] = (oldTotalByParty[p] ?? 0) + (d - c);
-    }
-    final openBalByParty = <String, int>{};
-    for (final r in await db.getAll('SELECT id, opening_balance FROM ledgers WHERE business_id = ?', [b])) {
-      openBalByParty[r['id'] as String] = (r['opening_balance'] as int?) ?? 0;
-    }
-    bool partyOldMatches(String? p) =>
-        p != null && oldTotalByParty.containsKey(p) && oldTotalByParty[p] == (openBalByParty[p] ?? 0);
-
-    // Pre-books (history) purchases per item within this financial year, grouped by supplier
-    final histPurByItem = <String, List<(String?, double, int)>>{};
-    for (final r in await db.getAll(
-        'SELECT il.item_id, v.party_id AS p, SUM(il.qty) AS q, SUM(il.amount) AS a '
-        'FROM inventory_lines il JOIN vouchers v ON v.id = il.voucher_id '
-        'WHERE il.business_id = ? AND il.deleted = 0 AND v.deleted = 0 '
-        "AND v.vtype = 'history' AND v.pay_ledger_id = 'hist:purchase' AND il.vdate BETWEEN ? AND ? "
-        'GROUP BY il.item_id, v.party_id',
-        [b, fy, to])) {
-      (histPurByItem[r['item_id'] as String] ??= [])
-          .add((r['p'] as String?, (r['q'] as num).toDouble(), (r['a'] as num).toInt()));
+    // old (statement) purchases before the books, newest first – used only to
+    // value opening stock that has no opening rate
+    final oldBuys = <String, List<(String, String?, double, int)>>{}; // item → date, supplier, qty, amount
+    if (prevClose == null) {
+      for (final r in await db.getAll(
+          'SELECT il.item_id, il.vdate, v.party_id AS p, il.qty AS q, il.amount AS a FROM inventory_lines il '
+          'JOIN vouchers v ON v.id = il.voucher_id WHERE il.business_id = ? AND il.deleted = 0 AND v.deleted = 0 '
+          "AND v.vtype = 'history' AND v.pay_ledger_id = 'hist:purchase' AND il.vdate < ? AND il.qty > 0 "
+          'ORDER BY il.vdate DESC, v.created_at DESC, il.id DESC',
+          [b, Books.start])) {
+        (oldBuys[r['item_id'] as String] ??= [])
+            .add((r['vdate'] as String, r['p'] as String?, (r['q'] as num).toDouble(), (r['a'] as num).toInt()));
+      }
     }
 
     for (final it in items) {
@@ -223,7 +224,6 @@ class StockPnlEngine {
       final m = mv[it.id] ?? const {};
       double q(String k) => m[k]?.$1 ?? 0;
       int a(String k) => m[k]?.$2 ?? 0;
-
       p.openQty = it.openingQty + (openMoves[it.id] ?? 0);
       p.closeQty = it.openingQty + (closeMoves[it.id] ?? 0);
       p.purQty = q('purchase') - q('purchase_return');
@@ -233,46 +233,34 @@ class StockPnlEngine {
       p.adjQty = adj[it.id] ?? 0;
       p.disc = discByItem[it.id] ?? 0;
       p.discR = p.disc.round();
-
-      final histList = histPurByItem[it.id] ?? const [];
-      final hasHist = histList.isNotEmpty;
-      final histAllMatched = hasHist && histList.every((h) => partyOldMatches(h.$1));
-
-      // Compute the full-FY real cost rate (matching Customers > Supplier > Real Cost) when old entries match opening balance
-      double fyHistQty = 0, fyHistNet = 0;
-      if (histAllMatched && it.openingRate <= 0) {
-        for (final (supId, qh, ah) in histList) {
-          fyHistQty += qh;
-          fyHistNet += ah * (1.0 - rateOf(supId));
-        }
-      }
-      final useRealCost = fyHistQty > 0.0001 && (fyHistQty + p.purQty) > 0.0001;
-      final realAvg = useRealCost ? (fyHistNet + p.netPur) / (fyHistQty + p.purQty) : 0.0;
-
       if (prevClose != null) {
         p.openVal = prevClose[it.id] ?? 0;
-      } else if (useRealCost) {
-        p.openVal = (p.openQty * realAvg).round();
-        if (p.purQty > 0) {
-          p.discR = p.purVal - (p.purQty * realAvg).round();
-          p.disc = p.discR.toDouble();
-        }
+      } else if (it.openingRate > 0 || p.openQty <= 0) {
+        p.openVal = (p.openQty * it.openingRate).round(); // the rate typed in always wins
       } else {
-        var rate = it.openingRate.toDouble();
-        if (p.openQty > 0 && rate <= 0) {
-          p.flags.add('opening_rate_missing');
-          rate = it.purchaseRate.toDouble();
-        } else if (hasHist && !histAllMatched) {
-          p.flags.add('opening_rate_missing');
+        // no opening rate: the bags in the shop on the first day are the last
+        // ones bought – value them from the newest old purchases, each at its
+        // year's real cost (bill − that year's discount)
+        var need = p.openQty, val = 0.0;
+        for (final (date, sup, bq, ba) in oldBuys[it.id] ?? const <(String, String?, double, int)>[]) {
+          if (need <= 0.0001) break;
+          final take = need < bq ? need : bq;
+          final r = (await fyRates(fyStart(date)))[sup] ?? 0;
+          val += take * (ba / bq) * (1 - r);
+          need -= take;
         }
-        p.openVal = (p.openQty * rate).round();
+        if (need > 0.0001) {
+          // old purchases do not cover it: the rest at the purchase rate – flagged
+          p.flags.add('opening_rate_missing');
+          val += need * it.purchaseRate;
+        } else {
+          p.openFromOld = true;
+        }
+        p.openVal = val.round();
       }
-
       final qty = p.openQty + p.purQty;
       final val = p.openVal + p.netPur;
-      if (useRealCost) {
-        p.avg = realAvg;
-      } else if (qty > 0.0001) {
+      if (qty > 0.0001) {
         p.avg = val / qty;
       } else {
         p.avg = (it.openingRate > 0 ? it.openingRate : it.purchaseRate).toDouble();

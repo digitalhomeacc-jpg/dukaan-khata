@@ -115,7 +115,9 @@ class ItemPnlSheet {
                 '   ${t('pnl_rate_used')}',
                 it.openingRate > 0
                     ? '${m(openRateUsed)} (${t('pnl_rate_opening')})'
-                    : '${m(openRateUsed)} (${t('pnl_rate_purchase_master')})'),
+                    : i.openFromOld
+                        ? '${m(openRateUsed)} (${t('pnl_rate_from_old')})'
+                        : '${m(openRateUsed)} (${t('pnl_rate_purchase_master')})'),
           row('+ ${t('pnl_bought_books')}', '${q(i.purQty)} · ${m(i.purVal)}'),
           if (i.discR != 0) row('− ${t('pnl_disc')}', m(i.discR)),
           row('= ${t('pnl_available')}', '${q(i.openQty + i.purQty)} · ${m(i.openVal + i.netPur)}'),
