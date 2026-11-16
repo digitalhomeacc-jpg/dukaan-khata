@@ -83,7 +83,7 @@
       window.dkRegisterSw = function () {
         if (window.dkSwDone) return;
         window.dkSwDone = true;
-        navigator.serviceWorker.register('app_sw.js?v=202611161027').catch(function () {});
+        navigator.serviceWorker.register('app_sw.js?v=202611161501').catch(function () {});
       };
       setTimeout(window.dkRegisterSw, 60000); // in case the app never says it opened
       window.addEventListener('load', function () {
@@ -94,6 +94,33 @@
         var reloading = false;
         navigator.serviceWorker.addEventListener('controllerchange', function () {
           if (!hadController || reloading) return;
+          window.dkShowUpdate();
+        });
+        // An app left open for days (iPhone / iPad keep it in the background)
+        // never reloads by itself: look for a newer version whenever it comes
+        // back to the screen, and every 30 minutes while it is open.
+        var checking = false;
+        window.dkCheckUpdate = async function () {
+          if (checking || reloading || document.getElementById('splash')) return;
+          checking = true;
+          try {
+            var r = await fetch('./?dkcheck=' + Date.now(), { cache: 'no-store' });
+            var m = (await r.text()).match(/[?&]v=(\d{12})/);
+            if (m && m[1] !== '202611161501') {
+              var reg = await navigator.serviceWorker.getRegistration();
+              if (reg) reg.update().catch(function () {});
+              window.dkShowUpdate();
+            }
+          } catch (e) { /* offline: try again later */ }
+          checking = false;
+        };
+        document.addEventListener('visibilitychange', function () {
+          if (document.visibilityState === 'visible') window.dkCheckUpdate();
+        });
+        setInterval(window.dkCheckUpdate, 30 * 60 * 1000);
+      });
+      // the bar that asks before reloading (nothing being typed is lost)
+      window.dkShowUpdate = function () {
           // still opening: never restart it – this opening already uses the new
           // version from the internet; the offline copy is ready for next time
           if (document.getElementById('splash')) return;
@@ -104,13 +131,12 @@
           b.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);bottom:calc(84px + env(safe-area-inset-bottom));' +
             'z-index:9999;max-width:92vw;padding:10px 16px;border:0;border-radius:22px;background:#1F4E79;color:#fff;' +
             'font:600 14px sans-serif;box-shadow:0 4px 14px rgba(0,0,0,.25);cursor:pointer';
-          b.onclick = function () { reloading = true; location.reload(); };
+          b.onclick = function () { location.reload(); };
           document.body.appendChild(b);
-        });
-      });
+      };
     }
   </script>
-  <script src="pdf_text.js?v=202611161027" defer></script>
-  <script src="flutter_bootstrap.js?v=202611161027" async></script>
+  <script src="pdf_text.js?v=202611161501" defer></script>
+  <script src="flutter_bootstrap.js?v=202611161501" async></script>
 </body>
 </html>
