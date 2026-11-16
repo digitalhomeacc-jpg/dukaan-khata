@@ -8,6 +8,7 @@ import '../models.dart';
 import '../ui/format.dart';
 import '../ui/same_person_card.dart';
 import 'groups_screen.dart';
+import 'tools_screens.dart' show upiPayLink;
 import 'people_review_screen.dart';
 import 'places_screen.dart';
 import 'shared_expense_screen.dart';
@@ -585,8 +586,10 @@ class FriendDetailScreen extends StatelessWidget {
         .take(3)
         .map((s) => '${data.txn(s.txnId)?.title ?? 'a shared expense'} (${money(s.amount)})')
         .join(', ');
+    final pay = upiPayLink(data, owed, note: 'Settle up');
     final text =
-        'Hi $first, a gentle reminder: you owe me ${money(owed)}${items.isEmpty ? '' : ' for $items'}. Thanks!';
+        'Hi $first, a gentle reminder: you owe me ${money(owed)}${items.isEmpty ? '' : ' for $items'}. '
+        '${pay == null ? 'Thanks!' : 'Tap to pay by UPI: $pay'}';
     await launchUrl(
       Uri.parse('https://wa.me/?text=${Uri.encodeComponent(text)}'),
       mode: LaunchMode.externalApplication,

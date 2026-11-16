@@ -9,6 +9,7 @@ import '../ui/category_picker.dart';
 import '../ui/category_style.dart';
 import '../ui/entry_history.dart';
 import '../ui/format.dart';
+import '../ui/receipt_section.dart';
 import 'quick_add.dart';
 import 'recurring_screen.dart';
 import 'split_section.dart';
@@ -484,6 +485,7 @@ class _TxnEditorState extends State<TxnEditor> {
                   );
                 },
               ),
+            if (existing != null) ...[const SizedBox(height: 16), ReceiptSection(data: widget.data, txn: existing)],
             if (existing != null) ...[
               const SizedBox(height: 16),
               EntryHistorySection(data: widget.data, txnId: existing.id, onUndone: () => _reopen(existing.id)),

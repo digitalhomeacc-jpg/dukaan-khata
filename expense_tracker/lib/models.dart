@@ -102,6 +102,7 @@ class Txn {
     this.paidBy,
     this.payeeVpa,
     this.details,
+    this.receiptPath,
     this.bankName,
   });
 
@@ -139,6 +140,9 @@ class Txn {
 
   /// What the bank's statement said about it (narration), kept apart from your own note.
   final String? details;
+
+  /// A photo of the bill, in your private receipts folder.
+  final String? receiptPath;
 
   /// The name the bank used, when the payment is shown under a friend's main name ("Also known as").
   final String? bankName;
@@ -179,6 +183,7 @@ class Txn {
     paidBy: m['paid_by'] as String?,
     payeeVpa: m['payee_vpa'] as String?,
     details: m['details'] as String?,
+    receiptPath: m['receipt_path'] as String?,
   );
 
   /// Columns a user may write (id, user_id and source are set by the database).

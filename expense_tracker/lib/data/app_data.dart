@@ -13,6 +13,7 @@ import '../logic/recurring.dart';
 import '../logic/summary.dart'
     show
         LoanBalance,
+        accountBalances,
         ShareTotals,
         allocateSettle,
         groupPairwise,
@@ -1337,6 +1338,45 @@ class AppData extends ChangeNotifier {
   /// "Also known as": payments from this payee name count as that friend.
   /// Payee names you said are not the same person as a friend.
   Set<String> get notSame => {...((profile['not_same'] as List?) ?? const []).cast<String>()};
+
+  // ------------------------------------------------------------ tools
+
+  /// Your UPI ID, for "pay me" links in reminders.
+  String? get upiId => (profile['upi_id'] as String?)?.trim().isEmpty == true ? null : profile['upi_id'] as String?;
+
+  Future<void> setUpiId(String v) async {
+    profile = {...profile, 'upi_id': v.trim()};
+    notifyListeners();
+    await _db.from('profiles').update({'upi_id': v.trim().isEmpty ? null : v.trim()}).eq('id', user!.id);
+  }
+
+  /// Attaches a photo of the bill to a payment (in your private folder); replaces an earlier one.
+  Future<void> attachReceipt(Txn t, Uint8List bytes, String fileName) async {
+    final ext = fileName.contains('.') ? fileName.split('.').last.toLowerCase() : 'jpg';
+    final path = '${user!.id}/${t.id}-${DateTime.now().millisecondsSinceEpoch}.$ext';
+    await _db.storage.from('receipts').uploadBinary(path, bytes);
+    final old = t.receiptPath;
+    final r = await _db.from('transactions').update({'receipt_path': path}).eq('id', t.id).select().maybeSingle();
+    if (r != null) _showNow(r);
+    if (old != null) await _db.storage.from('receipts').remove([old]).catchError((_) => <FileObject>[]);
+  }
+
+  Future<void> removeReceipt(Txn t) async {
+    final old = t.receiptPath;
+    final r = await _db.from('transactions').update({'receipt_path': null}).eq('id', t.id).select().maybeSingle();
+    if (r != null) _showNow(r);
+    if (old != null) await _db.storage.from('receipts').remove([old]).catchError((_) => <FileObject>[]);
+  }
+
+  /// A link to see a receipt for the next hour.
+  Future<String> receiptUrl(String path) => _db.storage.from('receipts').createSignedUrl(path, 3600);
+
+  /// Money in your bank accounts, wallets and cash now (cards and loans left out).
+  double get spendableNow {
+    final usable = accounts.where((a) => !a.archived && a.kind != AccountKind.card).toList();
+    final b = accountBalances(transactions, usable);
+    return usable.fold(0.0, (v, a) => v + (b[a.id] ?? 0));
+  }
 
   /// Pairs you checked and said are not duplicates ("id1|id2").
   Set<String> get notDuplicates => {...((profile['not_duplicates'] as List?) ?? const []).cast<String>()};
