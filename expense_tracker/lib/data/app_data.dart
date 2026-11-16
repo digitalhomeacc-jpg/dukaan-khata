@@ -381,7 +381,10 @@ class AppData extends ChangeNotifier {
       RecurringRun(id: 'local', recurringId: r.id, dueOn: due, kind: kind, txnId: txnId),
     ];
     if (kind == 'matched' && txn != null && txn.categoryId == null && r.categoryId != null) {
-      await _db.from('transactions').update({'category_id': r.categoryId, 'needs_review': false}).eq('id', txn.id);
+      await _db
+          .from('transactions')
+          .update({'category_id': r.categoryId, 'needs_review': false, 'edited': true})
+          .eq('id', txn.id);
     }
     // A shared bill: split it in its group, like any group expense you paid.
     final g = group(r.groupId);
@@ -501,7 +504,10 @@ class AppData extends ChangeNotifier {
       if (linkTxnId != null) {
         txnId = linkTxnId;
         if (categoryId != null) {
-          await _db.from('transactions').update({'category_id': categoryId, 'needs_review': false}).eq('id', txnId);
+          await _db
+              .from('transactions')
+              .update({'category_id': categoryId, 'needs_review': false, 'edited': true})
+              .eq('id', txnId);
         }
       } else {
         final r = await _db
@@ -736,15 +742,43 @@ class AppData extends ChangeNotifier {
   Future<String> saveTxn(Txn t, {required bool isNew, bool rememberCategory = false}) async {
     final row = t.toWriteMap();
     if (isNew) {
-      final r = await _db.from('transactions').insert({...row, 'source': 'manual'}).select('id').single();
+      final r = await _db.from('transactions').insert({...row, 'source': 'manual'}).select().single();
+      _showNow(r);
       return r['id'] as String;
     }
     // `edited` keeps a later re-read of the bank email from overwriting the user's changes.
-    await _db.from('transactions').update({...row, 'edited': true}).eq('id', t.id);
+    final r = await _db.from('transactions').update({...row, 'edited': true}).eq('id', t.id).select().maybeSingle();
+    if (r == null) throw StateError('This payment was not found any more (deleted on another phone?)');
+    _showNow(r);
     if (rememberCategory && t.categoryId != null) {
       await _db.rpc('set_category', params: {'p_txn': t.id, 'p_category': t.categoryId, 'p_remember': true});
     }
     return t.id;
+  }
+
+  /// A saved payment as the server has it, on screen at once (not only when the live update arrives).
+  void _showNow(Map<String, dynamic> row) {
+    final t = Txn.fromMap(row);
+    transactions = [
+      t,
+      for (final x in transactions)
+        if (x.id != t.id) x,
+    ]..sort((a, b) => b.txnAt.compareTo(a.txnAt));
+    notifyListeners();
+  }
+
+  /// Everything fetched again, e.g. when the app comes back to the screen (a phone can drop the live updates
+  /// while the app is in the background).
+  Future<void> refresh() async {
+    if (_client == null) return;
+    try {
+      final rows = await _db.from('transactions').select().order('txn_at').limit(10000);
+      transactions = rows.map(Txn.fromMap).toList()..sort((a, b) => b.txnAt.compareTo(a.txnAt));
+      notifyListeners();
+      await _reloadFriendsData();
+    } catch (_) {
+      // Offline: the live copy stays as it is.
+    }
   }
 
   Future<void> deleteTxn(String id) => _db.from('transactions').delete().eq('id', id);
@@ -812,10 +846,15 @@ class AppData extends ChangeNotifier {
     required double openingBalance,
     bool archived = false,
     DateTime? openingDate,
+    String? bank,
+    String? last4,
   }) async {
+    final b = bank?.trim() ?? '', l = last4?.trim() ?? '';
     final row = {
       'name': name.trim(),
       'kind': kind.name,
+      'bank': b.isEmpty ? null : b,
+      'last4': l.length == 4 ? l : null,
       'opening_balance': openingBalance,
       'archived': archived,
       'opening_date': openingDate == null
@@ -830,6 +869,22 @@ class AppData extends ChangeNotifier {
   }
 
   Future<void> deleteAccount(String id) => _db.from('accounts').delete().eq('id', id);
+
+  /// Moves every payment (and balance check, repeat, goal) of account [from] into [into], then removes [from].
+  Future<void> mergeAccount(String from, String into) async {
+    await _db.from('transactions').update({'account_id': into}).eq('account_id', from);
+    await _db.from('transactions').update({'counter_account_id': into}).eq('counter_account_id', from);
+    await _db.from('balance_readings').update({'account_id': into}).eq('account_id', from);
+    await _db.from('recurring').update({'account_id': into}).eq('account_id', from);
+    await _db.from('goals').update({'account_id': into}).eq('account_id', from);
+    final a = account(from), b = account(into);
+    // Keep the bank digits so future emails find the account you kept.
+    if (a?.last4 != null && b?.last4 == null) {
+      await _db.from('accounts').update({'bank': a!.bank, 'last4': a.last4}).eq('id', into);
+      await _db.from('accounts').update({'last4': null}).eq('id', from);
+    }
+    await _db.from('accounts').delete().eq('id', from);
+  }
 
   // ------------------------------------------------------------- lender loans
 

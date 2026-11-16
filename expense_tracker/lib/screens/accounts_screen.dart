@@ -236,6 +236,8 @@ class _AccountForm extends StatefulWidget {
 class _AccountFormState extends State<_AccountForm> {
   late final _name = TextEditingController(text: widget.existing?.name ?? '');
   late AccountKind _kind = widget.existing?.kind ?? AccountKind.bank;
+  late final _bank = TextEditingController(text: widget.existing?.bank ?? '');
+  late final _last4 = TextEditingController(text: widget.existing?.last4 ?? '');
   late final _opening = TextEditingController(text: _openingText());
   final _now = TextEditingController();
   late DateTime? _openingDate = widget.existing?.openingDate;
@@ -255,6 +257,49 @@ class _AccountFormState extends State<_AccountForm> {
     _opening.dispose();
     _now.dispose();
     super.dispose();
+  }
+
+  /// A second account of the same bank account (made by an email before the digits were known): move all its
+  /// payments into the one you keep, then remove it. You see exactly what moves before anything changes.
+  Future<void> _merge() async {
+    final from = widget.existing!;
+    final others = widget.data.accounts.where((a) => a.id != from.id && a.kind == from.kind).toList();
+    if (others.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No other account of this kind')));
+      return;
+    }
+    final into = await showDialog<Account>(
+      context: context,
+      builder: (c) => SimpleDialog(
+        title: Text('Move everything in “${from.name}” into…'),
+        children: [
+          for (final a in others) SimpleDialogOption(onPressed: () => Navigator.pop(c, a), child: Text(a.name)),
+        ],
+      ),
+    );
+    if (into == null || !mounted) return;
+    final n = widget.data.transactions.where((t) => t.accountId == from.id || t.counterAccountId == from.id).length;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('Merge accounts?'),
+        content: Text(
+          '$n payment${n == 1 ? '' : 's'} move from “${from.name}” to “${into.name}”, and “${from.name}” is removed. '
+          '“${into.name}” keeps its own opening balance. Undo is in Change history.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Merge')),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    try {
+      await widget.data.mergeAccount(from.id, into.id);
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      setState(() => _error = 'Could not merge: $e');
+    }
   }
 
   Future<void> _save() async {
@@ -291,6 +336,8 @@ class _AccountFormState extends State<_AccountForm> {
         openingBalance: _kind == AccountKind.card ? -entered : entered,
         archived: _archived,
         openingDate: _openingDate,
+        bank: _kind == AccountKind.cash ? null : _bank.text,
+        last4: _kind == AccountKind.cash ? null : _last4.text,
       );
       if (mounted) Navigator.pop(context);
     } catch (e) {
@@ -345,6 +392,38 @@ class _AccountFormState extends State<_AccountForm> {
             textCapitalization: TextCapitalization.words,
             decoration: InputDecoration(labelText: 'Name', hintText: 'e.g. HDFC Savings, Paytm', errorText: _error),
           ),
+          if (_kind != AccountKind.cash) ...[
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _bank,
+                    textCapitalization: TextCapitalization.words,
+                    decoration: const InputDecoration(labelText: 'Bank', hintText: 'HDFC, Federal, Slice'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                SizedBox(
+                  width: 120,
+                  child: TextField(
+                    controller: _last4,
+                    keyboardType: TextInputType.number,
+                    maxLength: 4,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    decoration: const InputDecoration(labelText: 'Last 4 digits', counterText: ''),
+                  ),
+                ),
+              ],
+            ),
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                'Bank emails and statements with these digits go into this account (no second account is made).',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
+          ],
           const SizedBox(height: 12),
           TextField(
             controller: _opening,
@@ -405,6 +484,8 @@ class _AccountFormState extends State<_AccountForm> {
             children: [
               if (widget.existing != null && widget.existing!.kind != AccountKind.cash)
                 TextButton(onPressed: _delete, child: const Text('Delete')),
+              if (widget.existing != null && widget.data.accounts.length > 1)
+                TextButton(onPressed: _merge, child: const Text('Merge into…')),
               const Spacer(),
               FilledButton(onPressed: _save, child: const Text('Save')),
             ],

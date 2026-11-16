@@ -20,13 +20,19 @@ class HomeShell extends StatefulWidget {
   State<HomeShell> createState() => _HomeShellState();
 }
 
-class _HomeShellState extends State<HomeShell> {
+class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   late final AppData data = widget.data ?? AppData(Supabase.instance.client);
   var _tab = 0;
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && widget.data == null) data.refresh();
+  }
+
+  @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     final code = pendingInviteCode;
     if (code != null && widget.data == null) {
       pendingInviteCode = null;
@@ -40,6 +46,7 @@ class _HomeShellState extends State<HomeShell> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     if (widget.data == null) data.dispose();
     super.dispose();
   }
