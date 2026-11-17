@@ -83,7 +83,7 @@
       window.dkRegisterSw = function () {
         if (window.dkSwDone) return;
         window.dkSwDone = true;
-        navigator.serviceWorker.register('app_sw.js?v=202611170325').catch(function () {});
+        navigator.serviceWorker.register('app_sw.js?v=202611170354').catch(function () {});
       };
       setTimeout(window.dkRegisterSw, 60000); // in case the app never says it opened
       window.addEventListener('load', function () {
@@ -106,7 +106,7 @@
           try {
             var r = await fetch('./?dkcheck=' + Date.now(), { cache: 'no-store' });
             var m = (await r.text()).match(/[?&]v=(\d{12})/);
-            if (m && m[1] !== '202611170325') {
+            if (m && m[1] !== '202611170354') {
               var reg = await navigator.serviceWorker.getRegistration();
               if (reg) reg.update().catch(function () {});
               window.dkShowUpdate();
@@ -136,7 +136,7 @@
       };
     }
   </script>
-  <script src="pdf_text.js?v=202611170325" defer></script>
-  <script src="flutter_bootstrap.js?v=202611170325" async></script>
+  <script src="pdf_text.js?v=202611170354" defer></script>
+  <script src="flutter_bootstrap.js?v=202611170354" async></script>
 </body>
 </html>
