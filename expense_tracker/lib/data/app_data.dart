@@ -30,83 +30,83 @@ class AppData extends ChangeNotifier {
   AppData(SupabaseClient db) : _client = db {
     _subs = [
       db.from('transactions').stream(primaryKey: ['id']).order('txn_at').limit(10000).listen((rows) {
-        transactions = rows.map(Txn.fromMap).toList()..sort((a, b) => b.txnAt.compareTo(a.txnAt));
+        transactions = _parse(rows, Txn.fromMap)..sort((a, b) => b.txnAt.compareTo(a.txnAt));
         loaded = true;
         notifyListeners();
         _scheduleRecurring();
       }, onError: _onError),
       db.from('goals').stream(primaryKey: ['id']).order('created_at').listen((rows) {
-        goals = rows.map(Goal.fromMap).toList();
+        goals = _parse(rows, Goal.fromMap);
         notifyListeners();
       }, onError: _onError),
       db.from('recurring').stream(primaryKey: ['id']).order('created_at').listen((rows) {
-        recurring = rows.map(Recurring.fromMap).toList();
+        recurring = _parse(rows, Recurring.fromMap);
         notifyListeners();
         _scheduleRecurring();
       }, onError: _onError),
       db.from('recurring_runs').stream(primaryKey: ['id']).listen((rows) {
-        recurringRuns = rows.map(RecurringRun.fromMap).toList();
+        recurringRuns = _parse(rows, RecurringRun.fromMap);
         _runsLoaded = true;
         notifyListeners();
         _scheduleRecurring();
       }, onError: _onError),
       db.from('categories').stream(primaryKey: ['id']).order('name', ascending: true).listen((rows) {
-        categories = rows.map(Category.fromMap).toList();
+        categories = _parse(rows, Category.fromMap);
         notifyListeners();
       }, onError: _onError),
       db.from('accounts').stream(primaryKey: ['id']).order('created_at', ascending: true).listen((rows) {
-        accounts = rows.map(Account.fromMap).toList();
+        accounts = _parse(rows, Account.fromMap);
         notifyListeners();
       }, onError: _onError),
       db.from('loans').stream(primaryKey: ['id']).order('created_at', ascending: true).listen((rows) {
-        loans = rows.map(Loan.fromMap).toList();
+        loans = _parse(rows, Loan.fromMap);
         notifyListeners();
       }, onError: _onError),
       db.from('loan_events').stream(primaryKey: ['id']).order('event_at').listen((rows) {
-        loanEvents = rows.map(LoanEvent.fromMap).toList();
+        loanEvents = _parse(rows, LoanEvent.fromMap);
         notifyListeners();
       }, onError: _onError),
       db.from('balance_readings').stream(primaryKey: ['id']).order('as_of').listen((rows) {
-        balanceReadings = rows.map(BalanceReading.fromMap).toList();
+        balanceReadings = _parse(rows, BalanceReading.fromMap);
         notifyListeners();
       }, onError: _onError),
       db.from('groups').stream(primaryKey: ['id']).order('created_at').listen((rows) {
-        groups = rows.map(Group.fromMap).toList();
+        groups = _parse(rows, Group.fromMap);
         notifyListeners();
       }, onError: _onError),
       db.from('group_expenses').stream(primaryKey: ['id']).order('at').listen((rows) {
-        groupExpenses = rows.map(GroupExpense.fromMap).toList();
+        groupExpenses = _parse(rows, GroupExpense.fromMap);
         notifyListeners();
       }, onError: _onError),
       db.from('txn_parts').stream(primaryKey: ['id']).listen((rows) {
-        parts = rows.map(TxnPart.fromMap).toList();
+        parts = _parse(rows, TxnPart.fromMap);
         _shareTotals = null;
         notifyListeners();
       }, onError: _onError),
       db.from('txn_shares').stream(primaryKey: ['id']).listen((rows) {
-        shares = rows.map(TxnShare.fromMap).toList();
+        shares = _parse(rows, TxnShare.fromMap);
         _shareTotals = null;
         notifyListeners();
       }, onError: _onError),
       db.from('budgets').stream(primaryKey: ['id']).listen((rows) {
-        budgets = rows.map(Budget.fromMap).toList();
+        budgets = _parse(rows, Budget.fromMap);
         notifyListeners();
       }, onError: _onError),
       db.from('friend_links').stream(primaryKey: ['id']).listen((rows) {
-        links = rows.map(FriendLink.fromMap).toList();
+        links = _parse(rows, FriendLink.fromMap);
         notifyListeners();
       }, onError: _onError),
       db.from('shared_entries').stream(primaryKey: ['id']).order('at').listen((rows) {
-        sharedEntries = rows.map(SharedEntry.fromMap).toList();
+        sharedEntries = _parse(rows, SharedEntry.fromMap);
         notifyListeners();
       }, onError: _onError),
       // Opening balances with connected friends (ignored quietly until the database has the table).
       db.from('friend_openings').stream(primaryKey: ['id']).listen((rows) {
-        openings = rows.map(FriendOpening.fromMap).toList();
+        openings = _parse(rows, FriendOpening.fromMap);
         notifyListeners();
       }, onError: (_) {}),
       db.from('match_questions').stream(primaryKey: ['id']).listen((rows) {
-        questions = rows.map(MatchQuestion.fromMap).toList();
+        questions = _parse(rows, MatchQuestion.fromMap);
         notifyListeners();
       }, onError: _onError),
       db.from('friend_aliases').stream(primaryKey: ['user_id', 'alias_key']).listen((rows) {
@@ -736,6 +736,20 @@ class AppData extends ChangeNotifier {
   List<Account> get activeAccounts => accounts.where((a) => !a.archived).toList();
   Account? get cashAccount => accounts.where((a) => a.kind == AccountKind.cash && !a.archived).firstOrNull;
 
+  /// Rows read one by one: a row that cannot be read is skipped (and reported), never stopping the rest of the
+  /// list from updating.
+  List<T> _parse<T>(List<Map<String, dynamic>> rows, T Function(Map<String, dynamic>) read) {
+    final out = <T>[];
+    for (final r in rows) {
+      try {
+        out.add(read(r));
+      } catch (e) {
+        error = 'Could not read one ${T.toString().toLowerCase()}: $e';
+      }
+    }
+    return out;
+  }
+
   void _onError(Object e) {
     error = e;
     notifyListeners();
@@ -778,7 +792,7 @@ class AppData extends ChangeNotifier {
     if (_client == null) return;
     try {
       final rows = await _db.from('transactions').select().order('txn_at').limit(10000);
-      transactions = rows.map(Txn.fromMap).toList()..sort((a, b) => b.txnAt.compareTo(a.txnAt));
+      transactions = _parse(rows, Txn.fromMap)..sort((a, b) => b.txnAt.compareTo(a.txnAt));
       notifyListeners();
       await _reloadFriendsData();
     } catch (_) {
@@ -1622,7 +1636,7 @@ class AppData extends ChangeNotifier {
           .eq('kind', 'unreadable')
           .order('received_at', ascending: false)
           .limit(200);
-      unread = rows.map(UnreadEmail.fromMap).toList();
+      unread = _parse(rows, UnreadEmail.fromMap);
       notifyListeners();
     } catch (e) {
       _onError(e);

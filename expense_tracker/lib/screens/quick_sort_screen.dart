@@ -155,6 +155,24 @@ class _QuickSortScreenState extends State<QuickSortScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          // Skipping first: no scrolling past the categories to move on.
+          Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            children: [
+              OutlinedButton.icon(
+                onPressed: () => setState(() => _skippedPayees.add(g.name)),
+                icon: const Icon(Icons.skip_next),
+                label: const Text('Skip this payee for now'),
+              ),
+              if (current != null)
+                TextButton(
+                  onPressed: () => setState(() => _skippedTxns.add(current.id)),
+                  child: const Text('Skip this payment'),
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
@@ -245,10 +263,6 @@ class _QuickSortScreenState extends State<QuickSortScreen> {
             const SizedBox(height: 8),
             categoryGrid((id) => _apply([current], id, remember: false)),
             const SizedBox(height: 12),
-            TextButton(
-              onPressed: () => setState(() => _skippedTxns.add(current.id)),
-              child: const Text('Skip this payment'),
-            ),
             if (txnsLeft.length > 1)
               OutlinedButton.icon(
                 onPressed: () async {
@@ -289,12 +303,6 @@ class _QuickSortScreenState extends State<QuickSortScreen> {
               ),
             ),
           ],
-          const SizedBox(height: 16),
-          OutlinedButton.icon(
-            onPressed: () => setState(() => _skippedPayees.add(g.name)),
-            icon: const Icon(Icons.skip_next),
-            label: const Text('Skip this payee for now'),
-          ),
         ],
       ),
     );

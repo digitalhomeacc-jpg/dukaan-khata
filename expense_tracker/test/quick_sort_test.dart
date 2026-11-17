@@ -47,6 +47,8 @@ void main() {
     expect(find.text('Shop / service'), findsOneWidget);
     await tester.tap(find.text('One by one'));
     await tester.pumpAndSettle();
+    expect(find.text('Skip this payment'), findsOneWidget); // at the top now
+    await tester.scrollUntilVisible(find.text('What was it?'), 200, scrollable: find.byType(Scrollable).first);
     expect(find.text('What was it?'), findsOneWidget);
     expect(find.text('3 left'), findsOneWidget);
     await tester.scrollUntilVisible(

@@ -586,9 +586,30 @@ List<({DateTime date, double amount, Loan loan, bool estimate})> upcomingDues(
     // The lender's own schedule, when there is one: exact dues, not estimates.
     if (loan.schedule.isNotEmpty) {
       final today = _day(now ?? DateTime.now());
-      for (final e in loan.schedule) {
-        if (e.date.isBefore(today)) continue;
-        if (s.nextDuePaid && s.nextDueDate != null && _day(e.date) == _day(s.nextDueDate!)) continue;
+      // Each scheduled EMI is paid by a repayment from 15 days before to 10 days after it (paid early or late),
+      // each repayment paying one EMI. Unpaid ones from the last 45 days stay, as late.
+      final repays = events.where((x) => x.loanId == loan.id && x.kind == LoanEventKind.repay).toList()
+        ..sort((a, b) => a.at.compareTo(b.at));
+      final used = <String>{};
+      final schedule = [...loan.schedule]..sort((a, b) => a.date.compareTo(b.date));
+      for (final e in schedule) {
+        final due = _day(e.date);
+        // The lender says the next due is later: this one is paid.
+        if (loan.nextDueDate != null && due.isBefore(_day(loan.nextDueDate!))) continue;
+        final paid = repays
+            .where(
+              (x) =>
+                  !used.contains(x.id) &&
+                  x.amount >= e.amount * 0.9 &&
+                  !x.at.isBefore(due.subtract(const Duration(days: 15))) &&
+                  x.at.isBefore(due.add(const Duration(days: 11))),
+            )
+            .firstOrNull;
+        if (paid != null) {
+          used.add(paid.id);
+          continue;
+        }
+        if (due.isBefore(today.subtract(const Duration(days: 45)))) continue;
         out.add((date: e.date, amount: e.amount, loan: loan, estimate: false));
       }
       continue;

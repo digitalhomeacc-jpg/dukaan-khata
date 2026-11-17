@@ -261,4 +261,32 @@ Due on 05 Oct '27
     expect(after.owed, 20316);
     expect(after.nextDueDate, DateTime(2027, 1, 10));
   });
+
+  test('a schedule: an EMI paid early or late is paid; an unpaid one stays as late', () {
+    final now = DateTime(2026, 11, 20);
+    final loan = Loan(
+      id: 's',
+      lender: 'slice',
+      name: 'Slice borrow',
+      kind: LoanKind.creditLine,
+      schedule: [
+        (date: DateTime(2026, 10, 10), amount: 2000.0),
+        (date: DateTime(2026, 11, 10), amount: 2000.0),
+        (date: DateTime(2026, 12, 10), amount: 2000.0),
+        (date: DateTime(2027, 1, 10), amount: 2000.0),
+      ],
+    );
+    final events = [
+      LoanEvent(id: 'a', loanId: 's', kind: LoanEventKind.repay, amount: 2000, at: DateTime(2026, 10, 12)), // late
+      LoanEvent(
+        id: 'b',
+        loanId: 's',
+        kind: LoanEventKind.repay,
+        amount: 2000,
+        at: DateTime(2026, 11, 28),
+      ), // Dec's, early
+    ];
+    final dues = upcomingDues([loan], events, now: now);
+    expect(dues.map((d) => d.date), [DateTime(2026, 11, 10), DateTime(2027, 1, 10)]);
+  });
 }
