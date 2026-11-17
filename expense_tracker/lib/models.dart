@@ -493,8 +493,11 @@ class SharedEntry {
 
   bool get deleted => deletedAt != null;
 
-  /// A new entry, a changed amount or a removal that the other person has not answered yet.
-  bool get waiting => !deleted && (confirmedAt == null || removeRequestedBy != null);
+  /// Entries count at once for both people (no OK): nothing waits.
+  bool get waiting => false;
+
+  /// Removed (a removal asked for under the old rules counts as done).
+  bool get gone => deleted || removeRequestedBy != null;
 
   factory SharedEntry.fromMap(Map<String, dynamic> m) => SharedEntry(
     id: m['id'] as String,
@@ -788,8 +791,9 @@ class FriendOpening {
   final DateTime? deletedAt;
   final String? rejectedBy;
 
-  bool get agreed => confirmedAt != null && deletedAt == null;
-  bool get waiting => confirmedAt == null && deletedAt == null;
+  /// Counts as soon as either of you sets it (no OK).
+  bool get agreed => deletedAt == null;
+  bool get waiting => false;
 
   /// Positive: [me] owes; negative: owed to [me].
   double signedFor(String me) => owedBy == null ? 0 : (owedBy == me ? amount : -amount);

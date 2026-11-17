@@ -360,11 +360,19 @@ void main() {
     expect(find.text('Shopping'), findsWidgets); // after
     expect(find.text('No category'), findsOneWidget); // before, struck through
     expect(find.text('changed 1× later'), findsOneWidget);
-    await tester.scrollUntilVisible(find.textContaining('Added with your friend'), 300, scrollable: find.byType(Scrollable).first);
+    await tester.scrollUntilVisible(
+      find.textContaining('Added with your friend'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.textContaining('Added with your friend: Shared expense “Pizza” ₹600 · you owe'), findsOneWidget);
     // Automatic changes are hidden until asked for.
     expect(find.textContaining('Zomato'), findsNothing);
-    await tester.scrollUntilVisible(find.text('My & friends\' changes'), -300, scrollable: find.byType(Scrollable).first);
+    await tester.scrollUntilVisible(
+      find.text('My & friends\' changes'),
+      -300,
+      scrollable: find.byType(Scrollable).first,
+    );
     await tester.tap(find.text('My & friends\' changes'));
     await tester.pumpAndSettle();
     await tester.scrollUntilVisible(find.textContaining('Zomato'), 300, scrollable: find.byType(Scrollable).first);

@@ -13,7 +13,9 @@ AppData sample() {
     accounts: const [Account(id: 'c', name: 'Cash', kind: AccountKind.cash)],
     transactions: const [],
   );
-  data.groups = const [Group(id: 'g', name: 'Hill trip', emoji: '⛰️', members: ['Asha', 'Ravi'])];
+  data.groups = const [
+    Group(id: 'g', name: 'Hill trip', emoji: '⛰️', members: ['Asha', 'Ravi']),
+  ];
   data.groupExpenses = [
     GroupExpense(
       id: '1',

@@ -1164,10 +1164,7 @@ class AppData extends ChangeNotifier {
   FriendOpening? pendingOpening(String linkId) => openings.where((o) => o.linkId == linkId && o.waiting).firstOrNull;
 
   /// Proposals from friends waiting for your OK.
-  List<FriendOpening> get openingsWaitingForMe => [
-    for (final o in openings)
-      if (o.waiting && o.createdBy != me) o,
-  ];
+  List<FriendOpening> get openingsWaitingForMe => const [];
 
   /// The balance with a connected friend that you both see (positive: you owe).
   double balanceWith(FriendLink link) =>
@@ -1312,6 +1309,29 @@ class AppData extends ChangeNotifier {
   }
 
   /// OK or no to a change a connected friend made to an entry between you.
+  /// Changes a shared entry for both of you: amount, what it was for, date, and who paid ([iPaid]).
+  Future<void> editSharedEntry(
+    SharedEntry e, {
+    required double amount,
+    String? description,
+    DateTime? at,
+    required bool iPaid,
+  }) async {
+    final friend = e.creditor == me ? e.debtor : e.creditor;
+    final ok = await _db.rpc(
+      'edit_shared',
+      params: {
+        'p_entry': e.id,
+        'p_amount': double.parse(amount.toStringAsFixed(2)),
+        'p_description': description,
+        'p_at': at?.toUtc().toIso8601String(),
+        'p_creditor': iPaid ? me : friend,
+      },
+    );
+    if (ok != true) throw StateError('not saved, please try again');
+    await _reloadFriendsData();
+  }
+
   Future<void> answerShared(String id, {required bool ok}) async {
     if (!_answering.add(id)) return; // a second tap while saving
     notifyListeners();
@@ -1330,10 +1350,7 @@ class AppData extends ChangeNotifier {
   final _answering = <String>{};
 
   /// Changes by friends waiting for your OK.
-  List<SharedEntry> get waitingForMe => [
-    for (final e in sharedEntries)
-      if (e.waiting && e.changedBy != null && e.changedBy != me && !_answering.contains(e.id)) e,
-  ];
+  List<SharedEntry> get waitingForMe => const [];
 
   /// "Also known as": payments from this payee name count as that friend.
   /// Payee names you said are not the same person as a friend.

@@ -559,9 +559,7 @@ class FriendDetailScreen extends StatelessWidget {
       final messenger = ScaffoldMessenger.of(context);
       try {
         await data.proposeOpening(link, DateTime.now(), result.owed, result.reason);
-        messenger.showSnackBar(
-          SnackBar(content: Text('Sent to ${person.split(' ').first}: it counts once they say OK')),
-        );
+        messenger.showSnackBar(SnackBar(content: Text('Opening balance set for both of you')));
       } catch (e) {
         messenger.showSnackBar(SnackBar(content: Text('Not sent: $e')));
       }
@@ -772,6 +770,7 @@ class FriendDetailScreen extends StatelessWidget {
                     ),
                   ),
           ),
+          FriendAddRow(data: data, person: person),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
             child: OutlinedButton.icon(
@@ -802,8 +801,9 @@ class FriendDetailScreen extends StatelessWidget {
           if (link != null && me != null) _OpeningCard(data: data, link: link, me: me, person: person),
           if (link != null && me != null) _BankCheckCard(data: data, linkId: link.id, me: me, person: person),
           if (link != null && me != null)
-            for (final e in entries.where((e) => e.mergedInto == null))
+            for (final e in entries.where((e) => e.mergedInto == null && !(e.removeRequestedBy != null && !e.deleted)))
               ListTile(
+                onTap: e.deleted ? null : () => openSharedEntry(context, data, e, person),
                 leading: Icon(
                   e.waiting
                       ? Icons.hourglass_top
@@ -868,30 +868,7 @@ class FriendDetailScreen extends StatelessWidget {
                       Text('agreed ${money(e.confirmedAmount!)}', style: Theme.of(context).textTheme.bodySmall),
                   ],
                 ),
-                onLongPress: e.deleted || e.waiting
-                    ? null
-                    : () async {
-                        final yes = await showDialog<bool>(
-                          context: context,
-                          builder: (c) => AlertDialog(
-                            title: const Text('Ask to remove this entry?'),
-                            content: Text(
-                              '$person is asked to OK it. Until then it still counts; if they say no, it stays.',
-                            ),
-                            actions: [
-                              TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancel')),
-                              FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Ask')),
-                            ],
-                          ),
-                        );
-                        if (yes != true || !context.mounted) return;
-                        final messenger = ScaffoldMessenger.of(context);
-                        try {
-                          await data.deleteSharedEntry(e.id);
-                        } catch (err) {
-                          messenger.showSnackBar(SnackBar(content: Text('Could not send: $err')));
-                        }
-                      },
+                onLongPress: e.deleted ? null : () => removeSharedEntry(context, data, e, person),
               )
           else ...[
             for (final s in open)
@@ -1003,7 +980,7 @@ class FriendDetailScreen extends StatelessWidget {
 class _CorrectBalanceDialog extends StatefulWidget {
   const _CorrectBalanceDialog({required this.person, required this.balance, this.connected = false});
 
-  /// Connected: the change goes to the friend for their OK; no private fresh start.
+  /// Connected: the opening balance is set for both of you; no private fresh start.
   final bool connected;
   final String person;
 
@@ -1069,9 +1046,9 @@ class _CorrectBalanceDialogState extends State<_CorrectBalanceDialog> {
               Padding(
                 padding: const EdgeInsets.only(top: 8),
                 child: Text(
-                  'This becomes the opening balance at the end of today, sent to ${widget.person.split(' ').first} '
-                  'for their OK. Then only entries after today count; older ones, even ones a bank import brings in '
-                  'later, are kept as history only.',
+                  'This becomes the opening balance at the end of today, for you and ${widget.person.split(' ').first}. '
+                  'Then only entries after today count; older ones, even ones a bank import brings in later, are kept '
+                  'as history only.',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               )
@@ -1346,7 +1323,8 @@ class _NotInBankCard extends StatelessWidget {
               dense: true,
               leading: Icon(e.kind == 'expense' ? Icons.call_split : Icons.swap_horiz),
               title: Text(text(e, me)),
-              subtitle: Text('${dayLabel(e.at)}${e.waiting ? ' · waiting for OK' : ''}'),
+              subtitle: Text(dayLabel(e.at)),
+              onTap: () => openSharedEntry(context, data, e, person),
               trailing: Text(
                 '${e.debtor == me ? '−' : '+'}${money(e.amount)}',
                 style: TextStyle(fontWeight: FontWeight.w600, color: e.debtor == me ? null : Colors.green.shade700),
@@ -1398,7 +1376,7 @@ class _OpeningCard extends StatelessWidget {
             Text('Opening balance', style: text.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
             if (agreed != null)
               Text(
-                'End of ${dayLabel(agreed.asOf)}: ${_owed(agreed)}. Agreed by both. Only entries after it count; '
+                'End of ${dayLabel(agreed.asOf)}: ${_owed(agreed)}, set by ${agreed.createdBy == me ? 'you' : person.split(' ').first}. Only entries after it count; '
                 'earlier ones are history.',
               ),
             if (pending != null) ...[
@@ -1431,4 +1409,189 @@ class _OpeningCard extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Opens a shared entry to change it: the payment itself when it is one of yours, else the entry (amount, what
+/// for, date, who paid), for both of you at once.
+Future<void> openSharedEntry(BuildContext context, AppData data, SharedEntry e, String person) async {
+  final me = data.me;
+  if (me == null) return;
+  final mine = e.creditor == me ? e.creditorTxn : e.debtorTxn;
+  final txn = data.txn(mine);
+  if (txn != null) return openTxnEditor(context, data, existing: txn);
+  final first = person.split(' ').first;
+  final amount = TextEditingController(text: e.amount.toStringAsFixed(e.amount == e.amount.roundToDouble() ? 0 : 2));
+  final what = TextEditingController(text: e.description ?? '');
+  var iPaid = e.creditor == me;
+  var at = e.at;
+  String? error;
+  final messenger = ScaffoldMessenger.of(context);
+  await showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    useSafeArea: true,
+    builder: (c) => StatefulBuilder(
+      builder: (c, setState) => Padding(
+        padding: EdgeInsets.fromLTRB(16, 0, 16, 16 + MediaQuery.viewInsetsOf(c).bottom),
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('Entry with $first', style: Theme.of(c).textTheme.titleLarge),
+              Text(
+                e.kind == 'expense' ? 'A shared expense' : 'Money between you',
+                style: Theme.of(c).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 12),
+              SegmentedButton<bool>(
+                showSelectedIcon: false,
+                segments: [
+                  const ButtonSegment(value: true, label: Text('I paid')),
+                  ButtonSegment(value: false, label: Text('$first paid')),
+                ],
+                selected: {iPaid},
+                onSelectionChanged: (v) => setState(() => iPaid = v.first),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: amount,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))],
+                style: Theme.of(c).textTheme.headlineSmall,
+                decoration: InputDecoration(
+                  labelText: e.kind == 'expense' ? (iPaid ? '$first\'s part' : 'Your part') : 'Amount',
+                  prefixText: '₹ ',
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: what,
+                textCapitalization: TextCapitalization.sentences,
+                decoration: const InputDecoration(labelText: 'What for'),
+              ),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.event_outlined),
+                title: Text(dayLabel(at)),
+                onTap: () async {
+                  final d = await showDatePicker(
+                    context: c,
+                    initialDate: at,
+                    firstDate: DateTime(2015),
+                    lastDate: DateTime.now().add(const Duration(days: 1)),
+                  );
+                  if (d != null) setState(() => at = DateTime(d.year, d.month, d.day, at.hour, at.minute));
+                },
+              ),
+              if (error != null) Text(error!, style: TextStyle(color: Theme.of(c).colorScheme.error)),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  TextButton(
+                    onPressed: () async {
+                      Navigator.pop(c);
+                      await removeSharedEntry(context, data, e, person);
+                    },
+                    child: const Text('Remove'),
+                  ),
+                  const Spacer(),
+                  FilledButton(
+                    onPressed: () async {
+                      final v = double.tryParse(amount.text.replaceAll(',', ''));
+                      if (v == null || v <= 0) return setState(() => error = 'Enter the amount');
+                      try {
+                        await data.editSharedEntry(e, amount: v, description: what.text, at: at, iPaid: iPaid);
+                        if (c.mounted) Navigator.pop(c);
+                        messenger.showSnackBar(SnackBar(content: Text('Saved for you and $first')));
+                      } catch (err) {
+                        setState(() => error = 'Not saved: $err');
+                      }
+                    },
+                    child: const Text('Save'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+/// Removes a shared entry for both of you (Change history keeps it, with undo).
+Future<void> removeSharedEntry(BuildContext context, AppData data, SharedEntry e, String person) async {
+  final yes = await showDialog<bool>(
+    context: context,
+    builder: (c) => AlertDialog(
+      title: const Text('Remove this entry?'),
+      content: Text('It goes for you and ${person.split(' ').first}. Undo is in Change history.'),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancel')),
+        FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Remove')),
+      ],
+    ),
+  );
+  if (yes != true || !context.mounted) return;
+  final messenger = ScaffoldMessenger.of(context);
+  try {
+    await data.deleteSharedEntry(e.id);
+  } catch (err) {
+    messenger.showSnackBar(SnackBar(content: Text('Could not remove: $err')));
+  }
+}
+
+/// "I gave", "I got", "Shared bill" with a friend, straight from their page.
+class FriendAddRow extends StatelessWidget {
+  const FriendAddRow({super.key, required this.data, required this.person});
+
+  final AppData data;
+  final String person;
+
+  Future<void> _money(BuildContext context, {required bool iGave}) => openTxnEditor(
+    context,
+    data,
+    prefill: Txn(
+      id: '',
+      amount: 0,
+      isDebit: iGave,
+      txnAt: DateTime.now(),
+      merchant: person,
+      categoryId: data.friendsCategory?.id,
+      accountId: data.cashAccount?.id,
+      method: 'cash',
+    ),
+  );
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+    child: Row(
+      children: [
+        Expanded(
+          child: FilledButton.tonalIcon(
+            onPressed: () => _money(context, iGave: true),
+            icon: const Icon(Icons.north_east, size: 18),
+            label: const Text('I gave'),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: FilledButton.tonalIcon(
+            onPressed: () => _money(context, iGave: false),
+            icon: const Icon(Icons.south_west, size: 18),
+            label: const Text('I got'),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: FilledButton.tonalIcon(
+            onPressed: () => openSharedExpense(context, data, withFriend: person),
+            icon: const Icon(Icons.call_split, size: 18),
+            label: const Text('Bill'),
+          ),
+        ),
+      ],
+    ),
+  );
 }

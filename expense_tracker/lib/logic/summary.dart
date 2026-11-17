@@ -883,17 +883,8 @@ List<PayeeSummary> peopleToReview(Iterable<Txn> txns, {Set<String> decided = con
 double sharedBalance(Iterable<SharedEntry> entries, String linkId, String me, {FriendOpening? opening}) => _round(
   (opening?.signedFor(me) ?? 0) +
       entries
-          .where(
-            (e) =>
-                e.linkId == linkId &&
-                !e.deleted &&
-                e.confirmedAmount != null &&
-                (opening == null || !beforeOpening(e, opening)),
-          )
-          .fold(
-            0.0,
-            (s, e) => s + (e.debtor == me ? e.confirmedAmount! : (e.creditor == me ? -e.confirmedAmount! : 0)),
-          ),
+          .where((e) => e.linkId == linkId && !e.gone && (opening == null || !beforeOpening(e, opening)))
+          .fold(0.0, (s, e) => s + (e.debtor == me ? e.amount : (e.creditor == me ? -e.amount : 0))),
 );
 
 /// Dated on or before the opening balance's day: history only.
@@ -1477,7 +1468,7 @@ Map<Backing, ({int count, double amount})> bankCheck(
 }) {
   final out = {for (final b in Backing.values) b: (count: 0, amount: 0.0)};
   for (final e in entries) {
-    if (e.linkId != linkId || e.deleted || e.kind == 'expense') continue;
+    if (e.linkId != linkId || e.gone || e.kind == 'expense') continue;
     final b = backingOf(e, me, inMyBank: inMyBank);
     out[b] = (count: out[b]!.count + 1, amount: _round(out[b]!.amount + e.amount));
   }

@@ -68,10 +68,10 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('Opening balance'), findsOneWidget);
-    expect(find.textContaining('you owed ₹86. Agreed by both'), findsOneWidget);
-    expect(find.textContaining('Ravi proposed'), findsOneWidget);
-    expect(find.widgetWithText(FilledButton, 'OK'), findsOneWidget);
-    expect(find.textContaining('before the opening balance · history only'), findsOneWidget);
-    expect(data.openingsWaitingForMe.length, 1);
+    // No OK: the latest opening counts at once (Ravi's ₹20 from the 13th).
+    expect(find.textContaining('Ravi owed you ₹20, set by Ravi'), findsOneWidget);
+    expect(find.widgetWithText(FilledButton, 'OK'), findsNothing);
+    expect(find.textContaining('before the opening balance · history only'), findsNWidgets(2)); // both before the 13th
+    expect(data.openingsWaitingForMe, isEmpty);
   });
 }

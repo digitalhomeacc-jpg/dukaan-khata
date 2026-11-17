@@ -6,15 +6,21 @@ import '../ui/save_button.dart';
 import '../ui/category_style.dart';
 import '../ui/format.dart';
 
-Future<void> openSharedExpense(BuildContext context, AppData data) =>
-    Navigator.of(context)
-        .push(MaterialPageRoute<void>(fullscreenDialog: true, builder: (_) => SharedExpenseScreen(data: data)));
+Future<void> openSharedExpense(BuildContext context, AppData data, {String? withFriend}) => Navigator.of(context).push(
+  MaterialPageRoute<void>(
+    fullscreenDialog: true,
+    builder: (_) => SharedExpenseScreen(data: data, withFriend: withFriend),
+  ),
+);
 
 /// "Dinner ₹900, paid by me / by Rahul, split equally with Rahul and Priya."
 class SharedExpenseScreen extends StatefulWidget {
-  const SharedExpenseScreen({super.key, required this.data});
+  const SharedExpenseScreen({super.key, required this.data, this.withFriend});
 
   final AppData data;
+
+  /// Opened from a friend's page: that friend is already in the split.
+  final String? withFriend;
 
   @override
   State<SharedExpenseScreen> createState() => _SharedExpenseScreenState();
@@ -25,7 +31,7 @@ class _SharedExpenseScreenState extends State<SharedExpenseScreen> {
   final _total = TextEditingController();
   final _newFriend = TextEditingController();
   final _custom = <String, TextEditingController>{};
-  final _with = <String>{};
+  late final _with = <String>{?widget.withFriend};
   String? _paidBy; // null = me
   String? _categoryId;
   late String? _accountId = widget.data.cashAccount?.id;
@@ -33,7 +39,8 @@ class _SharedExpenseScreenState extends State<SharedExpenseScreen> {
   var _busy = false;
   String? _error;
 
-  late final List<String> _friends = {for (final l in widget.data.friendBalances) l.person}.toList()..sort();
+  late final List<String> _friends = {for (final l in widget.data.friendBalances) l.person, ?widget.withFriend}.toList()
+    ..sort();
 
   @override
   void dispose() {
