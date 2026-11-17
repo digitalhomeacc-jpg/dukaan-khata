@@ -55,6 +55,13 @@ const historyFieldNames = {
   'opening_balance': 'Starting balance',
   'opening_date': 'Starting date',
   'archived': 'Hidden',
+  'kind': 'Type',
+  'cut_pct': 'Spend less by (%)',
+  'target_amount': 'Save',
+  'deadline': 'By',
+  'starts_on': 'Starts',
+  'every': 'Every',
+  'auto_add': 'Adds by itself',
   'outstanding': 'Still owed',
   'closed': 'Closed',
   'description': 'What',
@@ -521,6 +528,10 @@ class HistoryFormat {
       case 'txn_at' || 'at' || 'deleted_at':
         final d = DateTime.parse(v as String).toLocal();
         return '${dayLabel(d)}, ${timeLabel(d)}';
+      case 'archived' || 'auto_add' || 'varies':
+        return v == true ? 'Yes' : 'No';
+      case 'kind' when v == 'cut' || v == 'save':
+        return v == 'cut' ? 'Spend less' : 'Save up';
       case 'excluded':
         return v == true ? 'No (a move between your accounts)' : 'Yes';
       case 'direction':
@@ -590,6 +601,17 @@ class HistoryFormat {
       'budgets' => 'Budget for ${(r['context'] as Map?)?['name'] ?? 'a category'}',
       'groups' => 'Group',
       'group_expenses' => 'Group expense',
+      'goals' || 'recurring' || 'groups' => () {
+        final row = (r['after'] as Map?) ?? (r['before'] as Map?) ?? const {};
+        final kind = switch (r['tbl']) {
+          'goals' => 'Goal',
+          'recurring' => 'Repeat',
+          _ => 'Group',
+        };
+        return '$kind “${row['name'] ?? (r['context'] as Map?)?['name'] ?? ''}”';
+      }(),
+      'recurring_runs' =>
+        'Repeat ${(r['context'] as Map?)?['name'] ?? ''} due ${(r['context'] as Map?)?['due_on'] ?? ''}',
       _ => '${r['tbl']} $key',
     };
     return '$op: $kind';

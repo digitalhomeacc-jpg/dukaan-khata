@@ -122,7 +122,7 @@ class AppData extends ChangeNotifier {
               r['name_key'] as String: (
                 name: r['name'] as String,
                 from: DateTime.parse(r['ledger_from'] as String),
-                opening: ((r['opening'] as num?) ?? 0).toDouble(),
+                opening: double.tryParse('${r['opening'] ?? 0}') ?? 0,
               ),
         };
         notifyListeners();
@@ -282,10 +282,13 @@ class AppData extends ChangeNotifier {
       'cut_pct': kind == 'cut' ? cutPct : null,
     };
     if (id == null) {
-      await _db.from('goals').insert(row);
+      final r = await _db.from('goals').insert(row).select().single();
+      goals = [...goals.where((g) => g.id != r['id']), Goal.fromMap(r)];
     } else {
-      await _db.from('goals').update(row).eq('id', id);
+      final r = await _db.from('goals').update(row).eq('id', id).select().single();
+      goals = [for (final g in goals) g.id == id ? Goal.fromMap(r) : g];
     }
+    notifyListeners();
   }
 
   Future<void> archiveGoal(String id, {bool archived = true}) =>
@@ -1395,22 +1398,29 @@ class AppData extends ChangeNotifier {
     return usable.fold(0.0, (v, a) => v + (b[a.id] ?? 0));
   }
 
-  /// Pairs you checked and said are not duplicates ("id1|id2").
-  Set<String> get notDuplicates => {...((profile['not_duplicates'] as List?) ?? const []).cast<String>()};
+  /// Pairs you checked and said are not duplicates ("id1|id2"): saved in your profile, and kept on this phone
+  /// too so a profile reload (every bank sync) never brings a pair back.
+  Set<String> get notDuplicates => {
+    ...((profile['not_duplicates'] as List?) ?? const []).cast<String>(),
+    ..._notDupesHere,
+  };
+  final _notDupesHere = <String>{};
 
   /// Payments that may be one entered twice (see [suspectedDuplicates]).
   List<DuplicatePair> get duplicates => suspectedDuplicates(transactions, notDuplicates: notDuplicates);
 
-  /// "These are two real payments": not asked again.
-  Future<void> markNotDuplicates(String a, String b) async {
-    final list = {...notDuplicates, pairKey(a, b)}.toList();
-    profile = {...profile, 'not_duplicates': list};
-    notifyListeners();
-    try {
-      await _db.from('profiles').update({'not_duplicates': list}).eq('id', user!.id);
-    } catch (_) {
-      // Kept on this phone until the database has the column (0041).
+  /// "These are all real payments": every pair among [ids] is not asked again. Throws if it could not be saved
+  /// for good (the database needs the 0041 update); it is still remembered on this phone.
+  Future<void> markNotDuplicates(List<String> ids) async {
+    for (var i = 0; i < ids.length; i++) {
+      for (var j = i + 1; j < ids.length; j++) {
+        _notDupesHere.add(pairKey(ids[i], ids[j]));
+      }
     }
+    notifyListeners();
+    final list = notDuplicates.toList();
+    await _db.from('profiles').update({'not_duplicates': list}).eq('id', user!.id);
+    profile = {...profile, 'not_duplicates': list};
   }
 
   Future<void> markNotSame(String payeeName) async {

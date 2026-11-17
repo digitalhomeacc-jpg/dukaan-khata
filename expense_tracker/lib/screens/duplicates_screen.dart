@@ -54,6 +54,35 @@ class DuplicatesScreen extends StatelessWidget {
     }
   }
 
+  /// The pair and every payment linked to it by other suspected pairs (three identical entries: one answer).
+  List<String> _cluster(List<DuplicatePair> pairs, DuplicatePair p) {
+    final ids = {p.a.id, p.b.id};
+    var grew = true;
+    while (grew) {
+      grew = false;
+      for (final q in pairs) {
+        if ((ids.contains(q.a.id) || ids.contains(q.b.id)) && !(ids.contains(q.a.id) && ids.contains(q.b.id))) {
+          ids.addAll([q.a.id, q.b.id]);
+          grew = true;
+        }
+      }
+    }
+    return ids.toList();
+  }
+
+  Future<void> _allReal(BuildContext context, List<String> ids) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await data.markNotDuplicates(ids);
+    } catch (e) {
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Remembered on this phone. To keep it for good, run RUN_IN_SUPABASE.sql in Supabase.'),
+        ),
+      );
+    }
+  }
+
   Widget _side(BuildContext context, Txn t) {
     final text = Theme.of(context).textTheme;
     final scheme = Theme.of(context).colorScheme;
@@ -173,9 +202,13 @@ class DuplicatesScreen extends StatelessWidget {
                             runSpacing: 4,
                             children: [
                               OutlinedButton.icon(
-                                onPressed: () => data.markNotDuplicates(p.a.id, p.b.id),
+                                onPressed: () => _allReal(context, _cluster(pairs, p)),
                                 icon: const Icon(Icons.done_all, size: 18),
-                                label: const Text('Both are real'),
+                                label: Text(
+                                  _cluster(pairs, p).length > 2
+                                      ? 'All ${_cluster(pairs, p).length} are real'
+                                      : 'Both are real',
+                                ),
                               ),
                               TextButton(onPressed: () => _delete(context, p.a), child: const Text('Delete left')),
                               TextButton(onPressed: () => _delete(context, p.b), child: const Text('Delete right')),

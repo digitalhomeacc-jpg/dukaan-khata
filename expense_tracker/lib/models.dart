@@ -1,5 +1,8 @@
 double _num(Object? v) => v is num ? v.toDouble() : double.tryParse('$v') ?? 0;
 
+/// A number from the database, which live updates can send as text ("40.00"); null stays null.
+double? _numOrNull(Object? v) => v == null ? null : (v is num ? v.toDouble() : double.tryParse('$v'));
+
 class Category {
   const Category({
     required this.id,
@@ -29,7 +32,7 @@ class Category {
     id: m['id'] as String,
     name: m['name'] as String,
     icon: (m['icon'] as String?) ?? 'label',
-    color: (m['color'] as num?)?.toInt() ?? 0xFF607D8B,
+    color: _numOrNull(m['color'])?.toInt() ?? 0xFF607D8B,
     isLoan: m['kind'] == 'loan',
     isInvestment: m['kind'] == 'investment',
     parentId: m['parent_id'] as String?,
@@ -292,10 +295,10 @@ class Loan {
       kind: m['kind'] == 'credit_line' ? LoanKind.creditLine : LoanKind.emi,
       principal: n(m['principal']),
       emiAmount: n(m['emi_amount']),
-      tenureMonths: (m['tenure_months'] as num?)?.toInt(),
-      emisPaidBefore: (m['emis_paid_before'] as num?)?.toInt() ?? 0,
+      tenureMonths: _numOrNull(m['tenure_months'])?.toInt(),
+      emisPaidBefore: _numOrNull(m['emis_paid_before'])?.toInt() ?? 0,
       interestRate: n(m['interest_rate']),
-      dueDay: (m['due_day'] as num?)?.toInt(),
+      dueDay: _numOrNull(m['due_day'])?.toInt(),
       nextDueAmount: n(m['next_due_amount']),
       nextDueDate: m['next_due_date'] == null ? null : DateTime.parse(m['next_due_date'] as String),
       outstanding: n(m['outstanding']),
@@ -304,13 +307,13 @@ class Loan {
       accountId: m['account_id'] as String?,
       closed: m['closed'] == true,
       createdAt: m['created_at'] == null ? null : DateTime.parse(m['created_at'] as String).toLocal(),
-      availableCredit: (m['available_credit'] as num?)?.toDouble(),
+      availableCredit: _numOrNull(m['available_credit']),
       availableAt: m['available_at'] == null ? null : DateTime.parse(m['available_at'] as String).toLocal(),
       startedOn: m['started_on'] == null ? null : DateTime.parse(m['started_on'] as String),
       endedOn: m['ended_on'] == null ? null : DateTime.parse(m['ended_on'] as String),
       schedule: [
         for (final e in (m['schedule'] as List?) ?? const [])
-          (date: DateTime.parse((e as Map)['date'] as String), amount: (e['amount'] as num).toDouble()),
+          (date: DateTime.parse((e as Map)['date'] as String), amount: _num(e['amount'])),
       ],
     );
   }
@@ -668,7 +671,7 @@ class Recurring {
   factory Recurring.fromMap(Map<String, dynamic> m) => Recurring(
     id: m['id'] as String,
     name: m['name'] as String,
-    amount: (m['amount'] as num).toDouble(),
+    amount: _num(m['amount']),
     isDebit: m['direction'] != 'credit',
     every: (m['every'] as String?) ?? 'month',
     startsOn: DateTime.parse(m['starts_on'] as String),
@@ -755,11 +758,11 @@ class Goal {
     name: m['name'] as String,
     emoji: m['emoji'] as String?,
     startsOn: DateTime.parse(m['starts_on'] as String),
-    targetAmount: (m['target_amount'] as num?)?.toDouble(),
+    targetAmount: _numOrNull(m['target_amount']),
     deadline: m['deadline'] == null ? null : DateTime.parse(m['deadline'] as String),
     accountId: m['account_id'] as String?,
     categoryId: m['category_id'] as String?,
-    cutPct: (m['cut_pct'] as num?)?.toDouble(),
+    cutPct: _numOrNull(m['cut_pct']),
     archived: m['archived'] == true,
   );
 }
@@ -803,7 +806,7 @@ class FriendOpening {
     linkId: m['link_id'] as String,
     asOf: DateTime.parse(m['as_of'] as String),
     owedBy: m['owed_by'] as String?,
-    amount: (m['amount'] as num).toDouble(),
+    amount: _num(m['amount']),
     note: m['note'] as String?,
     createdBy: m['created_by'] as String,
     confirmedAt: m['confirmed_at'] == null ? null : DateTime.parse(m['confirmed_at'] as String),
