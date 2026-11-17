@@ -277,8 +277,7 @@ double _rawEffect(Txn t, Account account) {
   ({DateTime day, double bank})? start;
   for (final d in days) {
     final r = lastOfDay[d]!;
-    final at = r.asOf.hour == 23 && r.asOf.minute == 59 ? DateTime(d.year, d.month, d.day, 23, 59, 59) : r.asOf;
-    final ok = (r.balance - balanceAt(txns, account, at)).abs() < 1;
+    final ok = (r.balance - appBalanceFor(txns, account, r)).abs() < 1;
     if (ok) {
       matchedBefore = true;
       start = null;
@@ -317,7 +316,39 @@ BalanceCheck? checkBalance(Iterable<Txn> txns, Account account, Iterable<Balance
     if (r.accountId == account.id && (latest == null || r.asOf.isAfter(latest.asOf))) latest = r;
   }
   if (latest == null) return null;
-  return BalanceCheck(bank: latest.balance, app: balanceAt(txns, account, latest.asOf), asOf: latest.asOf);
+  return BalanceCheck(bank: latest.balance, app: appBalanceFor(txns, account, latest), asOf: latest.asOf);
+}
+
+/// The app's balance to compare with a bank balance. End-of-day balances (statements, daily emails: 23:59)
+/// against the day's close, exactly. A balance from a payment alert during the day against its moment; but that
+/// minute is often not meaningful (statement lines have no time, the app puts them at 6 am; two emails can
+/// arrive in the same minute), so if the app's balance is the bank's at any point of that day they agree. A
+/// payment really missing or extra never makes any point of the day match.
+double appBalanceFor(Iterable<Txn> txns, Account account, BalanceReading r) {
+  final d = r.asOf;
+  final endOfDay = d.hour == 23 && d.minute == 59;
+  final v = balanceAt(txns, account, endOfDay ? DateTime(d.year, d.month, d.day, 23, 59, 59) : d);
+  // A statement's closing balance is the day's close: it must match exactly that.
+  if ((r.balance - v).abs() < 1 || endOfDay) return v;
+  for (final b in balancesThroughDay(txns, account, d)) {
+    if ((r.balance - b).abs() < 1) return b;
+  }
+  return v;
+}
+
+/// The account's balance at the start of [day]'s date and after each of that day's payments, in order.
+List<double> balancesThroughDay(Iterable<Txn> txns, Account account, DateTime day) {
+  final start = DateTime(day.year, day.month, day.day);
+  final end = start.add(const Duration(days: 1));
+  var bal = balanceAt(txns, account, start.subtract(const Duration(microseconds: 1)));
+  final out = [bal];
+  final that = txns.where((t) => !t.txnAt.isBefore(start) && t.txnAt.isBefore(end) && _effect(t, account) != 0).toList()
+    ..sort((a, b) => a.txnAt.compareTo(b.txnAt));
+  for (final t in that) {
+    bal = _round(bal + _effect(t, account));
+    out.add(bal);
+  }
+  return out;
 }
 
 /// Money in and out of one account in a month (moves from other own accounts included).

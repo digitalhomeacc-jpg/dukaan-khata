@@ -544,19 +544,7 @@ class DayByDayScreen extends StatelessWidget {
     }
     final days = lastOfDay.keys.toList()..sort((a, b) => b.compareTo(a));
     final rows = [
-      for (final d in days)
-        (
-          r: lastOfDay[d]!,
-          // End-of-day balances (statements, daily emails: 23:59) against the whole day; a balance from a
-          // payment alert against the moment it was sent.
-          app: balanceAt(
-            data.transactions,
-            account,
-            lastOfDay[d]!.asOf.hour == 23 && lastOfDay[d]!.asOf.minute == 59
-                ? DateTime(d.year, d.month, d.day, 23, 59, 59)
-                : lastOfDay[d]!.asOf,
-          ),
-        ),
+      for (final d in days) (r: lastOfDay[d]!, app: appBalanceFor(data.transactions, account, lastOfDay[d]!)),
     ];
     final bad = rows.where((x) => (x.r.balance - x.app).abs() >= 1).toList();
     final firstBad = bad.isEmpty ? null : bad.last; // oldest difference: where it started
@@ -628,7 +616,12 @@ class DayLedgerScreen extends StatelessWidget {
     final out = txns.fold(0.0, (s, t) => effectOn(t, account) < 0 ? s - effectOn(t, account) : s);
     final inn = txns.fold(0.0, (s, t) => effectOn(t, account) > 0 ? s + effectOn(t, account) : s);
     final closing = opening + inn - out;
-    final diff = bankBalance == null ? 0.0 : bankBalance! - closing;
+    // Matches if the app reaches the bank's balance at any point of the day (statement lines have no time).
+    final diff =
+        bankBalance == null ||
+            balancesThroughDay(data.transactions, account, day).any((b) => (bankBalance! - b).abs() < 1)
+        ? 0.0
+        : bankBalance! - closing;
     final text = Theme.of(context).textTheme;
     final scheme = Theme.of(context).colorScheme;
     String signed(double v) => '${v < 0 ? '−' : ''}${money(v.abs())}';
