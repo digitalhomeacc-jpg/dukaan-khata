@@ -151,4 +151,29 @@ void main() {
       Books.start = keep;
     }
   });
+
+  test('a service shows in item-wise profit: what customers paid − what buying it in cost; accounts still tie', () async {
+    final keep = Books.start;
+    Books.start = '2026-11-08';
+    try {
+      final db = await openTestDb(biz);
+      final vs = VoucherService(db, biz), lr = LedgerRepo(db, biz), sr = StockRepo(db, biz);
+      final fit = await sr.save(name: 'Fitting', category: serviceCategory, unit: 'job', saleRate: rs(1000));
+      final c = await lr.create(name: 'Cust', group: LedgerGroup.customer);
+      final k = await lr.create(name: 'Contractor', group: LedgerGroup.supplier);
+      await vs.save(VoucherInput(type: VoucherType.sale, date: '2026-11-10', partyId: c, items: [ItemLine(fit, 2, rs(1000))]), owner);
+      await vs.save(VoucherInput(type: VoucherType.purchase, date: '2026-11-11', partyId: k, items: [ItemLine(fit, 2, rs(600))]), owner);
+      final r = await StockPnlEngine(db, biz).compute('2026-11-30');
+      final i = r.items.firstWhere((x) => x.item.id == fit);
+      expect((i.sales, i.cost, i.profit), (rs(2000), rs(1200), rs(800)));
+      expect((i.openVal, i.closeVal), (0, 0));
+      expect(r.salesGap, 0);
+      expect(r.purchaseGap, 0);
+      expect(r.otherIncome.where((e) => e.$1.contains('सेवा')), isEmpty, reason: 'not counted twice');
+      expect(r.accountsProfit, r.netProfit);
+      await db.close();
+    } finally {
+      Books.start = keep;
+    }
+  });
 }

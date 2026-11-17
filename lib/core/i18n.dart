@@ -488,6 +488,8 @@ const Map<String, (String, String)> _s = {
   'pnl_why_no_disc': ('{q} या खात्यातून खरेदी नोंदले आहेत: {who}. त्या खात्याला कंपनीची सूट नाही, म्हणून या मालाला सूट लागली नाही आणि खरी किंमत जास्त आली.', '{q} were entered as bought from: {who}. That account gets no company discount, so these bags carry none and the real cost comes out higher.'),
   'pnl_fix_no_disc': ('हा माल खरंच कंपनीकडूनच आला असेल तर त्या नोंदी उघडून खाते बदला (नाव दाबा). दुसऱ्या व्यापाऱ्याकडून घेतला असेल तर हे बरोबर आहे.', 'If these bags really came from the company, open those entries and change the account (tap the name). If they were bought from another dealer, this is correct.'),
   'pnl_disc_new': ('कंपनी सूट – फक्त या नव्या खरेदीवर (एकदाच)', 'Company discount – on these new purchases only (once)'),
+  'pnl_service_cost': ('ही सेवा विकत घेण्याचा खर्च', 'Cost of buying this service in'),
+  'pnl_service_note': ('सेवा: स्टॉक नसतो. खर्च = खरेदी बिलात ही सेवा घेतली असेल (उदा. कारागिराचे काम) ते. हमाल/कामगारांना दिलेले पैसे वेगळ्या खर्चात दिसतात.', 'A service has no stock. Cost = what was paid for it on purchase bills (e.g. a contractor\'s work). Wages paid to labourers show as separate expenses.'),
   'pnl_working': ('हिशोब कसा केला', 'How it was worked out'),
   'pnl_rate_used': ('धरलेला दर', 'Rate used'),
   'pnl_rate_opening': ('सुरुवातीचा दर', 'opening rate'),

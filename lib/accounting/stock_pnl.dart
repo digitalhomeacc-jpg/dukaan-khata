@@ -110,7 +110,7 @@ class StockPnlEngine {
     final items = [
       for (final r in await db.getAll('SELECT * FROM items WHERE business_id = ? ORDER BY sort_order, name', [b]))
         Item.fromRow(r)
-    ].where((i) => i.category != serviceCategory).toList();
+    ]; // goods and services (a service: income − what it cost to buy in, no stock)
 
     // quantity owned at a moment: in the shop + lent out - borrowed
     Future<Map<String, double>> owned(String date, {required bool before}) async {
@@ -244,6 +244,15 @@ class StockPnlEngine {
       p.disc = discByItem[it.id] ?? 0;
       p.discR = p.disc.round();
       p.bySupplier.addAll(supByItem[it.id] ?? const []);
+      if (it.isService) {
+        // no stock: its profit = what customers paid − what buying it in cost
+        p.openQty = p.closeQty = p.adjQty = 0;
+        p.disc = 0;
+        p.discR = 0;
+        p.cost = p.purVal;
+        if (p.saleQty != 0 || p.purQty != 0 || p.sales != 0 || p.purVal != 0) out.items.add(p);
+        continue;
+      }
       if (prevClose != null) {
         p.openVal = prevClose[it.id] ?? 0;
       } else if (it.openingRate > 0 || p.openQty <= 0) {
@@ -297,8 +306,10 @@ class StockPnlEngine {
       acct[r['id'] as String] = (r['name'] as String, r['grp'] as String, (r['m'] as num).toInt());
     }
     int g(String grp) => acct.values.where((e) => e.$2 == grp).fold(0, (s, e) => s + e.$3);
-    out.salesAcct = -(g('sales') + g('sales_return'));
-    out.purchaseAcct = g('purchase') + g('purchase_return');
+    // services are items here too: their income / cost accounts belong with sales / purchases
+    int one(String key) => acct['$b:$key']?.$3 ?? 0;
+    out.salesAcct = -(g('sales') + g('sales_return') + one('service_income'));
+    out.purchaseAcct = g('purchase') + g('purchase_return') + one('service_cost');
     out.discRecd = -(acct['$b:discount_recd']?.$3 ?? 0);
     out.discToGoods = out.items.fold(0, (s, i) => s + i.discR);
     out.discSchemes = ((await db.get(
@@ -308,7 +319,7 @@ class StockPnlEngine {
             [b, '$b:discount_recd', from, to]))['d'] as num)
         .toInt();
     for (final e in acct.entries) {
-      if (e.key == '$b:discount_recd') continue;
+      if (e.key == '$b:discount_recd' || e.key == '$b:service_income' || e.key == '$b:service_cost') continue;
       final (name, grp, m) = e.value;
       if (m == 0) continue;
       if (grp == 'income') out.otherIncome.add((name, -m));

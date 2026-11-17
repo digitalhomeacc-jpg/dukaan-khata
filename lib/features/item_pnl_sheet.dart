@@ -119,6 +119,23 @@ class ItemPnlSheet {
           // the working, line by line
           Text(t('pnl_working'), style: const TextStyle(fontWeight: FontWeight.w700)),
           const SizedBox(height: 4),
+          if (it.isService) ...[
+            // a service: no stock – what customers paid, less what buying it in cost
+            row('${t('sales')} (${q(i.saleQty)})', m(i.sales), bold: true),
+            row('− ${t('pnl_service_cost')} (${q(i.purQty)})', m(i.purVal)),
+            for (final (pid, pname, sq, sv, _) in i.bySupplier)
+              Padding(
+                padding: const EdgeInsets.only(left: 14, top: 2, bottom: 2),
+                child: Text('${pid == null ? t('cash_purchase') : pname} · ${q(sq)} · ${m(sv)}',
+                    style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+              ),
+            const Divider(),
+            row(t('profit'), m(i.profit), bold: true, color: i.profit >= 0 ? Colors.green.shade700 : Colors.red.shade700),
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(t('pnl_service_note'), style: Theme.of(context).textTheme.bodySmall),
+            ),
+          ] else ...[
           row(t('opening_stock'), '${q(i.openQty)} · ${m(i.openVal)}'),
           if (i.openQty != 0)
             row(
@@ -166,6 +183,7 @@ class ItemPnlSheet {
           row(t('pnl_cost'), m(i.cost), bold: true),
           row('${t('sales')} (${q(i.saleQty)})', m(i.sales), bold: true),
           row(t('profit'), m(i.profit), bold: true, color: i.profit >= 0 ? Colors.green.shade700 : Colors.red.shade700),
+          ],
           const Divider(),
           // useful facts
           row(t('pnl_master_purchase_rate'), it.purchaseRate > 0 ? m(it.purchaseRate) : t('pnl_not_set')),

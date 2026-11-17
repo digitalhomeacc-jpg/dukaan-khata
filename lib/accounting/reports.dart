@@ -760,6 +760,7 @@ class Reports {
   /// company discount, closing stock and the net cost per unit).
   Future<ReportTable> stockCosting(String to) async {
     final r = await StockPnlEngine(db, businessId).compute(to);
+    r.items.removeWhere((i) => i.item.isService); // services have no stock
     String qv(double q, int v) => '${fmtQty(q)} / ${Money.fmt(v)}';
     return ReportTable(
       title: tr('r_stock_costing'),
