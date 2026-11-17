@@ -4,6 +4,7 @@ import '../accounting/models.dart';
 import '../accounting/stock_pnl.dart';
 import '../core/money.dart';
 import '../state/app_controller.dart';
+import 'parties_screen.dart';
 import 'stock_screen.dart';
 
 /// मालनिहाय नफा → tap an item: how its profit was worked out, step by step,
@@ -52,6 +53,15 @@ class ItemPnlSheet {
             .replaceAll('{sold}', q(i.saleQty))
             .replaceAll('{short}', q(-i.closeQty)),
         t('pnl_fix_negative'),
+      ));
+    }
+    final noDisc = i.bySupplier.where((x) => x.$5 == 0 && x.$3 > 0).toList();
+    if (noDisc.isNotEmpty && i.bySupplier.any((x) => x.$5 > 0)) {
+      reasons.add((
+        t('pnl_why_no_disc')
+            .replaceAll('{q}', q(noDisc.fold<double>(0, (s, x) => s + x.$3)))
+            .replaceAll('{who}', noDisc.map((x) => x.$1 == null ? t('cash_purchase') : x.$2).join(', ')),
+        t('pnl_fix_no_disc'),
       ));
     }
     if (i.cost == 0 && i.sales > 0 && reasons.isEmpty) {
@@ -119,7 +129,35 @@ class ItemPnlSheet {
                         ? '${m(openRateUsed)} (${t('pnl_rate_from_old')})'
                         : '${m(openRateUsed)} (${t('pnl_rate_purchase_master')})'),
           row('+ ${t('pnl_bought_books')}', '${q(i.purQty)} · ${m(i.purVal)}'),
-          if (i.discR != 0) row('− ${t('pnl_disc')}', m(i.discR)),
+          // which account each purchase was made from, and its company discount
+          for (final (pid, pname, sq, sv, rate) in i.bySupplier)
+            InkWell(
+              onTap: pid == null ? null : () => KhataScreen.open(context, pid),
+              child: Padding(
+                padding: const EdgeInsets.only(left: 14, top: 2, bottom: 2),
+                child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Expanded(
+                    flex: 3,
+                    child: Text(
+                      '${pid == null ? t('cash_purchase') : pname} · ${q(sq)} @ ${m(sq == 0 ? 0 : sv / sq)}',
+                      style: TextStyle(
+                          fontSize: 13,
+                          color: rate == 0 ? Colors.orange.shade800 : Theme.of(context).colorScheme.onSurfaceVariant,
+                          decoration: pid == null ? null : TextDecoration.underline),
+                    ),
+                  ),
+                  Expanded(
+                    flex: 2,
+                    child: Text(
+                      rate == 0 ? t('pnl_no_co_disc') : '${(rate * 100).toStringAsFixed(2)}% = ${m(sv * rate)}',
+                      textAlign: TextAlign.right,
+                      style: TextStyle(fontSize: 13, color: rate == 0 ? Colors.orange.shade800 : null),
+                    ),
+                  ),
+                ]),
+              ),
+            ),
+          if (i.discR != 0) row('− ${t('pnl_disc_new')}', m(i.discR)),
           row('= ${t('pnl_available')}', '${q(i.openQty + i.purQty)} · ${m(i.openVal + i.netPur)}'),
           row('   ${t('pnl_unit_cost')}', m(i.avg)),
           if (i.adjQty != 0) row(t('stock_adjust'), q(i.adjQty)),

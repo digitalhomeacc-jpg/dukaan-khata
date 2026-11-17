@@ -35,6 +35,10 @@ class ItemPnl {
   /// Opening stock had no opening rate and was valued from the last old
   /// (statement) purchases at their real cost – complete, just worth knowing.
   bool openFromOld = false;
+  /// Purchases since the books started, per supplier account: who, qty,
+  /// bill value, that supplier's yearly discount rate – so it is plain which
+  /// bags got a company discount and which did not.
+  final bySupplier = <(String?, String, double, int, double)>[];
 
   int get netPur => purVal - discR;
   int get profit => sales - cost;
@@ -195,13 +199,19 @@ class StockPnlEngine {
     double rateOf(String? p) => p == null ? 0 : rates[p] ?? 0;
 
     final discByItem = <String, double>{};
+    final supByItem = <String, List<(String?, String, double, int, double)>>{};
     for (final r in await db.getAll(
-        "SELECT il.item_id, v.party_id AS p, SUM(CASE WHEN v.vtype = 'purchase_return' THEN -il.amount ELSE il.amount END) AS a "
-        'FROM inventory_lines il JOIN vouchers v ON v.id = il.voucher_id WHERE il.business_id = ? AND il.deleted = 0 AND v.deleted = 0 '
+        "SELECT il.item_id, v.party_id AS p, l.name AS pname, "
+        "SUM(CASE WHEN v.vtype = 'purchase_return' THEN -il.qty ELSE il.qty END) AS q, "
+        "SUM(CASE WHEN v.vtype = 'purchase_return' THEN -il.amount ELSE il.amount END) AS a "
+        'FROM inventory_lines il JOIN vouchers v ON v.id = il.voucher_id LEFT JOIN ledgers l ON l.id = v.party_id '
+        'WHERE il.business_id = ? AND il.deleted = 0 AND v.deleted = 0 '
         "AND il.vdate BETWEEN ? AND ? AND v.vtype IN ('purchase', 'purchase_return') GROUP BY il.item_id, v.party_id",
         [b, from, to])) {
       final id = r['item_id'] as String;
-      discByItem[id] = (discByItem[id] ?? 0) + (r['a'] as num).toInt() * rateOf(r['p'] as String?);
+      final rate = rateOf(r['p'] as String?);
+      discByItem[id] = (discByItem[id] ?? 0) + (r['a'] as num).toInt() * rate;
+      (supByItem[id] ??= []).add((r['p'] as String?, (r['pname'] as String?) ?? '', (r['q'] as num).toDouble(), (r['a'] as num).toInt(), rate));
     }
 
     // old (statement) purchases before the books, newest first – used only to
@@ -233,6 +243,7 @@ class StockPnlEngine {
       p.adjQty = adj[it.id] ?? 0;
       p.disc = discByItem[it.id] ?? 0;
       p.discR = p.disc.round();
+      p.bySupplier.addAll(supByItem[it.id] ?? const []);
       if (prevClose != null) {
         p.openVal = prevClose[it.id] ?? 0;
       } else if (it.openingRate > 0 || p.openQty <= 0) {

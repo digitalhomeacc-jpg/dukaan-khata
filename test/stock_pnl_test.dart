@@ -126,4 +126,29 @@ void main() {
       Books.start = keep;
     }
   });
+
+  test('only bags bought from the company account get its discount; the split by account is shown', () async {
+    final keep = Books.start;
+    Books.start = '2026-11-08';
+    try {
+      final db = await openTestDb(biz);
+      final vs = VoucherService(db, biz), lr = LedgerRepo(db, biz), sr = StockRepo(db, biz);
+      final w = await sr.save(name: 'Wonder Split', category: 'cement', unit: 'bag', openingQty: 0);
+      final co = await lr.create(name: 'Wonder Co', group: LedgerGroup.supplier);
+      final dealer = await lr.create(name: 'Local Dealer', group: LedgerGroup.supplier);
+      await vs.save(VoucherInput(type: VoucherType.purchase, date: '2026-11-10', partyId: co, items: [ItemLine(w, 100, rs(320))]), owner);
+      await vs.save(VoucherInput(type: VoucherType.purchase, date: '2026-11-11', partyId: dealer, items: [ItemLine(w, 20, rs(330))]), owner);
+      // the company's discount: 5 % of its ₹32,000
+      await vs.save(VoucherInput(type: VoucherType.payment, date: '2026-11-12', partyId: co, payLedgerId: vs.sys('cash'), amount: rs(1), discount: rs(1600)), owner);
+      final i = (await StockPnlEngine(db, biz).compute('2026-11-30')).items.firstWhere((x) => x.item.id == w);
+      expect(i.discR, rs(1600), reason: 'the dealer\'s 20 bags get none');
+      expect(i.bySupplier.length, 2);
+      final c = i.bySupplier.firstWhere((x) => x.$1 == co), d = i.bySupplier.firstWhere((x) => x.$1 == dealer);
+      expect((c.$3, c.$4, c.$5), (100.0, rs(32000), 0.05));
+      expect((d.$3, d.$4, d.$5), (20.0, rs(6600), 0.0));
+      await db.close();
+    } finally {
+      Books.start = keep;
+    }
+  });
 }
