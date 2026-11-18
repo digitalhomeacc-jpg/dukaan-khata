@@ -109,7 +109,8 @@ class _QuickSortScreenState extends State<QuickSortScreen> {
       for (final t in g.txns)
         if (t.payeeVpa != null) t.payeeVpa!,
     };
-    final remember = _rememberFor[g.name] ?? (!isPerson || role == 'shop');
+    // Sorting a payee means its new payments too (most small shops take UPI on a personal ID).
+    final remember = _rememberFor[g.name] ?? true;
 
     Widget categoryGrid(void Function(String? id) pick) => Wrap(
       spacing: 8,
@@ -296,9 +297,8 @@ class _QuickSortScreenState extends State<QuickSortScreen> {
                     : 'Also for new payments here',
               ),
               subtitle: Text(
-                isPerson && role != 'shop'
-                    ? 'Turn on for a shop on a personal UPI ID (e.g. your cigarette shop)'
-                    : 'New payments get the same category by themselves',
+                'New payments here get the same category by themselves. Turn off for a friend you pay for '
+                'different things.',
                 style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
               ),
             ),
