@@ -289,4 +289,55 @@ Due on 05 Oct '27
     final dues = upcomingDues([loan], events, now: now);
     expect(dues.map((d) => d.date), [DateTime(2026, 11, 10), DateTime(2027, 1, 10)]);
   });
+
+  test('a bank payment linked to a loan counts even before the server makes it an event; never twice', () {
+    final loan = Loan(
+      id: 'kb',
+      lender: 'kreditbee',
+      name: 'KreditBee',
+      emiAmount: 4161,
+      tenureMonths: 10,
+      emisPaidBefore: 4,
+      createdAt: DateTime(2026, 11, 13),
+    );
+    final txns = [
+      Txn(id: 'nov', amount: 4161, isDebit: true, txnAt: DateTime(2026, 11, 16), loanId: 'kb', loanRole: 'repay'),
+      Txn(id: 'oct', amount: 4161, isDebit: true, txnAt: DateTime(2026, 10, 15), loanId: 'kb', loanRole: 'repay'),
+      // A disbursal from before the loan was added: already in what you entered.
+      Txn(id: 'disb', amount: 36554, isDebit: false, txnAt: DateTime(2026, 7, 25), loanId: 'kb', loanRole: 'borrow'),
+    ];
+    // KreditBee's own email recorded October.
+    final stored = [
+      LoanEvent(
+        id: 'mail',
+        loanId: 'kb',
+        kind: LoanEventKind.repay,
+        amount: 4161,
+        at: DateTime(2026, 10, 15, 9),
+        fromEmail: true,
+      ),
+    ];
+    final all = loanEventsWithPayments(stored, txns, [loan]);
+    expect(all.map((e) => e.id), ['mail', 'txn:nov']);
+    final s = loanStatus(loan, all, now: DateTime(2026, 11, 19));
+    expect(s.emisPaid, 5);
+    expect(s.emisLeft, 5);
+    // Once the server has made the event, it is not added again.
+    final later = loanEventsWithPayments(
+      [
+        ...stored,
+        LoanEvent(
+          id: 'ev',
+          loanId: 'kb',
+          kind: LoanEventKind.repay,
+          amount: 4161,
+          at: DateTime(2026, 11, 16),
+          txnId: 'nov',
+        ),
+      ],
+      txns,
+      [loan],
+    );
+    expect(later.where((e) => e.kind == LoanEventKind.repay).length, 2);
+  });
 }

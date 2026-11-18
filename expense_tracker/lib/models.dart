@@ -330,6 +330,7 @@ class LoanEvent {
     required this.at,
     this.note,
     this.fromEmail = false,
+    this.txnId,
   });
 
   final String id;
@@ -340,6 +341,9 @@ class LoanEvent {
   final String? note;
   final bool fromEmail;
 
+  /// The bank payment it is (when it is one).
+  final String? txnId;
+
   factory LoanEvent.fromMap(Map<String, dynamic> m) => LoanEvent(
     id: m['id'] as String,
     loanId: m['loan_id'] as String,
@@ -348,6 +352,7 @@ class LoanEvent {
     at: DateTime.parse(m['event_at'] as String).toLocal(),
     note: m['note'] as String?,
     fromEmail: m['email_id'] != null,
+    txnId: m['txn_id'] as String?,
   );
 }
 

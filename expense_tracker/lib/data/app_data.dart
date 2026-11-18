@@ -18,6 +18,7 @@ import '../logic/summary.dart'
         allocateSettle,
         groupPairwise,
         loanBalances,
+        loanEventsWithPayments,
         samePersonCandidates,
         shareTotals,
         sharedBalance,
@@ -63,7 +64,7 @@ class AppData extends ChangeNotifier {
         notifyListeners();
       }, onError: _onError),
       db.from('loan_events').stream(primaryKey: ['id']).order('event_at').listen((rows) {
-        loanEvents = _parse(rows, LoanEvent.fromMap);
+        storedLoanEvents = _parse(rows, LoanEvent.fromMap);
         notifyListeners();
       }, onError: _onError),
       db.from('balance_readings').stream(primaryKey: ['id']).order('as_of').listen((rows) {
@@ -142,7 +143,7 @@ class AppData extends ChangeNotifier {
     required this.categories,
     this.accounts = const [],
     this.loans = const [],
-    this.loanEvents = const [],
+    List<LoanEvent> loanEvents = const [],
     this.balanceReadings = const [],
     this.shares = const [],
     this.budgets = const [],
@@ -157,7 +158,8 @@ class AppData extends ChangeNotifier {
     this.recurringRuns = const [],
     this.goals = const [],
     this.openings = const [],
-  }) : _client = null,
+  }) : storedLoanEvents = loanEvents,
+       _client = null,
        loaded = true {
     _subs = [];
   }
@@ -172,7 +174,25 @@ class AppData extends ChangeNotifier {
   List<Category> categories = const [];
   List<Account> accounts = const [];
   List<Loan> loans = const [];
-  List<LoanEvent> loanEvents = const [];
+
+  /// Loan events as stored (lender emails, payments a server rule linked).
+  List<LoanEvent> storedLoanEvents = const [];
+
+  /// Every loan event, including payments linked to a loan that the server has not turned into events yet.
+  List<LoanEvent> get loanEvents {
+    final from = _eventsFrom;
+    if (from == null ||
+        !identical(from.$1, storedLoanEvents) ||
+        !identical(from.$2, transactions) ||
+        !identical(from.$3, loans)) {
+      _events = loanEventsWithPayments(storedLoanEvents, transactions, loans);
+      _eventsFrom = (storedLoanEvents, transactions, loans);
+    }
+    return _events;
+  }
+
+  (List<LoanEvent>, List<Txn>, List<Loan>)? _eventsFrom;
+  List<LoanEvent> _events = const [];
   List<BalanceReading> balanceReadings = const [];
   List<TxnShare> shares = const [];
   List<Budget> budgets = const [];
@@ -958,7 +978,14 @@ class AppData extends ChangeNotifier {
         'note': note,
       });
 
-  Future<void> deleteLoanEvent(String id) => _db.from('loan_events').delete().eq('id', id);
+  /// Removes a loan event. One that is a bank payment is unlinked from the loan (the payment stays).
+  Future<void> deleteLoanEvent(String id) async {
+    final e = loanEvents.where((x) => x.id == id).firstOrNull;
+    if (e?.txnId != null) {
+      await _db.from('transactions').update({'loan_id': null, 'loan_role': null, 'edited': true}).eq('id', e!.txnId!);
+    }
+    if (!id.startsWith('txn:')) await _db.from('loan_events').delete().eq('id', id);
+  }
 
   /// "I owe ₹X now": later borrowing and repayments are counted from here.
   Future<void> setOwed(String loanId, double owed) => _db

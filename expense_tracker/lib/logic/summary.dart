@@ -1526,3 +1526,45 @@ Map<Backing, ({int count, double amount})> bankCheck(
   }
   return out;
 }
+
+/// Every loan event: the stored ones, plus each payment linked to a loan that has none yet (so a loan never
+/// waits for a server rule to count an EMI). An EMI the lender's own email already recorded (same amount,
+/// within 5 days) is not counted twice; money borrowed counts from the day the loan was added.
+List<LoanEvent> loanEventsWithPayments(List<LoanEvent> stored, Iterable<Txn> txns, Iterable<Loan> loans) {
+  final have = {for (final e in stored) ?e.txnId};
+  final byId = {for (final l in loans) l.id: l};
+  final out = [...stored];
+  for (final t in txns) {
+    final loan = byId[t.loanId];
+    if (loan == null || have.contains(t.id)) continue;
+    final kind = switch (t.loanRole) {
+      'repay' => LoanEventKind.repay,
+      'borrow' => LoanEventKind.borrow,
+      _ => null,
+    };
+    if (kind == null) continue;
+    if (kind == LoanEventKind.borrow && loan.createdAt != null && t.txnAt.isBefore(loan.createdAt!)) continue;
+    final inEmail = stored.any(
+      (e) =>
+          e.loanId == loan.id &&
+          e.kind == kind &&
+          e.fromEmail &&
+          e.txnId == null &&
+          (e.amount - t.amount).abs() < 1 &&
+          e.at.difference(t.txnAt).inDays.abs() <= 5,
+    );
+    if (inEmail) continue;
+    out.add(
+      LoanEvent(
+        id: 'txn:${t.id}',
+        loanId: loan.id,
+        kind: kind,
+        amount: t.amount,
+        at: t.txnAt,
+        note: 'Bank payment',
+        txnId: t.id,
+      ),
+    );
+  }
+  return out;
+}
