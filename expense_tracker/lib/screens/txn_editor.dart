@@ -259,7 +259,7 @@ class _TxnEditorState extends State<TxnEditor> {
                     helperText: _isLoan
                         ? (_isDebit
                               ? 'Spent = you lent money or paid them back'
-                              : 'Received = you borrowed or they paid you back')
+                              : 'Received = you borrowed, they paid you back, or it is their money for you to spend for them')
                         : null,
                   ),
                   validator: (v) => (_isLoan || _onCredit) && (v ?? '').trim().isEmpty
@@ -412,6 +412,14 @@ class _TxnEditorState extends State<TxnEditor> {
                 listenable: widget.data,
                 builder: (context, _) =>
                     CategoryPartsSection(data: widget.data, payment: widget.data.txn(existing.id) ?? existing),
+              ),
+            ],
+            if (existing != null && !existing.isDebit && !existing.isLoanTransfer && !existing.excluded) ...[
+              const SizedBox(height: 16),
+              ListenableBuilder(
+                listenable: widget.data,
+                builder: (context, _) =>
+                    SpendsThroughSection(data: widget.data, credit: widget.data.txn(existing.id) ?? existing),
               ),
             ],
             if (existing != null && !existing.isLoanTransfer && !_isLoan) ...[

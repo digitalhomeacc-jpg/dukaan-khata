@@ -402,3 +402,123 @@ class PaidBackSection extends StatelessWidget {
     );
   }
 }
+
+/// On money received from a friend: was it their money for you to spend for them ("buy my book", "pay the
+/// canteen")? Pick what you paid for them: it is not your spending, their money is not your income, and you two
+/// stay even. What is left of their money shows as yours to give back (or to spend for them).
+class SpendsThroughSection extends StatelessWidget {
+  const SpendsThroughSection({super.key, required this.data, required this.credit});
+
+  final AppData data;
+  final Txn credit;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+    final person = data.aliases[AppData.keyOf(credit.title)] ?? credit.title.trim();
+    final first = person.split(' ').first;
+    final key = AppData.keyOf(person);
+    final from = credit.txnAt.subtract(const Duration(days: 2));
+    final to = credit.txnAt.add(const Duration(days: 30));
+    bool near(Txn t) => !t.txnAt.isBefore(from) && t.txnAt.isBefore(to);
+    // What you already paid for them around then.
+    final linked = [
+      for (final s in data.shares)
+        if (AppData.keyOf(s.person) == key && !s.paid && data.txn(s.txnId) != null && near(data.txn(s.txnId)!)) s,
+    ];
+    final spent = linked.fold(0.0, (v, s) => v + s.amount);
+    final left = credit.amount - spent;
+    final candidates =
+        data.transactions
+            .where(
+              (t) =>
+                  t.isDebit &&
+                  near(t) &&
+                  !t.excluded &&
+                  !t.isLoanTransfer &&
+                  !data.loanCategoryIds.contains(t.categoryId) &&
+                  data.shareTotalsNow.own(t) > 0 &&
+                  !linked.any((s) => s.txnId == t.id),
+            )
+            .toList()
+          ..sort((a, b) => a.txnAt.difference(credit.txnAt).abs().compareTo(b.txnAt.difference(credit.txnAt).abs()));
+
+    Future<void> link(Txn t) async {
+      final ctl = TextEditingController(
+        text: (data.shareTotalsNow.own(t) < left ? data.shareTotalsNow.own(t) : left).toStringAsFixed(0),
+      );
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (c) => AlertDialog(
+          title: Text('Paid for $first: ${t.title}'),
+          content: TextField(
+            controller: ctl,
+            autofocus: true,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))],
+            decoration: InputDecoration(
+              prefixText: '₹ ',
+              helperText: 'Of ${money(t.amount)}: the part that was for $first',
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancel')),
+            FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Save')),
+          ],
+        ),
+      );
+      final v = double.tryParse(ctl.text.replaceAll(',', ''));
+      if (ok != true || v == null || v <= 0 || !context.mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
+      try {
+        await data.spendThrough(credit, t, v > data.shareTotalsNow.own(t) ? data.shareTotalsNow.own(t) : v);
+      } catch (e) {
+        messenger.showSnackBar(SnackBar(content: Text('Not saved: $e')));
+      }
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Their spends through you', style: text.titleSmall),
+        const SizedBox(height: 4),
+        Text(
+          linked.isEmpty
+              ? 'Did $first send this for you to buy or pay something for them? Tap what you paid for them: it is '
+                    'not your spending, and you two stay even.'
+              : 'Spent for $first: ${money(spent)} of ${money(credit.amount)}. '
+                    '${left.abs() < 0.005
+                        ? 'All used: you are even.'
+                        : left > 0
+                        ? '${money(left)} of theirs is still with you.'
+                        : 'You spent ${money(-left)} more than they sent: they owe you that.'}',
+          style: text.bodySmall,
+        ),
+        for (final s in linked)
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            dense: true,
+            leading: const Icon(Icons.shopping_bag_outlined),
+            title: Text('${data.txn(s.txnId)!.title} · ${money(s.amount)} for $first'),
+            subtitle: Text(dayLabel(data.txn(s.txnId)!.txnAt)),
+            trailing: TextButton(onPressed: () => data.deleteShare(s.id), child: const Text('Unlink')),
+          ),
+        if (candidates.isNotEmpty && left > 0.005) ...[
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final t in candidates.take(6))
+                ActionChip(
+                  avatar: const Icon(Icons.add, size: 16),
+                  label: Text('${t.title} · ${money(t.amount)} · ${dayLabel(t.txnAt)}'),
+                  onPressed: () => link(t),
+                ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+}

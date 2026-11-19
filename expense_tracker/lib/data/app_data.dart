@@ -1630,6 +1630,24 @@ class AppData extends ChangeNotifier {
 
   // ------------------------------------------------------- shared payments
 
+  /// [credit] was a friend's money for you to spend for them, and [debit] is what you paid for them ([amount] of
+  /// it). Their money stays in your Friends ledger (not income; you owe it to them), and the purchase gets their
+  /// part (not your spending; they owe it): together you are even.
+  Future<void> spendThrough(Txn credit, Txn debit, double amount) async {
+    final friends = friendsCategory ?? await ensureLoanCategory();
+    if (credit.categoryId != friends.id) {
+      final r = await _db
+          .from('transactions')
+          .update({'category_id': friends.id, 'needs_review': false, 'edited': true})
+          .eq('id', credit.id)
+          .select()
+          .maybeSingle();
+      if (r != null) _showNow(r);
+    }
+    final person = aliases[keyOf(credit.title)] ?? credit.title.trim();
+    await addShare(debit.id, person, double.parse(amount.toStringAsFixed(2)));
+  }
+
   Future<void> addShare(String txnId, String person, double amount, {String? paidTxnId}) =>
       _db.from('txn_shares').insert({
         'txn_id': txnId,
