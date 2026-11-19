@@ -95,6 +95,8 @@ class AppData extends ChangeNotifier {
       }, onError: _onError),
       db.from('friend_links').stream(primaryKey: ['id']).listen((rows) {
         links = _parse(rows, FriendLink.fromMap);
+        _streamsIn.add('links');
+        _carryOpenings();
         notifyListeners();
       }, onError: _onError),
       db.from('shared_entries').stream(primaryKey: ['id']).order('at').listen((rows) {
@@ -104,6 +106,8 @@ class AppData extends ChangeNotifier {
       // Opening balances with connected friends (ignored quietly until the database has the table).
       db.from('friend_openings').stream(primaryKey: ['id']).listen((rows) {
         openings = _parse(rows, FriendOpening.fromMap);
+        _streamsIn.add('openings');
+        _carryOpenings();
         notifyListeners();
       }, onError: (_) {}),
       db.from('match_questions').stream(primaryKey: ['id']).listen((rows) {
@@ -112,6 +116,8 @@ class AppData extends ChangeNotifier {
       }, onError: _onError),
       db.from('friend_aliases').stream(primaryKey: ['user_id', 'alias_key']).listen((rows) {
         aliases = {for (final r in rows) r['alias_key'] as String: r['friend_name'] as String};
+        _streamsIn.add('aliases');
+        _carryOpenings();
         notifyListeners();
       }, onError: _onError),
       db.from('people').stream(primaryKey: ['user_id', 'name_key']).listen((rows) {
@@ -126,6 +132,8 @@ class AppData extends ChangeNotifier {
                 opening: double.tryParse('${r['opening'] ?? 0}') ?? 0,
               ),
         };
+        _streamsIn.add('people');
+        _carryOpenings();
         notifyListeners();
       }, onError: _onError),
       db.from('profiles').stream(primaryKey: ['id']).listen((rows) {
@@ -241,22 +249,52 @@ class AppData extends ChangeNotifier {
   String? myId;
   String? get me => myId ?? user?.id;
 
-  /// The active connection with this friend (by the name in my list), if any.
+  /// The key of the name a person is shown as ("Also known as" names go to the main name).
+  String canonKey(String name) => keyOf(aliases[keyOf(name)] ?? name);
+
+  /// The active connection with this friend, if any: by the name in my list or any other name of theirs.
   FriendLink? linkFor(String person) {
-    final k = keyOf(person);
+    final k = canonKey(person);
     for (final l in links) {
-      if (l.active && me != null && keyOf(l.nameFor(me!)) == k) return l;
+      if (l.active && me != null && l.nameFor(me!).isNotEmpty && canonKey(l.nameFor(me!)) == k) return l;
     }
     return null;
   }
 
   /// An invite I sent to this friend that is not accepted yet.
   FriendLink? pendingInviteFor(String person) {
-    final k = keyOf(person);
+    final k = canonKey(person);
     for (final l in links) {
-      if (!l.active && l.a == me && keyOf(l.aNameForB) == k) return l;
+      if (!l.active && l.a == me && canonKey(l.aNameForB) == k) return l;
     }
     return null;
+  }
+
+  final Set<String> _streamsIn = {};
+  final Set<String> _carried = {};
+
+  /// A friend you started fresh with before you connected: that start becomes the opening balance you both see,
+  /// so their older records do not change what is owed. Only when the connection has no opening balance yet.
+  Future<void> _carryOpenings() async {
+    if (!_streamsIn.containsAll(const {'links', 'openings', 'people', 'aliases'}) || me == null) return;
+    for (final l in links) {
+      if (!l.active || _carried.contains(l.id) || openings.any((o) => o.linkId == l.id)) continue;
+      final name = l.nameFor(me!);
+      if (name.isEmpty) continue;
+      final start = ledgerStarts[canonKey(name)] ?? ledgerStarts[keyOf(name)];
+      if (start == null) continue;
+      _carried.add(l.id);
+      try {
+        await proposeOpening(
+          l,
+          start.from.subtract(const Duration(days: 1)),
+          start.opening,
+          'From your fresh start before connecting',
+        );
+      } catch (_) {
+        _carried.remove(l.id);
+      }
+    }
   }
 
   ShareTotals? _shareTotals;

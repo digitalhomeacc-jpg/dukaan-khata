@@ -93,24 +93,32 @@ class LinkedNamesCard extends StatelessWidget {
             Text('Also known as', style: text.titleSmall),
             Text('Shown here as $person.', style: text.bodySmall),
             for (final n in names)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Wrap(
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  spacing: 4,
-                  children: [
-                    Text(n, style: text.bodyLarge?.copyWith(fontWeight: FontWeight.w600)),
-                    TextButton(
-                      onPressed: () async {
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      n,
+                      style: text.bodyLarge?.copyWith(fontWeight: FontWeight.w600),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  PopupMenuButton<String>(
+                    tooltip: 'Options for $n',
+                    onSelected: (v) async {
+                      if (v == 'main') {
                         await data.removeAlias(n);
                         await data.addAlias(person, n);
                         if (context.mounted) Navigator.of(context).maybePop();
-                      },
-                      child: const Text('Show as this name'),
-                    ),
-                    TextButton(onPressed: () => data.removeAlias(n), child: const Text('Separate')),
-                  ],
-                ),
+                      } else {
+                        await data.removeAlias(n);
+                      }
+                    },
+                    itemBuilder: (_) => const [
+                      PopupMenuItem(value: 'main', child: Text('Show as this name')),
+                      PopupMenuItem(value: 'separate', child: Text('Separate (a different person)')),
+                    ],
+                  ),
+                ],
               ),
           ],
         ),

@@ -36,13 +36,7 @@ List<FriendRow> friendRows(AppData data) {
   final rows = <String, FriendRow>{};
   // "Also known as": every name goes to its main name, so one person is always one row.
   String canon(String name) => data.aliases[AppData.keyOf(name)] ?? name.trim();
-  FriendLink? linkOf(String name) {
-    final k = AppData.keyOf(canon(name));
-    for (final l in data.links.where((l) => l.active)) {
-      if (data.me != null && AppData.keyOf(canon(l.nameFor(data.me!))) == k) return l;
-    }
-    return null;
-  }
+  FriendLink? linkOf(String name) => data.linkFor(name);
 
   for (final l in data.friendBalances) {
     final name = canon(l.person);
@@ -170,8 +164,8 @@ class FriendsScreen extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 8),
                 child: Row(
                   children: [
-                    total('Owed to you', owedToYou, Colors.green.shade800),
-                    total('You owe', youOwe, scheme.error),
+                    total('Owed to you', owedToYou, scheme.onPrimaryContainer),
+                    total('You owe', youOwe, scheme.onPrimaryContainer),
                   ],
                 ),
               ),

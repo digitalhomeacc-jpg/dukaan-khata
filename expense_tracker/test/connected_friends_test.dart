@@ -150,7 +150,7 @@ void main() {
     expect(find.text('Connected'), findsOneWidget);
     expect(find.text('Also known as'), findsOneWidget);
     expect(find.text('vijay kumar'), findsOneWidget);
-    expect(find.text('Show as this name'), findsOneWidget);
+    expect(find.byTooltip('Options for vijay kumar'), findsOneWidget);
     await tester.scrollUntilVisible(
       find.textContaining("Ravi Kumar's share · Pizza"),
       200,
@@ -163,6 +163,18 @@ void main() {
       scrollable: find.byType(Scrollable).first,
     );
     expect(find.textContaining('removed by Ravi Kumar'), findsOneWidget);
+  });
+
+  testWidgets('connected under another name ("Also known as"): the page still shows the connection', (tester) async {
+    final d = sample();
+    // The connection was made as "vijay kumar", which shows as Ravi Kumar.
+    d.links = const [FriendLink(id: 'L', a: me, b: ravi, aNameForB: 'vijay kumar', bNameForA: 'Asha', code: 'abc')];
+    expect(d.linkFor('Ravi Kumar')?.id, 'L');
+    expect(friendRows(d).where((r) => r.link != null).single.person, 'Ravi Kumar');
+    await pump(tester, FriendDetailScreen(data: d, person: 'Ravi Kumar'));
+    expect(find.text('Connected'), findsOneWidget);
+    expect(find.text('Ravi Kumar owes you'), findsOneWidget);
+    expect(find.textContaining('Connect with'), findsNothing);
   });
 
   testWidgets('not connected friend page offers an invite', (tester) async {
@@ -208,6 +220,8 @@ void main() {
     expect(find.text('I gave'), findsOneWidget);
     expect(find.text('I got'), findsOneWidget);
     await tester.scrollUntilVisible(find.textContaining('Chai'), 200, scrollable: find.byType(Scrollable).first);
+    await tester.drag(find.byType(Scrollable).first, const Offset(0, -150));
+    await tester.pumpAndSettle();
     await tester.tap(find.textContaining('Chai'));
     await tester.pumpAndSettle();
     expect(find.text('Entry with Ravi'), findsOneWidget);
