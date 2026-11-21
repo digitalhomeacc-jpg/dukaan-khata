@@ -20,7 +20,7 @@ void main() {
       categories: const [],
       transactions: [pay],
       links: const [
-        FriendLink(id: 'L', a: 'me', b: 'v', aNameForB: 'Vaibhav Chetan Parmar', bNameForA: 'S', code: 'x'),
+        FriendLink(id: 'L', a: 'me', b: 'v', aNameForB: 'Abhinav Mukesh Pandey', bNameForA: 'S', code: 'x'),
       ],
     );
     data.people = {'rohan desai': 'friend'};
@@ -37,9 +37,9 @@ void main() {
     );
     await tester.tap(find.text('Add a friend\'s part'));
     await tester.pumpAndSettle();
-    expect(find.widgetWithText(FilterChip, 'Vaibhav Chetan Parmar'), findsOneWidget);
+    expect(find.widgetWithText(FilterChip, 'Abhinav Mukesh Pandey'), findsOneWidget);
     expect(find.widgetWithText(FilterChip, 'Rohan Desai'), findsOneWidget);
-    await tester.tap(find.widgetWithText(FilterChip, 'Vaibhav Chetan Parmar'));
+    await tester.tap(find.widgetWithText(FilterChip, 'Abhinav Mukesh Pandey'));
     await tester.tap(find.widgetWithText(FilterChip, 'Rohan Desai'));
     await tester.pumpAndSettle();
     expect(find.text('₹400'), findsNWidgets(2)); // you + 2 friends

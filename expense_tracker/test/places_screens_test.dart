@@ -19,8 +19,8 @@ void main() {
         amount: 800,
         isDebit: true,
         txnAt: now,
-        merchant: 'Vaibhav Chetan Parmar',
-        bankName: 'Chetan V Parmar',
+        merchant: 'Abhinav Mukesh Pandey',
+        bankName: 'Mukesh V Pandey',
       ),
       Txn(id: '5', amount: 30, isDebit: true, txnAt: now, merchant: 'Bhai Pan Stall'),
     ];
@@ -30,7 +30,7 @@ void main() {
     expect(find('patil sanket'), ['Sanket Pramod Patil']); // words in any order
     expect(find('spp'), ['Sanket Pramod Patil']); // initials
     expect(find('htl vjy'), ['Hotel Vijay']); // letters in order
-    expect(find('chetan').first, 'Vaibhav Chetan Parmar'); // also through the bank's other name
+    expect(find('mukesh').first, 'Abhinav Mukesh Pandey'); // also through the bank's other name
     expect(find('7243'), ['Hotel Vijay']); // UPI ID
     expect(find('pan'), contains('Bhai Pan Stall'));
     expect(find('zzz'), isEmpty);

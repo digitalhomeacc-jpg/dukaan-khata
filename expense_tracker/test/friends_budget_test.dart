@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   test('people vs shops', () {
-    for (final n in ['Sanket Pramod Patil', 'Hiteshasva Gupta', 'Yash Bhagwant Gawali', 'Shresth Sharma']) {
+    for (final n in ['Sanket Pramod Patil', 'Hiteshasva Gupta', 'Amol Shrikant Bhosle', 'Shresth Sharma']) {
       expect(looksLikePerson(n), true, reason: n);
     }
     for (final n in [

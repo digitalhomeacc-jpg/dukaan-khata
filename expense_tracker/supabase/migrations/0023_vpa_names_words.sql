@@ -1,4 +1,4 @@
--- A payee written as its UPI ID ("Sindgineelokicici" = sindgineel@okicici, "Vaibhavparmar25okici") takes the
+-- A payee written as its UPI ID ("Sindgineelokicici" = sindgineel@okicici, "Abhinavpandey25okici") takes the
 -- real name the bank gave the same UPI ID elsewhere, when that name's words are in it. No digits needed.
 create or replace function public.fix_vpa_names(p_user uuid)
 returns integer language plpgsql security definer set search_path = public as $$

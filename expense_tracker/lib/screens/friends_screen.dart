@@ -694,6 +694,25 @@ class FriendDetailScreen extends StatelessWidget {
                   style: Theme.of(context).textTheme.headlineMedium
                       ?.copyWith(color: settled ? null : (balance > 0 ? scheme.error : Colors.green.shade700)),
                 ),
+                // Paise left over from a split (₹598 paid of ₹598.14): one tap to call it settled.
+                if (!settled && balance.abs() < 1)
+                  TextButton.icon(
+                    icon: const Icon(Icons.done_all, size: 18),
+                    label: Text('Round off ${money(balance.abs())}: settled'),
+                    onPressed: () async {
+                      final messenger = ScaffoldMessenger.of(context);
+                      try {
+                        if (link != null && me != null) {
+                          await data.proposeOpening(link, DateTime.now(), 0, 'Round off ${money(balance.abs())}');
+                        } else {
+                          await data.correctFriendBalance(person, -balance, 'Round off');
+                        }
+                        messenger.showSnackBar(const SnackBar(content: Text('Rounded off: all settled')));
+                      } catch (e) {
+                        messenger.showSnackBar(SnackBar(content: Text('Not saved: $e')));
+                      }
+                    },
+                  ),
               ],
             ),
           ),

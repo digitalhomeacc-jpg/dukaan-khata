@@ -107,7 +107,7 @@ void main() {
 
   group('one payment split into categories', () {
     final now = DateTime(2026, 11, 14);
-    final t = Txn(id: 'p', amount: 500, isDebit: true, txnAt: now, merchant: 'Saket', categoryId: 'food');
+    final t = Txn(id: 'p', amount: 500, isDebit: true, txnAt: now, merchant: 'Kunal', categoryId: 'food');
     final parts = [const TxnPart(id: 'a', txnId: 'p', categoryId: 'groc', amount: 300)];
 
     test('the total never changes; only how it is divided', () {

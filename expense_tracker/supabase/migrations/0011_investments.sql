@@ -7,7 +7,7 @@ insert into public.categories (user_id, name, icon, color, kind)
 select id, 'Investments', 'savings', 4278228616, 'investment' from auth.users  -- 0xFF009688
 on conflict (user_id, name) do update set kind = 'investment';
 
--- Imported statement names that kept the UPI ID after a dash: "Shreyash Sandeep Shi-7822965946".
+-- Imported statement names that kept the UPI ID after a dash: "Prashant Vinayak Kul-9800000001".
 update public.transactions
    set merchant = btrim(regexp_replace(merchant, '-[^ ]*$', ''))
  where source = 'statement' and merchant ~ '-[^ ]+$' and merchant !~ '^[^ ]+-';

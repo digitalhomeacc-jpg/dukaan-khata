@@ -9,7 +9,7 @@ import 'package:material_ui/material_ui.dart';
 void main() {
   final now = DateTime.now();
   final txns = [
-    for (final (i, who) in const ['Saket', 'Saket', 'Vaibhav', 'Saket'].indexed)
+    for (final (i, who) in const ['Kunal', 'Kunal', 'Abhinav', 'Kunal'].indexed)
       Txn(
         id: 't$i',
         amount: 800,
@@ -21,15 +21,15 @@ void main() {
         method: 'upi',
       ),
     Txn(id: 'c1', amount: 20, isDebit: true, txnAt: now, merchant: 'Chai', categoryId: 'chai'),
-    Txn(id: 'r1', amount: 800, isDebit: false, txnAt: now, merchant: 'Saket'),
+    Txn(id: 'r1', amount: 800, isDebit: false, txnAt: now, merchant: 'Kunal'),
   ];
 
   test('repeat payments are learned: amount, category, usual person and account', () {
     final f = frequentEntries(txns, now: now);
     expect(f, hasLength(1)); // chai only once
     expect((f.single.amount, f.single.count, f.single.categoryId), (800.0, 4, 'thali'));
-    expect(f.single.usualPayee, 'Saket');
-    expect(f.single.payees, ['Saket', 'Vaibhav']);
+    expect(f.single.usualPayee, 'Kunal');
+    expect(f.single.payees, ['Kunal', 'Abhinav']);
     expect(f.single.usualAccountId, 'h');
   });
 
@@ -37,7 +37,7 @@ void main() {
     expect(matchesAmount(txns.first, '800'), isTrue);
     expect(matchesAmount(txns.first, '₹800'), isTrue);
     expect(matchesAmount(txns.first, '80'), isFalse);
-    expect(matchesAmount(txns.first, 'saket'), isFalse);
+    expect(matchesAmount(txns.first, 'kunal'), isFalse);
   });
 
   testWidgets('Add sheet offers the repeat payment; all ₹800 payments at a glance', (tester) async {

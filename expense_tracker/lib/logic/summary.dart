@@ -389,6 +389,105 @@ class LoanBalance {
   bool get settled => balance.abs() < 0.005;
 }
 
+/// One thing that moves the balance with a friend: a Friends-ledger payment, their unpaid share of a bill you paid
+/// ("share"), or a bill they paid for you ("paidBy"). [amount] is signed: positive, you owe them more.
+/// [history]: before your fresh start with them (the opening balance stands in for it).
+class FriendItem {
+  const FriendItem({
+    required this.key,
+    required this.name,
+    required this.at,
+    required this.amount,
+    required this.kind,
+    this.txn,
+    this.share,
+    this.history = false,
+  });
+
+  final String key;
+  final String name;
+  final DateTime at;
+  final double amount;
+  final String kind;
+  final Txn? txn;
+  final TxnShare? share;
+  final bool history;
+}
+
+/// The key a payee name counts under as a friend ("Also known as" names go to the main name).
+String friendKeyOf(String name, Map<String, String> aliases) =>
+    (aliases[name.toLowerCase().replaceAll(RegExp(r'\s+'), ' ').trim()] ?? name.trim()).toLowerCase();
+
+/// Everything that moves a balance with a friend, for everyone. The one source for balances and statements.
+List<FriendItem> friendItems(
+  Iterable<Txn> txns,
+  Set<String> loanCategoryIds, {
+  Iterable<TxnShare> shares = const [],
+  Map<String, String> aliases = const {},
+  Map<String, ({String name, DateTime from, double opening})> starts = const {},
+}) {
+  bool before(String key, DateTime at) {
+    final s = starts[key];
+    return s != null && at.isBefore(s.from);
+  }
+
+  final txnById = {for (final t in txns) t.id: t};
+  String canon(String name) => aliases[name.toLowerCase().replaceAll(RegExp(r'\s+'), ' ').trim()] ?? name.trim();
+  final out = <FriendItem>[];
+  for (final s in shares) {
+    if (s.paid) continue;
+    final person = canon(s.person);
+    final key = person.toLowerCase();
+    final shared = txnById[s.txnId];
+    out.add(
+      FriendItem(
+        key: key,
+        name: person,
+        at: shared?.txnAt ?? DateTime(2000),
+        amount: -s.amount,
+        kind: 'share',
+        txn: shared,
+        share: s,
+        history: shared != null && before(key, shared.txnAt),
+      ),
+    );
+  }
+  for (final t in txns) {
+    if (t.paidBy != null && t.paidBy!.trim().isNotEmpty) {
+      // A friend paid for you: you owe them your share.
+      final person = canon(t.paidBy!);
+      final key = person.toLowerCase();
+      out.add(
+        FriendItem(
+          key: key,
+          name: person,
+          at: t.txnAt,
+          amount: t.amount,
+          kind: 'paidBy',
+          txn: t,
+          history: before(key, t.txnAt),
+        ),
+      );
+      continue;
+    }
+    if (!loanCategoryIds.contains(t.categoryId)) continue;
+    final person = canon(t.title);
+    final key = person.toLowerCase();
+    out.add(
+      FriendItem(
+        key: key,
+        name: person,
+        at: t.txnAt,
+        amount: t.isDebit ? -t.amount : t.amount,
+        kind: 'payment',
+        txn: t,
+        history: before(key, t.txnAt),
+      ),
+    );
+  }
+  return out;
+}
+
 /// Running balance per friend over all loan transactions. Received money is
 /// borrowing (or being repaid); spent money is lending (or repaying).
 /// Unpaid shares of group payments count as money the friend owes you.
@@ -399,62 +498,26 @@ List<LoanBalance> loanBalances(
   Map<String, String> aliases = const {},
   Map<String, ({String name, DateTime from, double opening})> starts = const {},
 }) {
-  // A fresh start: entries before it are history; the opening balance stands in for them.
-  bool before(String key, DateTime at) {
-    final s = starts[key];
-    return s != null && at.isBefore(s.from);
-  }
-
-  final txnById = {for (final t in txns) t.id: t};
-  // "Also known as": a payee name (e.g. a parent's account) counts as that friend.
-  String canon(String name) => aliases[name.toLowerCase().replaceAll(RegExp(r'\s+'), ' ').trim()] ?? name.trim();
-  final byPerson = <String, List<Txn>>{};
   final names = <String, String>{};
-  final owesYou = <String, double>{};
-  for (final s in shares) {
-    if (s.paid) continue;
-    final person = canon(s.person);
-    final key = person.toLowerCase();
-    final shared = txnById[s.txnId];
-    if (shared != null && before(key, shared.txnAt)) continue;
-    names.putIfAbsent(key, () => person);
-    owesYou[key] = (owesYou[key] ?? 0) + s.amount;
-    byPerson.putIfAbsent(key, () => []);
-  }
-  final owedToThem = <String, double>{};
-  for (final t in txns) {
-    if (t.paidBy != null && t.paidBy!.trim().isNotEmpty) {
-      // A friend paid for you: you owe them your share.
-      final person = canon(t.paidBy!);
-      final key = person.toLowerCase();
-      if (before(key, t.txnAt)) continue;
-      names.putIfAbsent(key, () => person);
-      owedToThem[key] = (owedToThem[key] ?? 0) + t.amount;
-      byPerson.putIfAbsent(key, () => []);
-      continue;
-    }
-    if (!loanCategoryIds.contains(t.categoryId)) continue;
-    final person = canon(t.title);
-    final key = person.toLowerCase();
-    if (before(key, t.txnAt)) continue;
-    names.putIfAbsent(key, () => person);
-    byPerson.putIfAbsent(key, () => []).add(t);
+  final sums = <String, double>{};
+  final payments = <String, List<Txn>>{};
+  for (final i in friendItems(txns, loanCategoryIds, shares: shares, aliases: aliases, starts: starts)) {
+    if (i.history) continue;
+    names.putIfAbsent(i.key, () => i.name);
+    sums[i.key] = (sums[i.key] ?? 0) + i.amount;
+    final list = payments.putIfAbsent(i.key, () => []);
+    if (i.kind == 'payment') list.add(i.txn!);
   }
   for (final MapEntry(:key, :value) in starts.entries) {
-    if (value.opening.abs() < 0.005 && !byPerson.containsKey(key)) continue;
+    if (value.opening.abs() < 0.005 && !payments.containsKey(key)) continue;
     names.putIfAbsent(key, () => value.name);
-    byPerson.putIfAbsent(key, () => []);
+    payments.putIfAbsent(key, () => []);
   }
   final out = [
-    for (final e in byPerson.entries)
+    for (final e in payments.entries)
       LoanBalance(
         names[e.key]!,
-        _round(
-          e.value.fold(0.0, (s, t) => s + (t.isDebit ? -t.amount : t.amount)) -
-              (owesYou[e.key] ?? 0) +
-              (owedToThem[e.key] ?? 0) +
-              (starts[e.key]?.opening ?? 0),
-        ),
+        _round((sums[e.key] ?? 0) + (starts[e.key]?.opening ?? 0)),
         e.value..sort((a, b) => b.txnAt.compareTo(a.txnAt)),
       ),
   ];
@@ -464,6 +527,84 @@ List<LoanBalance> loanBalances(
     return b.balance.abs().compareTo(a.balance.abs());
   });
   return out;
+}
+
+/// One line of a friend's statement. [balance] after this line (positive: you owe them); null for history and for
+/// payments that do not count (your own spends with them).
+typedef FriendLine = ({
+  DateTime at,
+  String status, // 'counted', 'history', 'opening', 'notCounted'
+  String kind, // 'payment', 'share', 'paidBy', 'opening', 'spend'
+  double amount, // signed like the balance
+  double? balance,
+  Txn? txn,
+  TxnShare? share,
+});
+
+/// A friend's statement, newest first, built from the same items as their balance: what counts and the running
+/// balance (ending exactly at the balance on their page), the opening balance of a fresh start, older history,
+/// and payments with them that are your own spending (shown, never counted).
+List<FriendLine> friendStatement(
+  String person,
+  Iterable<Txn> txns,
+  Set<String> loanCategoryIds, {
+  Iterable<TxnShare> shares = const [],
+  Map<String, String> aliases = const {},
+  Map<String, ({String name, DateTime from, double opening})> starts = const {},
+}) {
+  final key = friendKeyOf(person, aliases);
+  final start = starts[key] ?? starts[key.replaceAll(RegExp(r'\s+'), ' ')];
+  final items = friendItems(
+    txns,
+    loanCategoryIds,
+    shares: shares,
+    aliases: aliases,
+    starts: starts,
+  ).where((i) => i.key == key).toList();
+  final counted = {for (final i in items) ?i.txn?.id};
+  final lines =
+      <({DateTime at, String status, String kind, double amount, Txn? txn, TxnShare? share, int order})>[
+        for (final i in items)
+          (
+            at: i.at,
+            status: i.history ? 'history' : 'counted',
+            kind: i.kind,
+            amount: i.amount,
+            txn: i.txn,
+            share: i.share,
+            order: 1,
+          ),
+        if (start != null)
+          (at: start.from, status: 'opening', kind: 'opening', amount: start.opening, txn: null, share: null, order: 0),
+        for (final t in txns)
+          if (!counted.contains(t.id) && friendKeyOf(t.title, aliases) == key)
+            (
+              at: t.txnAt,
+              status: 'notCounted',
+              kind: 'spend',
+              amount: t.isDebit ? -t.amount : t.amount,
+              txn: t,
+              share: null,
+              order: 1,
+            ),
+      ]..sort((a, b) {
+        final c = a.at.compareTo(b.at);
+        return c != 0 ? c : a.order.compareTo(b.order);
+      });
+  var balance = 0.0;
+  final out = <FriendLine>[];
+  for (final l in lines) {
+    double? after;
+    if (l.status == 'opening') {
+      balance = l.amount;
+      after = _round(balance);
+    } else if (l.status == 'counted') {
+      balance += l.amount;
+      after = _round(balance);
+    }
+    out.add((at: l.at, status: l.status, kind: l.kind, amount: l.amount, balance: after, txn: l.txn, share: l.share));
+  }
+  return out.reversed.toList();
 }
 
 double _round(double v) => (v * 100).roundToDouble() / 100;
@@ -1022,8 +1163,27 @@ class PayeeGroup {
 String _payeeKey(String s) =>
     s.toLowerCase().replaceAll(RegExp(r'[^a-z0-9 ]'), ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
 
+/// UPI ID endings ("2002@o": the app keeps only the end) that different people share, so they say nothing about
+/// who was paid: 3 or more full names on one ending, or 2 on an ending that is a year (born in 2002). A real UPI ID
+/// has one account holder. Same rule as the database (vpa_is_shared).
+Set<String> sharedVpaTails(Iterable<Txn> txns) {
+  final names = <String, Set<String>>{};
+  for (final t in txns) {
+    final v = t.payeeVpa, m = t.merchant;
+    if (v == null || m == null) continue;
+    final k = m.toLowerCase().replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (!RegExp(r'^[a-z]+ [a-z]').hasMatch(k)) continue;
+    (names[v] ??= {}).add(k);
+  }
+  final year = RegExp(r'^(19[5-9][0-9]|20[0-2][0-9])@');
+  return {
+    for (final MapEntry(:key, :value) in names.entries)
+      if (value.length >= 3 || (value.length >= 2 && year.hasMatch(key))) key,
+  };
+}
+
 /// Other names the bank may use for [person]: payees whose UPI ID carries the person's name
-/// ("vaibhavparmar25@okicici" under "Chetan V Parmar", a parent's account) or that share a UPI ID with them.
+/// ("abhinavpandey25@okicici" under "Mukesh V Pandey", a parent's account) or that share a UPI ID with them.
 List<({String name, int count, double out, double into, String why})> samePersonCandidates(
   Iterable<Txn> txns,
   String person, {
@@ -1034,9 +1194,14 @@ List<({String name, int count, double out, double into, String why})> samePerson
   if (words.length < 2) return const [];
   final key = person.toLowerCase().replaceAll(RegExp(r'\s+'), ' ').trim();
   final vpaRe = RegExp(r'([A-Za-z0-9._\-]{3,})@[A-Za-z]{2,}');
+  final shared = sharedVpaTails(txns);
   final mine = <String>{
     for (final t in txns)
-      if (t.payeeVpa != null && t.merchant != null && sameName(_payeeKey(t.merchant!), key)) t.payeeVpa!,
+      if (t.payeeVpa != null &&
+          !shared.contains(t.payeeVpa) &&
+          t.merchant != null &&
+          sameName(_payeeKey(t.merchant!), key))
+        t.payeeVpa!,
   };
   // Which names, and why.
   final why = <String, String>{};
@@ -1071,7 +1236,7 @@ List<({String name, int count, double out, double into, String why})> samePerson
   return found.values.toList()..sort((a, b) => b.count.compareTo(a.count));
 }
 
-/// Does this payee name mean that person? Statements cut names short ("Vaibhav Chetan Parma").
+/// Does this payee name mean that person? Statements cut names short ("Abhinav Mukesh Pande").
 bool sameName(String payeeKey, String personKey) =>
     payeeKey == personKey ||
     payeeKey.startsWith('$personKey ') ||
@@ -1354,7 +1519,7 @@ class FrequentEntry {
   String? get usualAccountId => _top(_accounts);
   String get usualMethod => _top(_methods) ?? 'upi';
 
-  /// Everyone it went to, most often first ("Saket, Vaibhav").
+  /// Everyone it went to, most often first ("Kunal, Abhinav").
   List<String> get payees =>
       (_payees.entries.toList()..sort((a, b) => b.value.compareTo(a.value))).map((e) => e.key).toList();
 }

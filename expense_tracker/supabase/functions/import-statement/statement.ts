@@ -91,7 +91,7 @@ export function readNarration(n: string): { merchant: string | null; method: Met
   if (w) return { merchant: cleanMerchant(w[1]), method: "upi", rrn, atm: false };
   w = s.match(/^IMPS\s+(?:Debit|Credit|Dr|Cr)\s*-\s*([^-]+)/i);
   if (w) return { merchant: cleanMerchant(w[1]), method: "netbanking", rrn, atm: false };
-  // Name first, then the UPI ID (which may itself contain a dash: "7822965946-2@ybl").
+  // Name first, then the UPI ID (which may itself contain a dash: "9800000001-2@ybl").
   let m = s.match(/^UPI[-\/]([^-]+?)-([^\s]*@[^-\s]+)(?:-|$)/i);
   if (m) return { merchant: cleanMerchant(m[1]), method: "upi", rrn, atm: false };
   m = s.match(/^UPI[-\/]([^-]+)-/i);
@@ -205,7 +205,7 @@ export function readStatement(rows: string[][]): Statement {
 
 /**
  * Federal Bank PDF statement, from its text lines (columns separated by two or more spaces):
- *   "17-NOV-2025  17-NOV-2025  UPI IN/114289461244/tiwari.rnst-  TFR  S71689235  616.00  876.43  Cr"
+ *   "17-NOV-2025  17-NOV-2025  UPI IN/610000000099/kumbhar.rns-  TFR  S70000001  600.00  900.00  Cr"
  *   "2@okhdfcbank/0000"                                  ← the particulars carry on
  * In or out is read from how the balance moved, and every line must agree with it (and the grand total),
  * otherwise [problems] says where and nothing should be imported.
@@ -355,7 +355,7 @@ const BRANDS: [RegExp, string][] = [
 
 /**
  * A payee name from a UPI ID alone (Federal Bank statements have no names): brands by name, shop QR codes as
- * "PhonePe shop ••8806" (each shop stays apart), people as their first name ("siddhant0723@slc" → "Siddhant"),
+ * "PhonePe shop ••8806" (each shop stays apart), people as their first name ("abhijeet0723@slc" → "Abhijeet"),
  * which the app then widens to the full name it knows for that UPI ID.
  */
 export function federalPayee(id: string): string {

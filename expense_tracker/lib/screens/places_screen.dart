@@ -250,6 +250,25 @@ class PlaceDetailScreen extends StatelessWidget {
     final inLedger = friendsCat != null && g.txns.isNotEmpty && g.txns.every((t) => t.categoryId == friendsCat.id);
     final ledger = placeLedger(g.txns, shares: data.shareTotalsNow);
     final person = looksLikePerson(g.name);
+    // A friend not connected: the statement counts exactly what their balance counts (one formula), from the
+    // fresh start's opening balance, with older history and your own spends with them shown but not counted.
+    final friendName = data.aliases[AppData.keyOf(g.name)] ?? g.name;
+    final friendKey = AppData.keyOf(friendName);
+    final asFriend =
+        data.linkFor(friendName) == null &&
+        (data.people[friendKey] == 'friend' ||
+            data.ledgerStarts.containsKey(friendKey) ||
+            data.friendBalances.any((b) => AppData.keyOf(b.person) == friendKey));
+    final statement = asFriend
+        ? friendStatement(
+            friendName,
+            data.transactions,
+            data.loanCategoryIds,
+            shares: data.shares,
+            aliases: data.aliases,
+            starts: data.ledgerStarts,
+          )
+        : const <FriendLine>[];
     final months = g.byMonth.reversed.take(12).toList();
     final maxMonth = months.fold(0.0, (m, e) => e.value > m ? e.value : m);
 
@@ -435,8 +454,8 @@ class PlaceDetailScreen extends StatelessWidget {
                       categoryId: g.categoryId,
                       hint: [
                         'All ${g.txns.length} payments',
-                        if (g.vpas.isNotEmpty)
-                          'and new ones to ${g.vpas.map((v) => '••$v').join(', ')}'
+                        if (g.vpas.difference(sharedVpaTails(data.transactions)) case final own when own.isNotEmpty)
+                          'and new ones to ${own.map((v) => '••$v').join(', ')}'
                         else
                           'and new ones by this name',
                       ].join(' '),
@@ -519,9 +538,13 @@ class PlaceDetailScreen extends StatelessWidget {
                     ),
                   ],
                   const SizedBox(height: 20),
+                  if (asFriend) ...[
+                    FriendStatementHeader(data: data, person: friendName, statement: statement),
+                    const SizedBox(height: 12),
+                  ],
                   Row(
                     children: [
-                      Expanded(child: Text('Ledger', style: text.titleSmall)),
+                      Expanded(child: Text(asFriend ? 'Statement' : 'Ledger', style: text.titleSmall)),
                       SizedBox(
                         width: 74,
                         child: Text(person ? 'You gave' : 'Out', textAlign: TextAlign.end, style: text.labelSmall),
@@ -540,98 +563,287 @@ class PlaceDetailScreen extends StatelessWidget {
                 ],
               ),
             ),
-            SliverList.builder(
-              itemCount: ledger.length,
-              itemBuilder: (context, i) {
-                final l = ledger[i];
-                final newMonth =
-                    i == 0 ||
-                    ledger[i - 1].txn.txnAt.month != l.txn.txnAt.month ||
-                    ledger[i - 1].txn.txnAt.year != l.txn.txnAt.year;
-                final cat = data.category(l.txn.categoryId);
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (newMonth)
-                      Container(
-                        width: double.infinity,
-                        color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                        child: Text(DateFormat('MMMM yyyy').format(l.txn.txnAt), style: text.labelMedium),
-                      ),
-                    Builder(
-                      builder: (context) {
-                        final sel = TxnSelection.maybeOf(context);
-                        final picked = sel?.ids.contains(l.txn.id) ?? false;
-                        return InkWell(
-                          onTap: () => sel?.active == true
-                              ? sel!.toggle(l.txn.id)
-                              : openTxnEditor(context, data, existing: l.txn),
-                          onLongPress: sel == null ? null : () => sel.toggle(l.txn.id),
-                          child: Container(
-                            color: picked ? scheme.primaryContainer.withValues(alpha: 0.4) : null,
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                            child: Row(
-                              children: [
-                                if (sel?.active == true) SelectTick(selected: picked),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(DateFormat('d MMM, h:mm a').format(l.txn.txnAt), style: text.bodyMedium),
-                                      Text(
-                                        [
-                                          cat?.isLoan == true ? 'Friends ledger' : (cat?.name ?? 'No category'),
-                                          if (l.txn.bankName != null) 'as ${l.txn.bankName}',
-                                          if ((l.txn.note ?? '').isNotEmpty) l.txn.note!,
-                                        ].join(' · '),
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: text.bodySmall?.copyWith(
-                                          color: cat == null ? scheme.error : scheme.onSurfaceVariant,
+            if (asFriend)
+              FriendStatementList(data: data, statement: statement)
+            else
+              SliverList.builder(
+                itemCount: ledger.length,
+                itemBuilder: (context, i) {
+                  final l = ledger[i];
+                  final newMonth =
+                      i == 0 ||
+                      ledger[i - 1].txn.txnAt.month != l.txn.txnAt.month ||
+                      ledger[i - 1].txn.txnAt.year != l.txn.txnAt.year;
+                  final cat = data.category(l.txn.categoryId);
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (newMonth)
+                        Container(
+                          width: double.infinity,
+                          color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                          child: Text(DateFormat('MMMM yyyy').format(l.txn.txnAt), style: text.labelMedium),
+                        ),
+                      Builder(
+                        builder: (context) {
+                          final sel = TxnSelection.maybeOf(context);
+                          final picked = sel?.ids.contains(l.txn.id) ?? false;
+                          return InkWell(
+                            onTap: () => sel?.active == true
+                                ? sel!.toggle(l.txn.id)
+                                : openTxnEditor(context, data, existing: l.txn),
+                            onLongPress: sel == null ? null : () => sel.toggle(l.txn.id),
+                            child: Container(
+                              color: picked ? scheme.primaryContainer.withValues(alpha: 0.4) : null,
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                              child: Row(
+                                children: [
+                                  if (sel?.active == true) SelectTick(selected: picked),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(DateFormat('d MMM, h:mm a').format(l.txn.txnAt), style: text.bodyMedium),
+                                        Text(
+                                          [
+                                            cat?.isLoan == true ? 'Friends ledger' : (cat?.name ?? 'No category'),
+                                            if (l.txn.bankName != null) 'as ${l.txn.bankName}',
+                                            if ((l.txn.note ?? '').isNotEmpty) l.txn.note!,
+                                          ].join(' · '),
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: text.bodySmall?.copyWith(
+                                            color: cat == null ? scheme.error : scheme.onSurfaceVariant,
+                                          ),
                                         ),
+                                      ],
+                                    ),
+                                  ),
+                                  SizedBox(
+                                    width: 74,
+                                    child: Text(
+                                      l.out > 0 ? money(l.out) : '',
+                                      textAlign: TextAlign.end,
+                                      style: TextStyle(color: scheme.error, fontWeight: FontWeight.w600),
+                                    ),
+                                  ),
+                                  SizedBox(
+                                    width: 74,
+                                    child: Text(
+                                      l.into > 0 ? money(l.into) : '',
+                                      textAlign: TextAlign.end,
+                                      style: TextStyle(color: Colors.green.shade700, fontWeight: FontWeight.w600),
+                                    ),
+                                  ),
+                                  SizedBox(
+                                    width: 86,
+                                    child: Text(
+                                      '${l.net < 0 ? '−' : ''}${money(l.net.abs())}',
+                                      textAlign: TextAlign.end,
+                                      style: text.bodySmall?.copyWith(
+                                        fontFeatures: const [FontFeature.tabularFigures()],
                                       ),
-                                    ],
+                                    ),
                                   ),
-                                ),
-                                SizedBox(
-                                  width: 74,
-                                  child: Text(
-                                    l.out > 0 ? money(l.out) : '',
-                                    textAlign: TextAlign.end,
-                                    style: TextStyle(color: scheme.error, fontWeight: FontWeight.w600),
-                                  ),
-                                ),
-                                SizedBox(
-                                  width: 74,
-                                  child: Text(
-                                    l.into > 0 ? money(l.into) : '',
-                                    textAlign: TextAlign.end,
-                                    style: TextStyle(color: Colors.green.shade700, fontWeight: FontWeight.w600),
-                                  ),
-                                ),
-                                SizedBox(
-                                  width: 86,
-                                  child: Text(
-                                    '${l.net < 0 ? '−' : ''}${money(l.net.abs())}',
-                                    textAlign: TextAlign.end,
-                                    style: text.bodySmall?.copyWith(fontFeatures: const [FontFeature.tabularFigures()]),
-                                  ),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
-                          ),
-                        );
-                      },
-                    ),
-                  ],
-                );
-              },
-            ),
+                          );
+                        },
+                      ),
+                    ],
+                  );
+                },
+              ),
             const SliverToBoxAdapter(child: SizedBox(height: 40)),
           ],
         ),
       ),
+    );
+  }
+}
+
+/// The balance with a friend in words, as on their page (it is the same number).
+class FriendStatementHeader extends StatelessWidget {
+  const FriendStatementHeader({super.key, required this.data, required this.person, required this.statement});
+
+  final AppData data;
+  final String person;
+  final List<FriendLine> statement;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+    final scheme = Theme.of(context).colorScheme;
+    final now = statement.map((l) => l.balance).nonNulls.firstOrNull ?? 0;
+    final first = person.split(' ').first;
+    final notCounted = statement.where((l) => l.status == 'notCounted' && l.txn?.categoryId == null).length;
+    final opening = statement.where((l) => l.status == 'opening').firstOrNull;
+    return Card.filled(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              now.abs() < 0.005 ? 'All settled with $first' : (now > 0 ? 'You owe $first' : '$first owes you'),
+              style: text.titleSmall,
+            ),
+            Text(
+              money(now.abs()),
+              style: text.headlineSmall?.copyWith(
+                fontWeight: FontWeight.w700,
+                color: now.abs() < 0.005 ? null : (now > 0 ? scheme.error : Colors.green.shade700),
+              ),
+            ),
+            Text(
+              [
+                if (opening != null)
+                  'From your fresh start on ${DateFormat('d MMM yyyy').format(opening.at)} '
+                      '(opening ${opening.amount.abs() < 0.005 ? '₹0' : '${money(opening.amount.abs())} ${opening.amount > 0 ? 'you owed' : 'owed to you'}'})',
+                'Only Friends-ledger payments and shares count; the balance column ends at this number.',
+              ].join('. '),
+              style: text.bodySmall,
+            ),
+            if (notCounted > 0) ...[
+              const SizedBox(height: 6),
+              Text(
+                '$notCounted payment${notCounted == 1 ? '' : 's'} with $first not counted (no category): '
+                'tap one to put it in the Friends ledger if it was money between you.',
+                style: text.bodySmall?.copyWith(color: scheme.error),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A friend's statement: newest first, with the running balance.
+class FriendStatementList extends StatelessWidget {
+  const FriendStatementList({super.key, required this.data, required this.statement});
+
+  final AppData data;
+  final List<FriendLine> statement;
+
+  String _what(FriendLine l) {
+    final t = l.txn;
+    final note = (t?.note ?? '').isEmpty ? null : t!.note;
+    return switch (l.kind) {
+      'opening' => 'Opening balance · fresh start',
+      'share' => ['Their share of ${t?.title ?? 'a bill'} you paid', ?note].join(' · '),
+      'paidBy' => ['${t?.title ?? 'A bill'} · they paid for you', ?note].join(' · '),
+      'spend' => ['${data.category(t?.categoryId)?.name ?? 'No category'} · not counted', ?note].join(' · '),
+      _ => ['Friends ledger', ?note].join(' · '),
+    };
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+    final scheme = Theme.of(context).colorScheme;
+    return SliverList.builder(
+      itemCount: statement.length,
+      itemBuilder: (context, i) {
+        final l = statement[i];
+        final newMonth = i == 0 || statement[i - 1].at.month != l.at.month || statement[i - 1].at.year != l.at.year;
+        final faded = l.status == 'history' || l.status == 'notCounted';
+        final b = l.balance;
+        final row = Opacity(
+          opacity: faded ? 0.6 : 1,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        l.kind == 'opening'
+                            ? DateFormat('d MMM yyyy').format(l.at)
+                            : DateFormat('d MMM, h:mm a').format(l.at),
+                        style: text.bodyMedium,
+                      ),
+                      Text(
+                        l.status == 'history' ? 'History (before fresh start) · ${_what(l)}' : _what(l),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: text.bodySmall?.copyWith(
+                          color: l.kind == 'spend' && l.txn?.categoryId == null
+                              ? scheme.error
+                              : scheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                SizedBox(
+                  width: 74,
+                  child: Text(
+                    l.kind != 'opening' && l.amount < 0 ? money(-l.amount) : '',
+                    textAlign: TextAlign.end,
+                    style: TextStyle(color: scheme.error, fontWeight: FontWeight.w600),
+                  ),
+                ),
+                SizedBox(
+                  width: 74,
+                  child: Text(
+                    l.kind != 'opening' && l.amount > 0 ? money(l.amount) : '',
+                    textAlign: TextAlign.end,
+                    style: TextStyle(color: Colors.green.shade700, fontWeight: FontWeight.w600),
+                  ),
+                ),
+                SizedBox(
+                  width: 86,
+                  child: b == null
+                      ? const SizedBox.shrink()
+                      : Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Text(
+                              money(b.abs()),
+                              style: text.bodyMedium?.copyWith(
+                                fontWeight: FontWeight.w600,
+                                fontFeatures: const [FontFeature.tabularFigures()],
+                              ),
+                            ),
+                            Text(
+                              b.abs() < 0.005 ? 'settled' : (b > 0 ? 'you owe' : 'owes you'),
+                              style: text.labelSmall?.copyWith(
+                                color: b.abs() < 0.005 ? null : (b > 0 ? scheme.error : Colors.green.shade700),
+                              ),
+                            ),
+                          ],
+                        ),
+                ),
+              ],
+            ),
+          ),
+        );
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (newMonth)
+              Container(
+                width: double.infinity,
+                color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                child: Text(DateFormat('MMMM yyyy').format(l.at), style: text.labelMedium),
+              ),
+            if (l.txn == null)
+              row
+            else
+              InkWell(
+                onTap: () => openTxnEditor(context, data, existing: l.txn),
+                child: row,
+              ),
+          ],
+        );
+      },
     );
   }
 }

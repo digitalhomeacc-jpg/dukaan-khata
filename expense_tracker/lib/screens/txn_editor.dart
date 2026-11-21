@@ -107,6 +107,11 @@ class _TxnEditorState extends State<TxnEditor> {
       return;
     }
     setState(() => _busy = true);
+    // Named (or renamed) to someone whose payments always go one way, e.g. a friend in the Friends ledger: this one
+    // goes there too, instead of staying uncounted.
+    if (_categoryId == null && _merchant.text.trim() != (widget.existing?.merchant ?? '').trim()) {
+      _categoryId = widget.data.usualCategoryOf(_merchant.text, except: widget.existing?.id);
+    }
     final txn = Txn(
       id: widget.existing?.id ?? '',
       amount: double.parse(_amount.text.replaceAll(',', '')),
@@ -247,7 +252,8 @@ class _TxnEditorState extends State<TxnEditor> {
                 displayStringForOption: (o) => o.name,
                 onSelected: (o) => setState(() {
                   // A new entry takes the usual category of that name (you can still change it).
-                  if (_isNew && _categoryId == null && o.usualCategoryId != null) _categoryId = o.usualCategoryId;
+                  // A payment with no category yet takes the usual category of that name (you can still change it).
+                  if (_categoryId == null && o.usualCategoryId != null) _categoryId = o.usualCategoryId;
                 }),
                 fieldViewBuilder: (context, ctl, focus, onSubmit) => TextFormField(
                   controller: ctl,
@@ -361,6 +367,19 @@ class _TxnEditorState extends State<TxnEditor> {
                 if (pick != null && mounted) setState(() => _categoryId = pick.id);
               },
             ),
+            if (_categoryId == null)
+              if (widget.data.category(widget.data.usualCategoryOf(_merchant.text, except: widget.existing?.id))
+                  case final usual?)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: ActionChip(
+                    avatar: const Icon(Icons.auto_awesome, size: 18),
+                    label: Text(
+                      'Usually ${usual.isLoan ? 'Friends ledger' : usual.name} for ${_merchant.text.trim().split(' ').first}: use it',
+                    ),
+                    onPressed: () => setState(() => _categoryId = usual.id),
+                  ),
+                ),
             if (_isLoan)
               Padding(
                 padding: const EdgeInsets.only(top: 6),

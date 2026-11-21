@@ -163,7 +163,7 @@ Deno.serve(async (req) => {
   ]);
   const ruleFor = new Map((rules ?? []).map((r) => [r.merchant_key as string, r.category_id as string]));
   const catNamed = new Map((cats ?? []).map((c) => [c.name as string, c.id as string]));
-  // Statement names are cut at ~20 letters ("Shreyash Sandeep Shi"): use the full name from emails.
+  // Statement names are cut at ~20 letters ("Prashant Vinayak Kul"): use the full name from emails.
   const fullNames = [...new Set((known ?? []).map((k) => k.merchant as string))];
   const fullName = (m: string | null): string | null => {
     if (!m || m.length < 12) return m;

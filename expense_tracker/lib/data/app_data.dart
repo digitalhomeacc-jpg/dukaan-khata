@@ -22,6 +22,7 @@ import '../logic/summary.dart'
         samePersonCandidates,
         shareTotals,
         sharedBalance,
+        sharedVpaTails,
         splitEqually;
 import '../models.dart';
 
@@ -259,6 +260,23 @@ class AppData extends ChangeNotifier {
       if (l.active && me != null && l.nameFor(me!).isNotEmpty && canonKey(l.nameFor(me!)) == k) return l;
     }
     return null;
+  }
+
+  /// The category a payee's payments almost always have (at least 2, 4 in 5 of them), by any of their names; null
+  /// if there is no clear habit. [except]: the payment being edited.
+  String? usualCategoryOf(String name, {String? except}) {
+    if (name.trim().isEmpty) return null;
+    final k = canonKey(name);
+    final counts = <String, int>{};
+    var all = 0;
+    for (final t in transactions) {
+      if (t.id == except || t.categoryId == null || canonKey(t.title) != k) continue;
+      all++;
+      counts[t.categoryId!] = (counts[t.categoryId!] ?? 0) + 1;
+    }
+    if (all < 2) return null;
+    final best = (counts.entries.toList()..sort((a, b) => b.value.compareTo(a.value))).first;
+    return best.value * 5 >= all * 4 ? best.key : null;
   }
 
   /// An invite I sent to this friend that is not accepted yet.
@@ -1640,9 +1658,19 @@ class AppData extends ChangeNotifier {
   }) async {
     final ids = [for (final t in txns) t.id];
     _showCategory(ids.toSet(), categoryId);
+    // A UPI ID ending other people share ("2002@o") would sort their payments too: remember the names instead.
+    final shared = sharedVpaTails(transactions);
+    final clean = vpas.difference(shared);
+    final byName = clean.length < vpas.length
+        ? {
+            ...names,
+            for (final t in txns)
+              if (t.merchant != null) keyOf(t.merchant!),
+          }
+        : names;
     await _db.rpc(
       'categorize_place',
-      params: {'p_ids': ids, 'p_vpas': vpas.toList(), 'p_names': names.toList(), 'p_category': categoryId},
+      params: {'p_ids': ids, 'p_vpas': clean.toList(), 'p_names': byName.toList(), 'p_category': categoryId},
     );
   }
 

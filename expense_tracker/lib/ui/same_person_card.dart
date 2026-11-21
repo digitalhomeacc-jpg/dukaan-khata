@@ -4,7 +4,7 @@ import '../data/app_data.dart';
 import '../logic/summary.dart';
 import 'format.dart';
 
-/// "Is Chetan V Parmar also Vaibhav?": the bank shows the name of the account behind a UPI ID, which
+/// "Is Mukesh V Pandey also Abhinav?": the bank shows the name of the account behind a UPI ID, which
 /// can be a parent's. One tap joins them; their payments then count as this person's.
 class SamePersonCard extends StatelessWidget {
   const SamePersonCard({super.key, required this.data, required this.person});

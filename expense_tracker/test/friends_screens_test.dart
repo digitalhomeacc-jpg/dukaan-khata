@@ -72,12 +72,12 @@ void main() {
   test('a friend who only sent money is still found, under a name a statement cut short', () {
     final now = DateTime.now();
     final groups = payeeGroups([
-      Txn(id: 'a', amount: 500, isDebit: false, txnAt: now, merchant: 'Vaibhav Chetan Parma'),
+      Txn(id: 'a', amount: 500, isDebit: false, txnAt: now, merchant: 'Abhinav Mukesh Pande'),
     ], withMoneyInOnly: true);
     expect(groups, hasLength(1));
     expect(groups.single.received, 500);
-    expect(sameName(groups.single.keys.single, 'vaibhav chetan parmar'), isTrue);
-    expect(payeeGroups([Txn(id: 'a', amount: 500, isDebit: false, txnAt: now, merchant: 'Vaibhav C')]), isEmpty);
+    expect(sameName(groups.single.keys.single, 'abhinav mukesh pandey'), isTrue);
+    expect(payeeGroups([Txn(id: 'a', amount: 500, isDebit: false, txnAt: now, merchant: 'Abhinav C')]), isEmpty);
   });
 
   test('a parent\'s account behind a friend\'s UPI ID is suggested as the friend', () {
@@ -88,18 +88,18 @@ void main() {
         amount: 400,
         isDebit: false,
         txnAt: now,
-        merchant: 'Vaibhav Chetan Parma',
-        details: 'UPI-VAIBHAV CHETAN PARMA-VAIBHAVPARMAR25-1@OKAXIS-HDFC0000591-6182',
+        merchant: 'Abhinav Mukesh Pande',
+        details: 'UPI-ABHINAV MUKESH PANDE-ABHINAVPANDEY25-1@OKAXIS-HDFC0000591-6182',
       ),
       Txn(
         id: 'b',
         amount: 800,
         isDebit: true,
         txnAt: now,
-        merchant: 'Chetan V Parmar',
-        details: 'UPI-CHETAN V PARMAR-VAIBHAVPARMAR25@OKICICI-BARB0MALEAS-1079',
+        merchant: 'Mukesh V Pandey',
+        details: 'UPI-MUKESH V PANDEY-ABHINAVPANDEY25@OKICICI-BARB0MALEAS-1079',
       ),
-      Txn(id: 'c', amount: 250, isDebit: true, txnAt: now, merchant: 'Chetan V Parmar', source: 'email'),
+      Txn(id: 'c', amount: 250, isDebit: true, txnAt: now, merchant: 'Mukesh V Pandey', source: 'email'),
       Txn(
         id: 'd',
         amount: 90,
@@ -109,13 +109,13 @@ void main() {
         details: 'UPI-RAMESH KUMAR-RAMESH12@OKSBI-SBIN0-1',
       ),
     ];
-    final c = samePersonCandidates(txns, 'Vaibhav Chetan Parmar');
+    final c = samePersonCandidates(txns, 'Abhinav Mukesh Pandey');
     expect(c, hasLength(1));
-    expect(c.single.name, 'Chetan V Parmar');
+    expect(c.single.name, 'Mukesh V Pandey');
     expect(c.single.count, 2);
     expect(c.single.out, 1050);
-    expect(c.single.why, contains('vaibhavparmar25@okicici'));
-    expect(samePersonCandidates(txns, 'Vaibhav Chetan Parmar', skip: {'chetan v parmar'}), isEmpty);
+    expect(c.single.why, contains('abhinavpandey25@okicici'));
+    expect(samePersonCandidates(txns, 'Abhinav Mukesh Pandey', skip: {'mukesh v pandey'}), isEmpty);
   });
 
   testWidgets('a person you only got money from opens without errors', (tester) async {
@@ -128,29 +128,38 @@ void main() {
           amount: 400,
           isDebit: false,
           txnAt: now,
-          merchant: 'Vaibhav Chetan Parma',
-          details: 'UPI-VAIBHAV CHETAN PARMA-VAIBHAVPARMAR25-1@OKAXIS-HDFC0000591-6182',
+          merchant: 'Abhinav Mukesh Pande',
+          details: 'UPI-ABHINAV MUKESH PANDE-ABHINAVPANDEY25-1@OKAXIS-HDFC0000591-6182',
         ),
         Txn(
           id: 'b',
           amount: 800,
           isDebit: true,
           txnAt: now,
-          merchant: 'Chetan V Parmar',
-          details: 'UPI-CHETAN V PARMAR-VAIBHAVPARMAR25@OKICICI-BARB0MALEAS-1079',
+          merchant: 'Mukesh V Pandey',
+          details: 'UPI-MUKESH V PANDEY-ABHINAVPANDEY25@OKICICI-BARB0MALEAS-1079',
         ),
       ],
     );
-    await pump(tester, PlaceDetailScreen(data: data, keys: const {'vaibhav chetan parma'}));
-    expect(find.text('Also Vaibhav?'), findsOneWidget);
-    expect(find.text('Chetan V Parmar'), findsOneWidget);
+    await pump(tester, PlaceDetailScreen(data: data, keys: const {'abhinav mukesh pande'}));
+    expect(find.text('Also Abhinav?'), findsOneWidget);
+    expect(find.text('Mukesh V Pandey'), findsOneWidget);
     await tester.scrollUntilVisible(find.text('You gave'), 200, scrollable: find.byType(Scrollable).first);
     expect(find.text('You gave'), findsOneWidget);
     await tester.tap(find.byTooltip('Also known as…'));
     await tester.pumpAndSettle();
-    expect(find.text('Vaibhav is also…'), findsOneWidget);
-    expect(find.text('likely Vaibhav', findRichText: true), findsNothing);
-    expect(find.textContaining('likely Vaibhav'), findsOneWidget);
+    expect(find.text('Abhinav is also…'), findsOneWidget);
+    expect(find.text('likely Abhinav', findRichText: true), findsNothing);
+    expect(find.textContaining('likely Abhinav'), findsOneWidget);
+  });
+
+  testWidgets('all payments with a friend: a statement with the same balance as their page', (tester) async {
+    final data = sample();
+    await pump(tester, PlaceDetailScreen(data: data, keys: const {'rahul kumar'}));
+    await tester.scrollUntilVisible(find.text('Statement'), 200, scrollable: find.byType(Scrollable).first);
+    expect(find.text('Rahul owes you'), findsOneWidget);
+    expect(find.text('owes you'), findsOneWidget); // the balance column says which way
+    expect(find.text('Ledger'), findsNothing);
   });
 
   test('a fresh start: older entries stop counting, the opening balance stands in', () {
@@ -161,7 +170,7 @@ void main() {
         amount: 1817,
         isDebit: false,
         txnAt: DateTime(2026, 11, 4),
-        merchant: 'Yash Gawali',
+        merchant: 'Amol Bhosle',
         categoryId: 'fr',
       ),
       Txn(
@@ -169,7 +178,7 @@ void main() {
         amount: 200,
         isDebit: true,
         txnAt: DateTime(2026, 11, 14, 10),
-        merchant: 'Yash Gawali',
+        merchant: 'Amol Bhosle',
         categoryId: 'fr',
       ),
     ];
@@ -178,7 +187,7 @@ void main() {
     final fresh = loanBalances(
       txns,
       {'fr'},
-      starts: {'yash gawali': (name: 'Yash Gawali', from: today, opening: -1264)},
+      starts: {'amol bhosle': (name: 'Amol Bhosle', from: today, opening: -1264)},
     );
     expect(fresh.single.balance, -1464); // owes you 1264, and you sent 200 more
     expect(fresh.single.txns.map((t) => t.id), ['new']);

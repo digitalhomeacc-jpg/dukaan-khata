@@ -33,7 +33,7 @@ test("dates in statement formats", () => {
 test("narrations: payee, method, UPI reference", () => {
   assert.deepEqual(readNarration("UPI-ROHAN DESAI-9600000000@MBK-PPIW0881822-600000000002-UPI"),
     { merchant: "Rohan Desai", method: "upi", rrn: "600000000002", atm: false });
-  assert.equal(readNarration("UPI-SIDDHANT KUMAR -********0723@SLC-HDFC0001792-667092").merchant, "Siddhant Kumar");
+  assert.equal(readNarration("UPI-ABHIJEET KUMAR -********0723@SLC-HDFC0001792-667092").merchant, "Abhijeet Kumar");
   assert.equal(readNarration("ATW-512345XXXXXX1234-S1AW0001-PUNE").atm, true);
   assert.equal(readNarration("NEFT CR-CITI0000001-ACME TECHNOLOGIES PVT LTD-SALARY AUG").merchant, "Acme Technologies");
   assert.equal(readNarration("ACH D- CTRAZORPAY-CAPITALFLOTLLVB").merchant, "Ctrazorpay");
@@ -71,7 +71,7 @@ test("bank charges, reversals, stipend and loan payouts", () => {
 });
 
 test("UPI ID with a dash does not end up in the name", () => {
-  assert.equal(readNarration("UPI-ROHAN DESAI SHI-7822965946-2@YBL-SBIN0011426-600000000011-PAYMENT").merchant, "Rohan Desai Shi");
+  assert.equal(readNarration("UPI-ROHAN DESAI SHI-9800000001-2@YBL-SBIN0011426-600000000011-PAYMENT").merchant, "Rohan Desai Shi");
 });
 
 test("payee UPI ID kept in short form", () => {

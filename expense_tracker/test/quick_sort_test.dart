@@ -15,7 +15,7 @@ void main() {
         amount: 100.0 + i,
         isDebit: true,
         txnAt: now.subtract(Duration(days: i)),
-        merchant: 'Siddhant Joshi',
+        merchant: 'Abhijeet Joshi',
       ),
     Txn(id: 'd', amount: 700, isDebit: true, txnAt: now, merchant: 'Dadasaheb Khad'),
     Txn(id: 'f', amount: 50, isDebit: true, txnAt: now, merchant: 'Chai', categoryId: 'food'),
@@ -23,7 +23,7 @@ void main() {
 
   test('unsorted payments grouped by payee, biggest group first', () {
     final u = unsortedByPayee(txns, const {});
-    expect(u.map((g) => g.name).toList(), ['Siddhant Joshi', 'Dadasaheb Khad']);
+    expect(u.map((g) => g.name).toList(), ['Abhijeet Joshi', 'Dadasaheb Khad']);
     expect(u.first.txns.length, 3);
     expect(u.first.total, 303);
   });
@@ -41,7 +41,7 @@ void main() {
     );
     await tester.pumpWidget(MaterialApp(home: QuickSortScreen(data: data)));
     await tester.pumpAndSettle();
-    expect(find.text('Siddhant Joshi'), findsOneWidget);
+    expect(find.text('Abhijeet Joshi'), findsOneWidget);
     expect(find.text('All 3 at once'), findsOneWidget);
     expect(find.text('Friends ledger'), findsOneWidget);
     expect(find.text('Shop / service'), findsOneWidget);

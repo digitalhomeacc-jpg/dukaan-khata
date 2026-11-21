@@ -1,4 +1,4 @@
--- 1. A payee shown as its UPI ID ("Vaibhavparmar25okici") gets the name the bank gave the same UPI ID elsewhere.
+-- 1. A payee shown as its UPI ID ("Abhinavpandey25okici") gets the name the bank gave the same UPI ID elsewhere.
 create or replace function public.fix_vpa_names(p_user uuid)
 returns integer language plpgsql security definer set search_path = public as $$
 declare n integer;
