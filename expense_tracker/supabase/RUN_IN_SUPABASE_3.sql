@@ -134,6 +134,17 @@ returns boolean language sql immutable as $$
       or (a like '% %' and b like a || ' %') or (b like '% %' and a like b || ' %')
 $$;
 
+-- A UPI ID ending several people share (e.g. a birth year) says nothing about who was paid (see 0048).
+create or replace function public.vpa_is_shared(p_user uuid, p_vpa text)
+returns boolean language sql stable security definer set search_path = public as $$
+  with names as (
+    select distinct merchant_key from public.transactions
+     where user_id = p_user and payee_vpa = p_vpa and merchant_key ~ '^[a-z]+ [a-z]'
+  )
+  select p_vpa is not null and ((select count(*) from names) >= 3
+         or ((select count(*) from names) >= 2 and p_vpa ~ '^(19[5-9][0-9]|20[0-2][0-9])@'))
+$$;
+
 create or replace function public.payee_category(p_user uuid, p_key text, p_vpa text, p_except uuid default null)
 returns uuid language plpgsql stable security definer set search_path = public as $$
 declare c uuid; n integer;
@@ -144,7 +155,7 @@ begin
   select count(distinct category_id), min(category_id::text)::uuid into n, c from public.merchant_rules
    where user_id = p_user and public.same_payee(merchant_key, p_key);
   if n = 1 then return c; end if;
-  if p_vpa is not null then
+  if p_vpa is not null and not public.vpa_is_shared(p_user, p_vpa) then
     select category_id into c from public.vpa_rules where user_id = p_user and vpa = p_vpa;
     if c is not null then return c; end if;
   end if;
