@@ -229,6 +229,93 @@ void main() {
     expect(find.text('Save'), findsOneWidget);
   });
 
+  test('in my bank? same money, the right way, a week either side, this friend first', () {
+    final at = DateTime(2026, 11, 15, 12);
+    final e = SharedEntry(
+      id: 'x',
+      linkId: 'L',
+      creditor: me,
+      debtor: ravi,
+      amount: 125,
+      kind: 'payment',
+      at: at,
+      createdBy: ravi,
+      debtorTxn: 'his',
+    );
+    Txn t(String id, double a, int dayOff, {bool debit = true, String m = 'Someone', String? loanRole}) => Txn(
+      id: id,
+      amount: a,
+      isDebit: debit,
+      txnAt: at.add(Duration(days: dayOff)),
+      merchant: m,
+      loanRole: loanRole,
+    );
+    final txns = [
+      t('near', 125, 1),
+      t('friend', 125, -3, m: 'Ravi Kumar'),
+      t('far', 125, 20),
+      t('in', 125, 0, debit: false),
+      t('other', 120, 0),
+      t('loan', 125, 0, loanRole: 'repay'),
+    ];
+    bool friend(Txn x) => x.merchant == 'Ravi Kumar';
+    expect(bankMatchesFor(e, me, txns, [e], isFriend: friend).map((x) => x.id), ['friend', 'near']);
+    expect(bankMatchesFor(e, me, txns, [e], isFriend: friend, anyDate: true).map((x) => x.id), [
+      'friend',
+      'near',
+      'far',
+    ]);
+    // Already one both banks agree on: not offered again.
+    final done = SharedEntry(
+      id: 'y',
+      linkId: 'L',
+      creditor: me,
+      debtor: ravi,
+      amount: 125,
+      kind: 'payment',
+      at: at,
+      createdBy: me,
+      creditorTxn: 'near',
+      debtorTxn: 'his2',
+    );
+    expect(bankMatchesFor(e, me, txns, [e, done], isFriend: friend).map((x) => x.id), ['friend']);
+  });
+
+  testWidgets('an entry from their bank: "Is it in your bank?" with the payment to pick', (tester) async {
+    final d = sample();
+    final now = DateTime.now();
+    final e = SharedEntry(
+      id: 'x',
+      linkId: 'L',
+      creditor: me,
+      debtor: ravi,
+      amount: 125,
+      kind: 'payment',
+      at: now,
+      createdBy: ravi,
+      debtorTxn: 'his',
+    );
+    d.transactions = [
+      ...d.transactions,
+      Txn(id: 'mine', amount: 125, isDebit: true, txnAt: now, merchant: '9800000000@ibl', source: 'email'),
+    ];
+    await pump(
+      tester,
+      Scaffold(
+        body: Builder(
+          builder: (c) => TextButton(onPressed: () => openSharedEntry(c, d, e, 'Ravi Kumar'), child: const Text('go')),
+        ),
+      ),
+    );
+    await tester.tap(find.text('go'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining("From Ravi's bank"), findsOneWidget);
+    expect(find.text('Is it in your bank?'), findsOneWidget);
+    expect(find.text('9800000000@ibl'), findsOneWidget);
+    expect(find.text('This one'), findsOneWidget);
+    expect(find.text('Change this entry'), findsOneWidget);
+  });
+
   test('answering "same payment?" removes the card at once; if saving fails it comes back', () async {
     final d = sample();
     expect(d.questions, hasLength(1));

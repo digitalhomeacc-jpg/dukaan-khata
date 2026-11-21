@@ -1419,96 +1419,208 @@ Future<void> openSharedEntry(BuildContext context, AppData data, SharedEntry e, 
   var iPaid = e.creditor == me;
   var at = e.at;
   String? error;
+  var all = false;
+  var linking = false;
   final messenger = ScaffoldMessenger.of(context);
+  final theirs = (e.creditor == me ? e.debtorTxn : e.creditorTxn) != null;
+  final canLink = e.kind != 'expense';
+  bool isFriend(Txn t) => data.canonKey(t.title) == data.canonKey(person);
+  final paidText = e.kind == 'expense'
+      ? (e.creditor == me ? '$first\'s share of a bill you paid' : 'Your share of a bill $first paid')
+      : (e.creditor == me ? 'You paid $first' : '$first paid you');
+  final source = theirs
+      ? 'From $first\'s bank · not linked to yours yet'
+      : (e.createdBy == me ? 'Added by you' : 'Added by $first');
   await showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
     useSafeArea: true,
     builder: (c) => StatefulBuilder(
-      builder: (c, setState) => Padding(
-        padding: EdgeInsets.fromLTRB(16, 0, 16, 16 + MediaQuery.viewInsetsOf(c).bottom),
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text('Entry with $first', style: Theme.of(c).textTheme.titleLarge),
-              Text(
-                e.kind == 'expense' ? 'A shared expense' : 'Money between you',
-                style: Theme.of(c).textTheme.bodySmall,
+      builder: (c, setState) {
+        final text = Theme.of(c).textTheme;
+        final scheme = Theme.of(c).colorScheme;
+        final matches = canLink
+            ? bankMatchesFor(e, me, data.transactions, data.sharedEntries, isFriend: isFriend, anyDate: all)
+            : const <Txn>[];
+        final shown = matches.take(all ? 30 : 3).toList();
+
+        Widget editFields() => Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SegmentedButton<bool>(
+              showSelectedIcon: false,
+              segments: [
+                const ButtonSegment(value: true, label: Text('I paid')),
+                ButtonSegment(value: false, label: Text('$first paid')),
+              ],
+              selected: {iPaid},
+              onSelectionChanged: (v) => setState(() => iPaid = v.first),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: amount,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))],
+              style: text.headlineSmall,
+              decoration: InputDecoration(
+                labelText: e.kind == 'expense' ? (iPaid ? '$first\'s part' : 'Your part') : 'Amount',
+                prefixText: '₹ ',
               ),
-              const SizedBox(height: 12),
-              SegmentedButton<bool>(
-                showSelectedIcon: false,
-                segments: [
-                  const ButtonSegment(value: true, label: Text('I paid')),
-                  ButtonSegment(value: false, label: Text('$first paid')),
-                ],
-                selected: {iPaid},
-                onSelectionChanged: (v) => setState(() => iPaid = v.first),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: amount,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))],
-                style: Theme.of(c).textTheme.headlineSmall,
-                decoration: InputDecoration(
-                  labelText: e.kind == 'expense' ? (iPaid ? '$first\'s part' : 'Your part') : 'Amount',
-                  prefixText: '₹ ',
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: what,
+              textCapitalization: TextCapitalization.sentences,
+              decoration: const InputDecoration(labelText: 'What for'),
+            ),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.event_outlined),
+              title: Text(dayLabel(at)),
+              onTap: () async {
+                final d = await showDatePicker(
+                  context: c,
+                  initialDate: at,
+                  firstDate: DateTime(2015),
+                  lastDate: DateTime.now().add(const Duration(days: 1)),
+                );
+                if (d != null) setState(() => at = DateTime(d.year, d.month, d.day, at.hour, at.minute));
+              },
+            ),
+            Row(
+              children: [
+                TextButton(
+                  onPressed: () async {
+                    Navigator.pop(c);
+                    await removeSharedEntry(context, data, e, person);
+                  },
+                  child: const Text('Remove'),
                 ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: what,
-                textCapitalization: TextCapitalization.sentences,
-                decoration: const InputDecoration(labelText: 'What for'),
-              ),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.event_outlined),
-                title: Text(dayLabel(at)),
-                onTap: () async {
-                  final d = await showDatePicker(
-                    context: c,
-                    initialDate: at,
-                    firstDate: DateTime(2015),
-                    lastDate: DateTime.now().add(const Duration(days: 1)),
-                  );
-                  if (d != null) setState(() => at = DateTime(d.year, d.month, d.day, at.hour, at.minute));
-                },
-              ),
-              if (error != null) Text(error!, style: TextStyle(color: Theme.of(c).colorScheme.error)),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  TextButton(
-                    onPressed: () async {
-                      Navigator.pop(c);
-                      await removeSharedEntry(context, data, e, person);
-                    },
-                    child: const Text('Remove'),
-                  ),
-                  const Spacer(),
-                  FilledButton(
-                    onPressed: () async {
-                      final v = double.tryParse(amount.text.replaceAll(',', ''));
-                      if (v == null || v <= 0) return setState(() => error = 'Enter the amount');
-                      try {
-                        await data.editSharedEntry(e, amount: v, description: what.text, at: at, iPaid: iPaid);
-                        if (c.mounted) Navigator.pop(c);
-                        messenger.showSnackBar(SnackBar(content: Text('Saved for you and $first')));
-                      } catch (err) {
-                        setState(() => error = 'Not saved: $err');
-                      }
-                    },
-                    child: const Text('Save'),
+                const Spacer(),
+                FilledButton(
+                  onPressed: () async {
+                    final v = double.tryParse(amount.text.replaceAll(',', ''));
+                    if (v == null || v <= 0) return setState(() => error = 'Enter the amount');
+                    try {
+                      await data.editSharedEntry(e, amount: v, description: what.text, at: at, iPaid: iPaid);
+                      if (c.mounted) Navigator.pop(c);
+                      messenger.showSnackBar(SnackBar(content: Text('Saved for you and $first')));
+                    } catch (err) {
+                      setState(() => error = 'Not saved: $err');
+                    }
+                  },
+                  child: const Text('Save'),
+                ),
+              ],
+            ),
+          ],
+        );
+
+        return Padding(
+          padding: EdgeInsets.fromLTRB(16, 0, 16, 16 + MediaQuery.viewInsetsOf(c).bottom),
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text('Entry with $first', style: text.labelLarge?.copyWith(color: scheme.primary)),
+                const SizedBox(height: 4),
+                Text(money(e.amount), style: text.headlineMedium?.copyWith(fontWeight: FontWeight.w700)),
+                Text('$paidText · ${dayLabel(e.at)}', style: text.bodyLarge),
+                if ((e.description ?? '').isNotEmpty) Text(e.description!, style: text.bodyMedium),
+                const SizedBox(height: 2),
+                Text(source, style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
+                if (error != null) ...[const SizedBox(height: 8), Text(error!, style: TextStyle(color: scheme.error))],
+                if (canLink) ...[
+                  const SizedBox(height: 16),
+                  Card.filled(
+                    margin: EdgeInsets.zero,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 14, 8, 8),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Is it in your bank?', style: text.titleMedium),
+                          Text(
+                            'Pick your payment: it goes to your Friends ledger and counts once for both of you.',
+                            style: text.bodySmall,
+                          ),
+                          const SizedBox(height: 4),
+                          for (final t in shown)
+                            ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              title: Text(t.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+                              subtitle: Text(
+                                [
+                                  dayLabel(t.txnAt),
+                                  ?data.account(t.accountId)?.name,
+                                  data.category(t.categoryId)?.name ?? 'Not sorted',
+                                ].join(' · '),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              trailing: FilledButton.tonal(
+                                onPressed: linking
+                                    ? null
+                                    : () async {
+                                        setState(() {
+                                          linking = true;
+                                          error = null;
+                                        });
+                                        try {
+                                          await data.linkSharedToTxn(e, t);
+                                          if (c.mounted) Navigator.pop(c);
+                                          messenger.showSnackBar(
+                                            const SnackBar(content: Text('Linked to your bank payment · in Friends')),
+                                          );
+                                        } catch (err) {
+                                          setState(() {
+                                            linking = false;
+                                            error = 'Not linked: ${'$err'.replaceFirst('Bad state: ', '')}';
+                                          });
+                                        }
+                                      },
+                                child: const Text('This one'),
+                              ),
+                            ),
+                          if (shown.isEmpty)
+                            Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 8),
+                              child: Text(
+                                all
+                                    ? 'No ${money(e.amount)} ${e.creditor == me ? 'payment out' : 'money in'} in your bank. '
+                                          'If the amount is different, change it below first.'
+                                    : 'No ${money(e.amount)} ${e.creditor == me ? 'payment out' : 'money in'} '
+                                          'within a week of ${dayLabel(e.at)}.',
+                                style: text.bodyMedium,
+                              ),
+                            ),
+                          if (!all)
+                            TextButton(
+                              onPressed: () => setState(() => all = true),
+                              child: Text('Show every ${money(e.amount)} payment'),
+                            ),
+                        ],
+                      ),
+                    ),
                   ),
                 ],
-              ),
-            ],
+                const SizedBox(height: 8),
+                Theme(
+                  data: Theme.of(c).copyWith(dividerColor: Colors.transparent),
+                  child: ExpansionTile(
+                    tilePadding: EdgeInsets.zero,
+                    childrenPadding: EdgeInsets.zero,
+                    initiallyExpanded: !canLink || !theirs,
+                    title: const Text('Change this entry'),
+                    subtitle: Text('Amount, who paid, date · for both of you', style: text.bodySmall),
+                    children: [editFields()],
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
     ),
   );
 }

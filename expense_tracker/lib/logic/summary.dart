@@ -1568,3 +1568,45 @@ List<LoanEvent> loanEventsWithPayments(List<LoanEvent> stored, Iterable<Txn> txn
   }
   return out;
 }
+
+// ------------------------------------------------------- shared entry in my bank
+
+/// Your bank payments that could be shared entry [e]: the same money, the right way round (you paid: money out),
+/// not a loan, not left out, and not already one both banks agree on. Payments to this friend first, then the
+/// nearest in time. Within a week of the entry, or at any date with [anyDate].
+List<Txn> bankMatchesFor(
+  SharedEntry e,
+  String me,
+  List<Txn> txns,
+  List<SharedEntry> entries, {
+  bool Function(Txn t)? isFriend,
+  bool anyDate = false,
+}) {
+  if (e.kind == 'expense') return const [];
+  final iPaid = e.creditor == me;
+  final agreed = <String>{
+    for (final x in entries)
+      if (!x.gone && x.id != e.id && (x.kind == 'expense' || (x.creditorTxn != null && x.debtorTxn != null))) ...[
+        if (x.creditorTxn != null) x.creditorTxn!,
+        if (x.debtorTxn != null) x.debtorTxn!,
+      ],
+  };
+  final out = [
+    for (final t in txns)
+      if (t.isDebit == iPaid &&
+          (t.amount - e.amount).abs() < 0.005 &&
+          !t.excluded &&
+          t.loanRole == null &&
+          t.paidBy == null &&
+          !agreed.contains(t.id) &&
+          (anyDate || t.txnAt.difference(e.at).inHours.abs() <= 7 * 24))
+        t,
+  ];
+  int friendFirst(Txn t) => isFriend != null && isFriend(t) ? 0 : 1;
+  out.sort((a, b) {
+    final f = friendFirst(a).compareTo(friendFirst(b));
+    if (f != 0) return f;
+    return a.txnAt.difference(e.at).abs().compareTo(b.txnAt.difference(e.at).abs());
+  });
+  return out;
+}

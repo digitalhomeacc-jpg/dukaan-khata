@@ -1414,6 +1414,23 @@ class AppData extends ChangeNotifier {
     await _reloadFriendsData();
   }
 
+  /// "This is in my bank": links a shared entry your friend's bank made to your own payment [t]. The payment goes
+  /// to your Friends ledger, and nothing counts twice.
+  Future<void> linkSharedToTxn(SharedEntry e, Txn t) async {
+    try {
+      final ok = await _db.rpc('link_shared_txn', params: {'p_entry': e.id, 'p_txn': t.id});
+      if (ok != true) throw StateError('not linked, please try again');
+    } on PostgrestException catch (err) {
+      if (err.code == 'PGRST202' || err.message.contains('link_shared_txn')) {
+        throw StateError('The database needs RUN_IN_SUPABASE_4.sql first (Supabase → SQL Editor).');
+      }
+      throw StateError(err.message);
+    }
+    final row = await _db.from('transactions').select().eq('id', t.id).maybeSingle();
+    if (row != null) _showNow(row);
+    await _reloadFriendsData();
+  }
+
   Future<void> answerShared(String id, {required bool ok}) async {
     if (!_answering.add(id)) return; // a second tap while saving
     notifyListeners();
