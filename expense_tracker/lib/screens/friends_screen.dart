@@ -6,6 +6,7 @@ import '../data/app_data.dart';
 import '../logic/summary.dart';
 import '../models.dart';
 import '../ui/format.dart';
+import '../ui/opening_difference.dart';
 import '../ui/same_person_card.dart';
 import 'groups_screen.dart';
 import 'tools_screens.dart' show upiPayLink;
@@ -948,11 +949,26 @@ class FriendDetailScreen extends StatelessWidget {
             const Divider(),
             ListTile(
               leading: const Icon(Icons.flag_outlined),
-              title: Text('Opening balance · ${dayLabel(start.from)}'),
-              subtitle: Text(
-                start.opening.abs() < 0.005
-                    ? 'Everything before was settled'
-                    : (start.opening > 0 ? 'You owed $person' : '$person owed you'),
+              title: Text('Opening balance · ${momentLabel(start.from)}'),
+              subtitle: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    start.opening.abs() < 0.005
+                        ? 'Everything before was settled'
+                        : (start.opening > 0 ? 'You owed $person' : '$person owed you'),
+                  ),
+                  if (friendHistoryTotal(
+                        person,
+                        data.transactions,
+                        data.loanCategoryIds,
+                        shares: data.shares,
+                        aliases: data.aliases,
+                        starts: data.ledgerStarts,
+                      )
+                      case final h?)
+                    OpeningDifference(history: h, opening: start.opening, person: person),
+                ],
               ),
               trailing: Text(
                 start.opening.abs() < 0.005 ? '₹0' : money(start.opening.abs()),
@@ -962,7 +978,7 @@ class FriendDetailScreen extends StatelessWidget {
             if (history.isNotEmpty)
               ExpansionTile(
                 leading: const Icon(Icons.history),
-                title: Text('History before ${dayLabel(start.from)}'),
+                title: Text('History before ${momentLabel(start.from)}'),
                 subtitle: Text('${history.length} entries · not counted'),
                 children: [
                   for (final t in history)
@@ -1389,8 +1405,14 @@ class _OpeningCard extends StatelessWidget {
             Text('Opening balance', style: text.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
             if (agreed != null)
               Text(
-                'End of ${dayLabel(agreed.asOf)}: ${_owed(agreed)}, set by ${agreed.createdBy == me ? 'you' : person.split(' ').first}. Only entries after it count; '
+                '${agreed.at == null ? 'End of ${dayLabel(agreed.asOf)}' : momentLabel(agreed.at!)}: ${_owed(agreed)}, set by ${agreed.createdBy == me ? 'you' : person.split(' ').first}. Only entries after it count; '
                 'earlier ones are history.',
+              ),
+            if (agreed != null)
+              OpeningDifference(
+                history: sharedHistoryTotal(data.sharedEntries, link.id, me, agreed),
+                opening: agreed.signedFor(me),
+                person: person,
               ),
             if (pending != null) ...[
               const SizedBox(height: 6),

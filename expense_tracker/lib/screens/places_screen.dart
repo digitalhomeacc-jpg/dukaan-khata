@@ -6,6 +6,7 @@ import '../logic/summary.dart';
 import '../ui/category_picker.dart';
 import '../ui/category_style.dart';
 import '../ui/format.dart';
+import '../ui/opening_difference.dart';
 import '../ui/same_person_card.dart';
 import '../ui/selection.dart';
 import 'friends_screen.dart';
@@ -701,12 +702,23 @@ class FriendStatementHeader extends StatelessWidget {
             Text(
               [
                 if (opening != null)
-                  'From your fresh start on ${DateFormat('d MMM yyyy').format(opening.at)} '
+                  'From your opening balance on ${momentLabel(opening.at)} '
                       '(opening ${opening.amount.abs() < 0.005 ? '₹0' : '${money(opening.amount.abs())} ${opening.amount > 0 ? 'you owed' : 'owed to you'}'})',
                 'Only Friends-ledger payments and shares count; the balance column ends at this number.',
               ].join('. '),
               style: text.bodySmall,
             ),
+            if (opening != null)
+              if (friendHistoryTotal(
+                    person,
+                    data.transactions,
+                    data.loanCategoryIds,
+                    shares: data.shares,
+                    aliases: data.aliases,
+                    starts: data.ledgerStarts,
+                  )
+                  case final h?)
+                OpeningDifference(history: h, opening: opening.amount, person: person),
             if (notCounted > 0) ...[
               const SizedBox(height: 6),
               Text(
@@ -763,9 +775,7 @@ class FriendStatementList extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        l.kind == 'opening'
-                            ? DateFormat('d MMM yyyy').format(l.at)
-                            : DateFormat('d MMM, h:mm a').format(l.at),
+                        l.kind == 'opening' ? momentLabel(l.at) : DateFormat('d MMM, h:mm a').format(l.at),
                         style: text.bodyMedium,
                       ),
                       Text(

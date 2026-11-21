@@ -1082,8 +1082,7 @@ double sharedBalance(Iterable<SharedEntry> entries, String linkId, String me, {F
 
 /// Dated on or before the opening balance's day: history only.
 bool beforeOpening(SharedEntry e, FriendOpening o) {
-  final d = DateTime(e.at.year, e.at.month, e.at.day);
-  return !d.isAfter(DateTime(o.asOf.year, o.asOf.month, o.asOf.day));
+  return !e.at.isAfter(o.cutoff);
 }
 
 // --------------------------------------------------------------------- places
@@ -1775,3 +1774,29 @@ List<Txn> bankMatchesFor(
   });
   return out;
 }
+
+/// What your history with a friend adds up to at a fresh start (positive: you owed them): to compare with the
+/// opening balance you set. Null without a fresh start. Changing an old entry changes this, never the opening.
+double? friendHistoryTotal(
+  String person,
+  Iterable<Txn> txns,
+  Set<String> loanCategoryIds, {
+  Iterable<TxnShare> shares = const [],
+  Map<String, String> aliases = const {},
+  Map<String, ({String name, DateTime from, double opening})> starts = const {},
+}) {
+  final key = friendKeyOf(person, aliases);
+  if (!starts.containsKey(key)) return null;
+  final items = friendItems(txns, loanCategoryIds, shares: shares, aliases: aliases, starts: starts);
+  return _round(items.where((i) => i.key == key && i.history).fold(0.0, (v, i) => v + i.amount));
+}
+
+/// The same for a connected friend: the shared entries up to the opening balance.
+double sharedHistoryTotal(List<SharedEntry> entries, String linkId, String me, FriendOpening opening) => sharedBalance(
+  [
+    for (final e in entries)
+      if (beforeOpening(e, opening)) e,
+  ],
+  linkId,
+  me,
+);

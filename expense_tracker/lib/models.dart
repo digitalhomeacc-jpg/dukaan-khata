@@ -786,11 +786,18 @@ class FriendOpening {
     this.confirmedAt,
     this.deletedAt,
     this.rejectedBy,
+    this.at,
   });
 
   final String id;
   final String linkId;
   final DateTime asOf;
+
+  /// The exact moment it was set for; older openings have only a day ([asOf], to its end).
+  final DateTime? at;
+
+  /// Entries up to this moment are history; later ones count on top of the opening.
+  DateTime get cutoff => at ?? DateTime(asOf.year, asOf.month, asOf.day + 1).subtract(const Duration(microseconds: 1));
   final String? owedBy;
   final double amount;
   final String? note;
@@ -810,6 +817,7 @@ class FriendOpening {
     id: m['id'] as String,
     linkId: m['link_id'] as String,
     asOf: DateTime.parse(m['as_of'] as String),
+    at: m['at'] == null ? null : DateTime.parse(m['at'] as String).toLocal(),
     owedBy: m['owed_by'] as String?,
     amount: _num(m['amount']),
     note: m['note'] as String?,

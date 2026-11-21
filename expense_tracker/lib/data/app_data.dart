@@ -129,7 +129,10 @@ class AppData extends ChangeNotifier {
             if (r['ledger_from'] != null)
               r['name_key'] as String: (
                 name: r['name'] as String,
-                from: DateTime.parse(r['ledger_from'] as String),
+                // The exact moment you set it; older ones have only the day (from its start).
+                from: r['ledger_at'] != null
+                    ? DateTime.parse(r['ledger_at'] as String).toLocal()
+                    : DateTime.parse(r['ledger_from'] as String),
                 opening: double.tryParse('${r['opening'] ?? 0}') ?? 0,
               ),
         };
@@ -221,23 +224,32 @@ class AppData extends ChangeNotifier {
 
   /// Starts [names] fresh from [from]: older entries become history. [opening] by name key (positive: you owe).
   Future<void> startFresh(Map<String, String> names, DateTime from, {Map<String, double> opening = const {}}) async {
-    final day = DateTime(from.year, from.month, from.day);
+    // The opening stands for everything up to this exact moment (not the whole day): payments earlier that day are
+    // history, later ones count on top.
     ledgerStarts = {
       ...ledgerStarts,
-      for (final MapEntry(:key, :value) in names.entries) key: (name: value, from: day, opening: opening[key] ?? 0),
+      for (final MapEntry(:key, :value) in names.entries) key: (name: value, from: from, opening: opening[key] ?? 0),
     };
     notifyListeners();
-    final d = '${day.year}-${day.month.toString().padLeft(2, '0')}-${day.day.toString().padLeft(2, '0')}';
-    await _db.from('people').upsert([
+    final d = '${from.year}-${from.month.toString().padLeft(2, '0')}-${from.day.toString().padLeft(2, '0')}';
+    List<Map<String, dynamic>> rows({required bool exact}) => [
       for (final MapEntry(:key, :value) in names.entries)
         {
           'name_key': key,
           'name': value,
           'role': people[key] ?? 'friend',
           'ledger_from': d,
+          if (exact) 'ledger_at': from.toUtc().toIso8601String(),
           'opening': opening[key] ?? 0,
         },
-    ], onConflict: 'user_id,name_key');
+    ];
+    try {
+      await _db.from('people').upsert(rows(exact: true), onConflict: 'user_id,name_key');
+    } on PostgrestException catch (e) {
+      // Before RUN_IN_SUPABASE_5.sql the database keeps only the day.
+      if (!e.message.contains('ledger_at')) rethrow;
+      await _db.from('people').upsert(rows(exact: false), onConflict: 'user_id,name_key');
+    }
   }
 
   /// How each person's name is written, by name key.
@@ -305,7 +317,7 @@ class AppData extends ChangeNotifier {
       try {
         await proposeOpening(
           l,
-          start.from.subtract(const Duration(days: 1)),
+          start.from.subtract(const Duration(microseconds: 1)),
           start.opening,
           'From your fresh start before connecting',
         );
@@ -1254,7 +1266,7 @@ class AppData extends ChangeNotifier {
   FriendOpening? openingFor(String linkId) {
     final agreed = openings.where((o) => o.linkId == linkId && o.agreed).toList()
       ..sort((a, b) {
-        final c = b.asOf.compareTo(a.asOf);
+        final c = b.cutoff.compareTo(a.cutoff);
         return c != 0 ? c : b.confirmedAt!.compareTo(a.confirmedAt!);
       });
     return agreed.firstOrNull;
@@ -1274,6 +1286,22 @@ class AppData extends ChangeNotifier {
   Future<void> proposeOpening(FriendLink link, DateTime asOf, double owed, String note) async {
     final friendId = link.a == me ? link.b! : link.a;
     final d = '${asOf.year}-${asOf.month.toString().padLeft(2, '0')}-${asOf.day.toString().padLeft(2, '0')}';
+    try {
+      // The exact moment (RUN_IN_SUPABASE_5.sql); without it, the end of that day.
+      await _db.rpc(
+        'propose_friend_opening_at',
+        params: {
+          'p_link': link.id,
+          'p_at': asOf.toUtc().toIso8601String(),
+          'p_owed_by': owed.abs() < 0.005 ? null : (owed > 0 ? me : friendId),
+          'p_amount': double.parse(owed.abs().toStringAsFixed(2)),
+          'p_note': note,
+        },
+      );
+      return;
+    } on PostgrestException catch (e) {
+      if (e.code != 'PGRST202' && !e.message.contains('propose_friend_opening_at')) rethrow;
+    }
     try {
       await _db.rpc(
         'propose_friend_opening',

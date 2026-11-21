@@ -29,3 +29,7 @@ String ago(DateTime d) {
   if (s.inHours < 24) return '${s.inHours} h ago';
   return '${s.inDays} days ago';
 }
+
+/// The day, with the time when there is one ("Sat, 15 Nov, 9:12 PM"; just the day for a day-only date).
+String momentLabel(DateTime d) =>
+    d.hour == 0 && d.minute == 0 && d.second == 0 ? dayLabel(d) : '${dayLabel(d)}, ${timeLabel(d)}';

@@ -169,12 +169,46 @@ class _TxnEditorState extends State<TxnEditor> {
           vpas: {vpa},
         );
       }
+      // Before an opening balance with a friend: the balance stays; say what the history now adds up to.
+      final note = _beforeOpeningNote(txn);
+      if (note != null && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(note), duration: const Duration(seconds: 6)));
+      }
       if (mounted) Navigator.pop(context);
     } catch (e) {
       if (!mounted) return;
       setState(() => _busy = false);
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not save: $e')));
     }
+  }
+
+  /// Saved a payment dated before your opening balance with a friend: the balance does not change (the opening
+  /// stands as you set it). Says so, with how far the history now is from the opening.
+  String? _beforeOpeningNote(Txn txn) {
+    final d = widget.data;
+    final names = {txn.merchant, txn.paidBy, widget.existing?.merchant}.nonNulls.where((n) => n.trim().isNotEmpty);
+    for (final n in names) {
+      final key = friendKeyOf(n, d.aliases);
+      final start = d.ledgerStarts[key];
+      if (start == null) continue;
+      final when = [txn.txnAt, ?widget.existing?.txnAt];
+      if (!when.any((w) => w.isBefore(start.from))) continue;
+      final h = friendHistoryTotal(
+        n,
+        d.transactions,
+        d.loanCategoryIds,
+        shares: d.shares,
+        aliases: d.aliases,
+        starts: d.ledgerStarts,
+      );
+      final first = start.name.split(' ').first;
+      final diff = h == null ? 0.0 : (h - start.opening).abs();
+      return diff < 0.005
+          ? 'Saved. It is before your opening balance with $first, so the balance stays the same.'
+          : 'Saved. It is before your opening balance with $first: the balance stays the same; the history now '
+                'differs from the opening by ${money(diff)} (shown on $first\'s page).';
+    }
+    return null;
   }
 
   Future<void> _delete() async {
