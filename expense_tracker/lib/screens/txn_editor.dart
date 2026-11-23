@@ -71,6 +71,16 @@ class _TxnEditorState extends State<TxnEditor> {
   bool get _isNew => widget.existing == null;
   bool get _isLoan => widget.data.loanCategoryIds.contains(_categoryId);
 
+  /// The other half when this was counted as lent and returned (as it was when opened).
+  late final Txn? _partner = widget.existing == null
+      ? null
+      : roundTripPartner(
+          widget.existing!,
+          widget.data.transactions,
+          widget.data.loanCategoryIds,
+          aliases: widget.data.aliases,
+        );
+
   static String _plain(double v) => v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toStringAsFixed(2);
 
   @override
@@ -168,6 +178,20 @@ class _TxnEditorState extends State<TxnEditor> {
           _categoryId,
           vpas: {vpa},
         );
+      }
+      // Was lent and returned, now a real purchase or income: the other half is no longer a loan either.
+      if (_partner case final p? when !_isLoan && !txn.excluded) {
+        await widget.data.unpairRoundTrip(p);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                '${p.isDebit ? 'The ${money(p.amount)} you sent' : 'The ${money(p.amount)} back'} on ${dayLabel(p.txnAt)} '
+                'is unsorted now: say what it was in Quick sort.',
+              ),
+            ),
+          );
+        }
       }
       // Before an opening balance with a friend: the balance stays; say what the history now adds up to.
       final note = _beforeOpeningNote(txn);
@@ -420,6 +444,27 @@ class _TxnEditorState extends State<TxnEditor> {
                 child: Text(
                   'Goes to your balance with this friend. If they bought something for you, pick what it was instead (e.g. Food).',
                   style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
+            if (_partner case final p?)
+              Padding(
+                padding: const EdgeInsets.only(top: 10),
+                child: Card.filled(
+                  margin: EdgeInsets.zero,
+                  child: ListTile(
+                    leading: const Icon(Icons.sync_alt),
+                    title: Text(
+                      p.isDebit
+                          ? 'Lent and returned: you sent ${money(p.amount)} on ${dayLabel(p.txnAt)}'
+                          : 'Lent and returned: ${money(p.amount)} came back on ${dayLabel(p.txnAt)}',
+                    ),
+                    subtitle: Text(
+                      _isLoan
+                          ? 'So neither counts as spending or income. If it was really for something, pick its '
+                                'category above: the other one then goes to Quick sort for you to say what it was.'
+                          : 'Saving this separates them: the other one goes to Quick sort.',
+                    ),
+                  ),
                 ),
               ),
             if (categoryChanged && _merchant.text.trim().isNotEmpty)

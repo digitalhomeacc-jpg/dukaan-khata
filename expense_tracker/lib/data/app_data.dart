@@ -291,6 +291,18 @@ class AppData extends ChangeNotifier {
     return best.value * 5 >= all * 4 ? best.key : null;
   }
 
+  /// "Not lent and returned": the other half goes back to unsorted (kept as your choice, so it is not paired
+  /// again) for you to say what it was.
+  Future<void> unpairRoundTrip(Txn other) async {
+    final r = await _db
+        .from('transactions')
+        .update({'category_id': null, 'needs_review': true, 'edited': true})
+        .eq('id', other.id)
+        .select()
+        .maybeSingle();
+    if (r != null) _showNow(r);
+  }
+
   /// An invite I sent to this friend that is not accepted yet.
   FriendLink? pendingInviteFor(String person) {
     final k = canonKey(person);

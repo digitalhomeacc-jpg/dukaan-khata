@@ -111,4 +111,16 @@ void main() {
     final dayOnly = FriendOpening(id: 'p', linkId: 'L', asOf: DateTime(2026, 11, 15), amount: 0, createdBy: 'me');
     expect(sharedBalance(entries, 'L', 'me', opening: dayOnly), 0);
   });
+
+  test('lent and returned: the other half is found by any of their names, nearest first', () {
+    final out = t('out', 800, DateTime(2026, 11, 1));
+    final back = t('back', 800, DateTime(2026, 11, 3), debit: false, m: 'KIRAN RAO SHI');
+    final later = t('later', 800, DateTime(2026, 11, 20), debit: false);
+    final other = t('other', 800, DateTime(2026, 11, 2), debit: false, m: 'Someone Else');
+    final sorted = t('food', 800, DateTime(2026, 11, 2), debit: false, cat: food);
+    final all = [out, back, later, other, sorted];
+    expect(roundTripPartner(out, all, {fr})?.id, 'back');
+    expect(roundTripPartner(back, all, {fr})?.id, 'out');
+    expect(roundTripPartner(t('x', 800, DateTime(2026, 11, 1), cat: food), all, {fr}), isNull); // not in Friends
+  });
 }

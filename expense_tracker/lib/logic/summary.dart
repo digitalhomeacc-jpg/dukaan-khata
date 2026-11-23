@@ -1800,3 +1800,24 @@ double sharedHistoryTotal(List<SharedEntry> entries, String linkId, String me, F
   linkId,
   me,
 );
+
+/// The other half of "lent and returned" for [t]: in the Friends ledger too, the same person (any of their names,
+/// or a name the statement cut short), the same amount the other way, within 30 days; the nearest one.
+Txn? roundTripPartner(
+  Txn t,
+  Iterable<Txn> txns,
+  Set<String> loanCategoryIds, {
+  Map<String, String> aliases = const {},
+}) {
+  if (!loanCategoryIds.contains(t.categoryId)) return null;
+  final key = friendKeyOf(t.title, aliases);
+  Txn? best;
+  for (final x in txns) {
+    if (x.id == t.id || x.isDebit == t.isDebit || !loanCategoryIds.contains(x.categoryId)) continue;
+    if ((x.amount - t.amount).abs() >= 0.005 || x.txnAt.difference(t.txnAt).inSeconds.abs() > 30 * 86400) continue;
+    final k = friendKeyOf(x.title, aliases);
+    if (!sameName(k, key) && !sameName(key, k)) continue;
+    if (best == null || x.txnAt.difference(t.txnAt).abs() < best.txnAt.difference(t.txnAt).abs()) best = x;
+  }
+  return best;
+}
