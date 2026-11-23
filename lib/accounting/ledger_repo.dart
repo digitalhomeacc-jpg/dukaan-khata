@@ -426,6 +426,9 @@ class LedgerRepo {
   /// Returns true if it was deleted, false if it was hidden.
   Future<bool> deleteOrHide(Ledger l) async {
     if (l.isCore) throw ArgumentError('err_core_ledger');
+    // a customer / supplier is removed only once nothing is due either way:
+    // hiding one with a balance would make that money vanish from every list
+    if (l.group.isParty && await balanceAt(l.id) != 0) throw ArgumentError('err_balance_not_zero');
     if (!l.system && await usageCount(l.id) == 0) {
       final before = await _snap(l.id);
       await db.execute('DELETE FROM ledgers WHERE id = ?', [l.id]);

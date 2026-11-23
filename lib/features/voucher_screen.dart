@@ -721,16 +721,8 @@ class _VoucherScreenState extends State<VoucherScreen> {
         msg += ' · ${party!.name}: ${t('new_balance')} ₹${Money.fmt(bal, abs: true)} ${bal >= 0 ? t('they_owe') : t('we_owe')}';
       }
       if (!mounted) return;
-      if (_receiptTypes.contains(input.type)) {
-        // saved: offer the पावती straight away (the snackbar outlives this screen)
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(msg),
-          duration: const Duration(seconds: 6),
-          action: SnackBarAction(label: t('receipt_print'), onPressed: () => _printReceipt(app, savedId)),
-        ));
-      } else {
-        toast(context, msg);
-      }
+      // saved: just say so (the पावती prints from the 🖨 icon on the bill)
+      toast(context, msg);
       if (andNew) {
         setState(() {
           lines.clear();

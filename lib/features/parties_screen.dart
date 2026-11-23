@@ -242,6 +242,10 @@ class _PartyFormState extends State<PartyForm> {
     final app = App.read(context);
     final t = app.t;
     final l = widget.existing!;
+    if (l.group.isParty && (await app.stock.goodsOwed(partyId: l.id)).isNotEmpty) {
+      if (mounted) toast(context, t('err_goods_pending'), error: true);
+      return;
+    }
     final used = await app.ledgers.usageCount(l.id);
     if (!mounted) return;
     final msg = used == 0 && !l.system
@@ -505,6 +509,31 @@ class _KhataScreenState extends State<KhataScreen> {
 
   /// कंपनी सूट: a credit note from the supplier (trade / quarterly / cash /
   /// yearly discount). Lowers what we owe; no money moves.
+  /// खाते काढा: a customer / supplier with nothing due. Unused → deleted;
+  /// with entries → hidden (old bills and reports stay exactly as they are;
+  /// it can be brought back from More → Accounts → Hidden accounts).
+  Future<void> _removeSettled(Ledger l) async {
+    final app = App.read(context);
+    final t = app.t;
+    final goods = await app.stock.goodsOwed(partyId: l.id);
+    if (!mounted) return;
+    if (goods.isNotEmpty) return toast(context, t('err_goods_pending'), error: true);
+    final used = await app.ledgers.usageCount(l.id);
+    if (!mounted) return;
+    final msg = used == 0
+        ? t('confirm_delete_ledger').replaceAll('{name}', l.name)
+        : t('party_remove_q').replaceAll('{name}', l.name).replaceAll('{n}', '$used');
+    if (!await confirm(context, msg)) return;
+    try {
+      final deleted = await app.ledgers.deleteOrHide(l);
+      if (!mounted) return;
+      toast(context, deleted ? t('deleted') : t('party_removed'));
+      Navigator.of(context).pop();
+    } catch (e) {
+      if (mounted) toast(context, errText(context, e), error: true);
+    }
+  }
+
   Future<void> _companyDiscount(Ledger l) async {
     final app = App.read(context);
     final t = app.t;
@@ -663,6 +692,8 @@ class _KhataScreenState extends State<KhataScreen> {
                       if (context.mounted) await _removeOld(l);
                     case 'recheck':
                       if (context.mounted) await markRecheck(context, l);
+                    case 'remove':
+                      if (context.mounted) await _removeSettled(l);
                     case 'co_match':
                       if (context.mounted) await SupplierMatchScreen.open(context, l);
                     case 'real_cost':
@@ -723,6 +754,9 @@ class _KhataScreenState extends State<KhataScreen> {
                   if (l.group.isParty) PopupMenuItem(value: 'old', child: Text(t('old_entry_add'))),
                   if (l.group.isParty && app.actor.isOwner) PopupMenuItem(value: 'old_remove', child: Text(t('old_remove'))),
                   if (l.group.isParty) PopupMenuItem(value: 'recheck', child: Text(t('recheck_mark'))),
+                  // only a settled account (nothing due either way) can be removed
+                  if (l.group.isParty && app.actor.isOwner && st.closing == 0)
+                    PopupMenuItem(value: 'remove', child: Text(t('party_remove'), style: const TextStyle(color: AppColors.due))),
                   PopupMenuItem(value: 'range', child: Text('${t('from')} – ${t('to')}')),
                   PopupMenuItem(value: 'pdf', child: Text('${t('statement')} PDF')),
                   PopupMenuItem(value: 'xls', child: Text('${t('statement')} Excel')),

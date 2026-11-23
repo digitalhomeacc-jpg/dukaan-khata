@@ -1127,10 +1127,14 @@ void main() {
 
     final used = await lr.create(name: 'Used', group: LedgerGroup.customer);
     await vs.save(VoucherInput(type: VoucherType.sale, date: '2026-11-09', partyId: used, amount: rs(500)), owner);
+    // still owes ₹500: may not be removed
+    final usedL = (await lr.byId(used))!;
+    expect(() => lr.deleteOrHide(usedL), throwsArgumentError);
+    await vs.save(VoucherInput(type: VoucherType.receipt, date: '2026-11-09', partyId: used, payLedgerId: vs.sys('cash'), amount: rs(500)), owner);
     expect(await lr.deleteOrHide((await lr.byId(used))!), isFalse);
     expect((await lr.list([LedgerGroup.customer])).any((l) => l.id == used), isFalse);
     expect((await lr.hidden()).single.id, used);
-    expect(await lr.balanceAt(used), rs(500)); // books unchanged
+    expect(await lr.balanceAt(used), 0); // books unchanged: settled, and still settled
 
     // a hidden built-in ledger is not re-created by app updates
     final p = (await lr.byId(vs.sys('upi_p')))!;
@@ -1394,5 +1398,23 @@ void main() {
     expect(await lr.balanceAt(vs.sys('upi_h')) - upi0, rs(5));
     expect(await lr.balanceAt(c), rs(3), reason: 'the rest is due on his khata');
     expect(await vs.deepCheck(), isEmpty);
+  });
+
+  test('remove a customer only when nothing is due; entries stay, account just hidden', () async {
+    final m = items.values.first;
+    final c = await lr.create(name: 'Settled Cust', group: LedgerGroup.customer);
+    await vs.save(VoucherInput(type: VoucherType.sale, date: '2026-11-20', partyId: c, items: [ItemLine(m.id, 1, rs(500))]), owner);
+    final l = (await lr.byId(c))!;
+    expect(() => lr.deleteOrHide(l), throwsA(isA<ArgumentError>()), reason: '₹500 still due');
+    await vs.save(VoucherInput(type: VoucherType.receipt, date: '2026-11-21', partyId: c, payLedgerId: vs.sys('cash'), amount: rs(500)), owner);
+    final cash = await lr.balanceAt(vs.sys('cash'));
+    expect(await lr.deleteOrHide(l), isFalse, reason: 'has entries: hidden, not deleted');
+    expect((await lr.byId(c))!.archived, isTrue);
+    expect(await lr.balanceAt(vs.sys('cash')), cash, reason: 'no figure changes');
+    expect((await db.getAll('SELECT id FROM vouchers WHERE party_id = ? AND deleted = 0', [c])).length, 2);
+    // a customer never used: really deleted
+    final u = await lr.create(name: 'Unused', group: LedgerGroup.customer);
+    expect(await lr.deleteOrHide((await lr.byId(u))!), isTrue);
+    expect(await lr.byId(u), isNull);
   });
 }
