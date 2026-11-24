@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:async';
 import 'dart:typed_data';
 
@@ -175,6 +176,7 @@ class AppController extends ChangeNotifier {
         if (businessId == bid) runHealth().ignore();
       }).ignore();
       _booksSub ??= db.onChange(const ['businesses']).listen((_) => loadBooks());
+      _modeSub ??= db.onChange(const ['audit_log']).listen((_) => loadMode());
     } else {
       db.writeTransaction((tx) => ensureSystemLedgers(tx, bid)).then((_) async {
         await _vouchers?.detachHistoryLines();
@@ -262,6 +264,33 @@ class AppController extends ChangeNotifier {
     shopGstin = (r['gstin'] as String?) ?? '';
     backupUrl = (r['backup_url'] as String?) ?? '';
     notifyListeners();
+    await loadMode();
+  }
+
+  // ---- खाता मोड (Khatabook style): only customers, उधार and जमा. Shared by
+  // every phone through the change history (latest wins). Nothing in the books
+  // changes – it only hides screens.
+  bool simpleMode = false;
+  StreamSubscription<void>? _modeSub;
+  Future<void> loadMode() async {
+    if (businessId == null) return;
+    final r = await db.getOptional(
+        "SELECT snapshot FROM audit_log WHERE business_id = ? AND voucher_id = 'app_mode' ORDER BY at DESC LIMIT 1", [businessId]);
+    var on = false;
+    try {
+      on = r != null && ((jsonDecode(r['snapshot'] as String) as Map)['after'] as Map?)?['mode'] == 'khata';
+    } catch (_) {}
+    if (on != simpleMode) {
+      simpleMode = on;
+      notifyListeners();
+    }
+  }
+
+  Future<void> setSimpleMode(bool on) async {
+    if (!actor.isOwner) throw ArgumentError('err_owner_mode');
+    await AuditLog.write(db,
+        businessId: businessId!, recordId: 'app_mode', action: 'edit', kind: 'app_mode', title: on ? 'khata' : 'full', after: {'mode': on ? 'khata' : 'full'});
+    await loadMode();
   }
 
   /// Small per-device notes (today's labourer count, minimum hamali …).

@@ -204,9 +204,15 @@ class _VoucherScreenState extends State<VoucherScreen> {
   late String hKind = widget.historyKind ?? 'sale'; // sale | purchase | received | paid | opening | opening_cr
   bool get historyBill => isHistory && (hKind == 'sale' || hKind == 'purchase');
 
+  /// खाता मोड: a sale is only "उधार दिले" – customer, amount, note, date.
+  /// No items, stock, cash, hamali or GST. (An older bill with items still
+  /// opens in the full form.)
+  bool khata = false;
+
   bool get hasItems =>
-      historyBill ||
-      const {
+      !khata &&
+          (historyBill ||
+              const {
         VoucherType.sale,
         VoucherType.purchase,
         VoucherType.salesReturn,
@@ -214,21 +220,21 @@ class _VoucherScreenState extends State<VoucherScreen> {
         VoucherType.stockAdjust,
         VoucherType.goodsOut,
         VoucherType.goodsIn,
-      }.contains(type);
-  bool get hasPay => type != VoucherType.stockAdjust && type != VoucherType.journal && !isHistory && !type.isGoodsLoan;
+              }.contains(type));
+  bool get hasPay => !khata && type != VoucherType.stockAdjust && type != VoucherType.journal && !isHistory && !type.isGoodsLoan;
   bool get creditAllowed =>
       const {VoucherType.sale, VoucherType.purchase, VoucherType.salesReturn, VoucherType.purchaseReturn}.contains(type);
   bool get stockOnly => type == VoucherType.stockAdjust || type.isGoodsLoan; // quantities only, no money
 
   int get itemsTotal => lines.fold(0, (s, l) => s + l.amount);
   bool get isSale => type == VoucherType.sale;
-  bool get chargesOn => isSale || historyBill;
+  bool get chargesOn => !khata && (isSale || historyBill);
   int get hamali => chargesOn ? (Money.parse(hamaliCtl.text) ?? 0) : 0;
   int get transport => chargesOn ? (Money.parse(transportCtl.text) ?? 0) : 0;
   int get fare => Money.parse(fareCtl.text) ?? transport;
-  bool get gstAllowed => type == VoucherType.sale || type == VoucherType.purchase;
+  bool get gstAllowed => !khata && (type == VoucherType.sale || type == VoucherType.purchase);
   int get gst => gstAllowed && gstRate > 0 ? ((itemsTotal * gstRate / 10000) / 100).round() * 100 : 0;
-  bool get roundAllowed => type == VoucherType.sale || type == VoucherType.purchase || historyBill;
+  bool get roundAllowed => !khata && (type == VoucherType.sale || type == VoucherType.purchase || historyBill);
   int get roundOff => roundAllowed ? (Money.parse(roundCtl.text) ?? 0) : 0;
   int get totalBeforeRound =>
       (hasItems && !(historyBill && lines.isEmpty) ? itemsTotal : (Money.parse(amount.text) ?? 0)) + hamali + transport + gst;
@@ -333,6 +339,7 @@ class _VoucherScreenState extends State<VoucherScreen> {
             : (ls.isEmpty && v.amount == 0 && v.paid > 0 ? 'received' : 'sale'); // entries made before bills existed
         payId = null;
       }
+      khata = app.simpleMode && v.type == VoucherType.sale && ls.isEmpty && v.paid == 0 && v.hamali == 0 && v.transport == 0 && v.gstRate == 0;
       for (final l in ls) {
         // an item hidden since the bill was made is not in the list: fetch it by id
         final it = items.where((i) => i.id == l.itemId).firstOrNull ??
@@ -397,6 +404,8 @@ class _VoucherScreenState extends State<VoucherScreen> {
         payId = app.vouchers.sys('cash');
       }
     }
+    if (editing == null) khata = app.simpleMode && type == VoucherType.sale;
+    if (khata) payId = null; // always उधार
     setState(() => loading = false);
     _loadHaste();
     if (widget.autoSave) {
@@ -411,6 +420,7 @@ class _VoucherScreenState extends State<VoucherScreen> {
 
   String _title(AppController app) {
     if (isHistory) return '${app.t('old_entry')}${editing != null ? ' · ${app.t('edit')}' : ''}';
+    if (khata) return editing != null ? '${app.t('edit')} · ${app.t('khata_gave')}' : app.t('khata_gave');
     if (editing != null) return '${app.t('edit')} · ${app.t('vt_${type.code}')} #${editing!.shownNo}';
     if (widget.expenseMode) return app.t('expense');
     return app.t(type.code);
@@ -658,6 +668,8 @@ class _VoucherScreenState extends State<VoucherScreen> {
     if (!hasItems && total <= 0 && (Money.parse(discount.text) ?? 0) <= 0) return toast(context, t('err_amount'), error: true);
     final needsParty = const {VoucherType.receipt, VoucherType.payment, VoucherType.contra, VoucherType.history, VoucherType.goodsOut, VoucherType.goodsIn}.contains(type);
     if (needsParty && party == null) return toast(context, t('err_party'), error: true);
+    if (khata && party == null) return toast(context, t('err_party'), error: true);
+    if (khata && payId != null) return toast(context, t('err_party'), error: true); // never: खाता is always उधार
     if (creditAllowed && party == null && payId == null) {
       return toast(context, t('err_party'), error: true);
     }
@@ -747,7 +759,7 @@ class _VoucherScreenState extends State<VoucherScreen> {
           hasteSuggestions = [];
           moreOpen = false;
           party = null;
-          payId = creditAllowed ? (_isBuying ? null : app.vouchers.sys('cash')) : payId;
+          payId = khata ? null : creditAllowed ? (_isBuying ? null : app.vouchers.sys('cash')) : payId;
           splitOn = false;
           splitId = null;
           splitCtl.clear();
@@ -1284,7 +1296,7 @@ class _VoucherScreenState extends State<VoucherScreen> {
           party?.name ??
               (_isBuying
                   ? t('pick_supplier')
-                  : creditAllowed
+                  : creditAllowed && !khata
                   ? '${t('walk_in')} / ${t('cash_sale')}'
                   : '$label – ${t('select')}'),
           style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),

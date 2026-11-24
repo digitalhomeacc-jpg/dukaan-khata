@@ -51,6 +51,7 @@ class HomeScreen extends StatelessWidget {
           final (d, low, recent, due, monthly, incoming) = data;
           app.runHealth().ignore(); // at most every 2 hours, in the background
           final damage = app.health ?? const [];
+          final simple = app.simpleMode; // खाता मोड: only उधार / जमा
           return ListView(padding: const EdgeInsets.fromLTRB(16, 4, 16, 24), children: [
             _SearchField(onTap: () => SearchScreen.open(context), hint: t('search_all_hint')),
             if (damage.isNotEmpty) ...[
@@ -103,7 +104,7 @@ class HomeScreen extends StatelessWidget {
               ),
             ],
             // येणारा माल: orders placed with suppliers – one tap when the truck arrives
-            if (incoming.isNotEmpty) ...[
+            if (incoming.isNotEmpty && !simple) ...[
               const SizedBox(height: 10),
               Card(
                 margin: EdgeInsets.zero,
@@ -145,20 +146,20 @@ class HomeScreen extends StatelessWidget {
             _ActionGrid(),
             const SizedBox(height: 18),
             _TodayHero(title: t('today'), date: shortDate(today), figures: [
-              (t('today_sales'), d['sales']!, Icons.trending_up),
+              (simple ? t('khata_today_given') : t('today_sales'), d['sales']!, Icons.trending_up),
               (t('today_collection'), d['collections']!, Icons.south_west),
             ]),
             // shop-wide totals (balances, total udhaari) are for owners only
-            if (app.actor.isOwner) _Panel(title: t('balances'), children: [
+            if (app.actor.isOwner && !simple) _Panel(title: t('balances'), children: [
               _Figure(t('cash_in_hand'), d['cash']!, scheme.onSurface),
               _Figure(t('upi_balance'), d['upi']!, scheme.onSurface),
               _Figure(t('bank_balance'), d['bank']!, scheme.onSurface),
             ]),
             if (app.actor.isOwner) _Panel(title: t('dues'), children: [
               _Figure(t('receivable'), d['receivable']!, AppColors.due),
-              _Figure(t('payable'), d['payable']!, AppColors.haldi),
+              if (!simple) _Figure(t('payable'), d['payable']!, AppColors.haldi),
             ]),
-            if (low.isNotEmpty) ...[
+            if (low.isNotEmpty && !simple) ...[
               const SizedBox(height: 8),
               _Header(t('low_stock_items')),
               Wrap(spacing: 6, runSpacing: 6, children: [
@@ -242,7 +243,8 @@ class _SyncBadge extends StatelessWidget {
 class _ActionGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    final t = App.of(context).t;
+    final app = App.of(context);
+    final t = app.t;
     final dark = Theme.of(context).brightness == Brightness.dark;
     Widget big(String label, String sub, IconData icon, Color c, VoidCallback onTap) => Expanded(
           child: Material(
@@ -288,6 +290,16 @@ class _ActionGrid extends StatelessWidget {
             label: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
           ),
         );
+    if (app.simpleMode) {
+      // खाता मोड: two buttons, like a khata book
+      return Row(children: [
+        big(t('khata_gave'), t('khata_gave_sub'), Icons.north_east, AppColors.due,
+            () => VoucherScreen.open(context, VoucherType.sale)),
+        const SizedBox(width: 10),
+        big(t('khata_got'), t('khata_got_sub'), Icons.south_west, AppColors.receipt,
+            () => VoucherScreen.open(context, VoucherType.receipt)),
+      ]);
+    }
     return Column(children: [
       Row(children: [
         big(t('sale'), t('sale_sub'), Icons.point_of_sale, AppColors.sale, () => VoucherScreen.open(context, VoucherType.sale)),

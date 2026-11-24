@@ -368,6 +368,8 @@ class LedgerRepo {
     return r == null ? {} : _snapRow(r);
   }
 
+  static Map<String, Object?> snapRow(Map<String, Object?> r) => _snapRow(r);
+
   static Map<String, Object?> _snapRow(Map<String, Object?> r) {
     String m(Object? p) => (p as int? ?? 0) == 0 ? '' : Money.fmt(p as int);
     return {

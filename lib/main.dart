@@ -94,14 +94,18 @@ class _ShellState extends State<Shell> {
       (Icons.inventory_2_outlined, Icons.inventory_2, t('stock')),
       (Icons.more_horiz, Icons.more_horiz, t('more')),
     ];
+    // खाता मोड: only home, customers and more (रोजमेळ and stock are hidden)
+    final shown = app.simpleMode ? const [0, 1, 4] : const [0, 1, 2, 3, 4];
+    final at = shown.contains(index) ? shown.indexOf(index) : 0;
+    void go(int i) => setState(() => index = shown[i]);
     final wide = MediaQuery.of(context).size.width >= 800;
-    final body = IndexedStack(index: index, children: pages);
+    final body = IndexedStack(index: at, children: [for (final i in shown) pages[i]]);
     if (wide) {
       return Scaffold(
         body: Row(children: [
           NavigationRail(
-            selectedIndex: index,
-            onDestinationSelected: (i) => setState(() => index = i),
+            selectedIndex: at,
+            onDestinationSelected: go,
             labelType: NavigationRailLabelType.all,
             leading: Padding(
               padding: const EdgeInsets.symmetric(vertical: 8),
@@ -113,7 +117,7 @@ class _ShellState extends State<Shell> {
               ),
             ),
             destinations: [
-              for (final (i, s, l) in dests) NavigationRailDestination(icon: Icon(i), selectedIcon: Icon(s), label: Text(l)),
+              for (final (i, s, l) in [for (final k in shown) dests[k]]) NavigationRailDestination(icon: Icon(i), selectedIcon: Icon(s), label: Text(l)),
             ],
           ),
           const VerticalDivider(width: 1),
@@ -124,10 +128,10 @@ class _ShellState extends State<Shell> {
     return Scaffold(
       body: body,
       bottomNavigationBar: NavigationBar(
-        selectedIndex: index,
-        onDestinationSelected: (i) => setState(() => index = i),
+        selectedIndex: at,
+        onDestinationSelected: go,
         destinations: [
-          for (final (i, s, l) in dests) NavigationDestination(icon: Icon(i), selectedIcon: Icon(s), label: l),
+          for (final (i, s, l) in [for (final k in shown) dests[k]]) NavigationDestination(icon: Icon(i), selectedIcon: Icon(s), label: l),
         ],
       ),
     );

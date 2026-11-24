@@ -16,6 +16,7 @@ import '../shared/statement_parser.dart';
 import '../shared/widgets.dart';
 import '../state/app_controller.dart';
 import 'audit_screen.dart';
+import 'fresh_start_screen.dart';
 import 'home_screen.dart';
 import 'bank_screen.dart';
 import 'booking_screen.dart';
@@ -143,6 +144,29 @@ class SettingsScreen extends StatelessWidget {
               title: Text(t('fix_backup')),
               subtitle: Text(t('fix_backup_sub')),
               onTap: () => _fixFromBackup(context),
+            ),
+          if (app.actor.isOwner)
+            SwitchListTile(
+              key: const Key('khata_mode'),
+              secondary: const Icon(Icons.menu_book_outlined),
+              title: Text(t('khata_mode')),
+              subtitle: Text(t('khata_mode_sub')),
+              value: app.simpleMode,
+              onChanged: (on) async {
+                try {
+                  await app.setSimpleMode(on);
+                } catch (e) {
+                  if (context.mounted) toast(context, errText(context, e), error: true);
+                }
+              },
+            ),
+          if (app.actor.isOwner)
+            ListTile(
+              key: const Key('fresh_start'),
+              leading: Icon(Icons.delete_sweep_outlined, color: Theme.of(context).colorScheme.error),
+              title: Text(t('fresh_title')),
+              subtitle: Text(t('fresh_sub')),
+              onTap: () => FreshStartScreen.open(context),
             ),
           ListTile(
             leading: const Icon(Icons.history),
