@@ -410,15 +410,25 @@ void main() {
     await pump(tester, TxnEditor(data: data));
     expect(find.text('Paid from'), findsOneWidget);
     await tester.enterText(find.widgetWithText(TextFormField, 'Paid to'), 'Hotel Sai');
-    await tester.scrollUntilVisible(
-      find.text('On credit (udhaar), pay later'),
-      200,
-      scrollable: find.byType(Scrollable).first,
-    );
-    await tester.tap(find.text('On credit (udhaar), pay later'));
+    await tester.scrollUntilVisible(find.text('Pay later'), 200, scrollable: find.byType(Scrollable).first);
+    await tester.tap(find.text('Pay later'));
     await tester.pumpAndSettle();
     expect(find.text('Paid from'), findsNothing);
-    expect(find.textContaining('You owe Hotel Sai'), findsOneWidget);
+    expect(find.textContaining('you owe Hotel Sai'), findsOneWidget);
+  });
+
+  testWidgets('a friend paid for your food: not from your cash or bank, you owe the friend', (tester) async {
+    final data = sample();
+    await pump(tester, TxnEditor(data: data));
+    await tester.enterText(find.widgetWithText(TextFormField, 'Paid to'), 'Hotel Sai');
+    await tester.scrollUntilVisible(find.text('A friend'), 200, scrollable: find.byType(Scrollable).first);
+    await tester.tap(find.text('A friend'));
+    await tester.pumpAndSettle();
+    expect(find.text('Paid from'), findsNothing);
+    await tester.enterText(find.widgetWithText(TextField, 'Friend who paid'), 'Ravi Kumar');
+    await tester.pumpAndSettle();
+    expect(find.textContaining('You owe Ravi this amount'), findsOneWidget);
+    expect(find.text('Add a friend'), findsNothing); // no split here: enter your part
   });
 
   testWidgets('a payment shows its split into categories and what is left', (tester) async {

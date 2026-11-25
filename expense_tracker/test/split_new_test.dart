@@ -21,7 +21,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.enterText(find.widgetWithText(TextFormField, 'Amount').first, '200');
     await tester.enterText(find.byType(TextFormField).at(1), 'Hotel Vijay');
-    await tester.tap(find.text('On credit (udhaar), pay later'));
+    await tester.tap(find.text('Pay later'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Add a friend'));
     await tester.pumpAndSettle();

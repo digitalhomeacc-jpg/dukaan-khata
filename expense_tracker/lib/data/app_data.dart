@@ -303,6 +303,27 @@ class AppData extends ChangeNotifier {
     if (r != null) _showNow(r);
   }
 
+  /// Your friends' names, the ones you deal with most first (balances, connections, people you marked friends).
+  List<String> get friendNames {
+    final seen = <String>{};
+    final out = <String>[];
+    void add(String n) {
+      final name = aliases[keyOf(n)] ?? n.trim();
+      if (name.isNotEmpty && seen.add(keyOf(name))) out.add(name);
+    }
+
+    for (final b in friendBalances) {
+      add(b.person);
+    }
+    for (final l in links) {
+      if (l.active && me != null && l.nameFor(me!).isNotEmpty) add(l.nameFor(me!));
+    }
+    for (final MapEntry(:key, :value) in people.entries) {
+      if (value == 'friend') add(personNames[key] ?? key);
+    }
+    return out;
+  }
+
   /// An invite I sent to this friend that is not accepted yet.
   FriendLink? pendingInviteFor(String person) {
     final k = canonKey(person);

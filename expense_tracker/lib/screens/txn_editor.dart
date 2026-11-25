@@ -56,8 +56,13 @@ class _TxnEditorState extends State<TxnEditor> {
   late String _method = _start?.method ?? (widget.existing == null ? 'cash' : 'other');
   late bool _excluded = _start?.excluded ?? false;
 
-  /// "On credit (udhaar)": nothing paid yet, you owe the payee. Kept as who you owe.
-  late bool _onCredit = _start?.paidBy != null && _start?.paidBy == _start?.merchant;
+  /// Who paid: you (from an account), a friend for you (you owe them), or nobody yet (udhaar: you owe the place).
+  late String _payer = _start?.paidBy == null || _start!.paidBy!.trim().isEmpty
+      ? 'me'
+      : (_start.paidBy == _start.merchant ? 'credit' : 'friend');
+  late final _friendPaid = TextEditingController(text: _payer == 'friend' ? _start?.paidBy ?? '' : '');
+  bool get _onCredit => _isDebit && _payer == 'credit';
+  bool get _byFriend => _isDebit && _payer == 'friend';
   late String? _accountId = _start?.accountId ?? (widget.existing == null ? widget.data.cashAccount?.id : null);
   late String? _counterId = _start?.counterAccountId;
 
@@ -89,6 +94,7 @@ class _TxnEditorState extends State<TxnEditor> {
     _merchant.dispose();
     _merchantFocus.dispose();
     _note.dispose();
+    _friendPaid.dispose();
     for (final p in _parts) {
       p.name.dispose();
       p.amount.dispose();
@@ -116,6 +122,10 @@ class _TxnEditorState extends State<TxnEditor> {
           .showSnackBar(const SnackBar(content: Text('Not saved yet: fill in the field marked in red (the amount?)')));
       return;
     }
+    if (_byFriend && _friendPaid.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Not saved yet: which friend paid?')));
+      return;
+    }
     setState(() => _busy = true);
     // Named (or renamed) to someone whose payments always go one way, e.g. a friend in the Friends ledger: this one
     // goes there too, instead of staying uncounted.
@@ -131,13 +141,13 @@ class _TxnEditorState extends State<TxnEditor> {
       note: _note.text,
       method: _method,
       categoryId: _categoryId,
-      accountId: _onCredit ? null : _accountId,
+      accountId: _onCredit || _byFriend ? null : _accountId,
       counterAccountId: _counterId == _accountId ? null : _counterId,
       excluded: _excluded,
       // Kept as it was (a friend paid for you), or the payee you owe when bought on credit.
       paidBy: _onCredit
           ? _merchant.text.trim()
-          : (widget.existing?.paidBy == widget.existing?.merchant ? null : widget.existing?.paidBy),
+          : (_byFriend ? _friendPaid.text.trim() : (_isDebit ? null : widget.existing?.paidBy)),
     );
     final categoryChanged = _categoryId != widget.existing?.categoryId;
     final friendParts = <String, double>{
@@ -388,20 +398,58 @@ class _TxnEditorState extends State<TxnEditor> {
                   ),
               ],
             ),
-            if (_isDebit)
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                value: _onCredit,
-                onChanged: (v) => setState(() => _onCredit = v),
-                title: const Text('On credit (udhaar), pay later'),
-                subtitle: Text(
-                  _onCredit
-                      ? 'Counted as your spending now. You owe ${_merchant.text.trim().isEmpty ? 'them' : _merchant.text.trim()}: '
-                            'it shows in Friends until you pay.'
-                      : 'Ate or bought now, paying later (restaurant, shop khata)',
-                ),
+            if (_isDebit) ...[
+              const SizedBox(height: 20),
+              Text('Who paid?', style: Theme.of(context).textTheme.titleSmall),
+              const SizedBox(height: 8),
+              SegmentedButton<String>(
+                showSelectedIcon: false,
+                segments: const [
+                  ButtonSegment(value: 'me', label: Text('I paid')),
+                  ButtonSegment(value: 'friend', label: Text('A friend')),
+                  ButtonSegment(value: 'credit', label: Text('Pay later')),
+                ],
+                selected: {_payer},
+                onSelectionChanged: (v) => setState(() => _payer = v.first),
               ),
-            if (!_onCredit || !_isDebit) ...[
+              if (_byFriend) ...[
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _friendPaid,
+                  textCapitalization: TextCapitalization.words,
+                  decoration: const InputDecoration(
+                    labelText: 'Friend who paid',
+                    prefixIcon: Icon(Icons.person_outline),
+                  ),
+                  onChanged: (_) => setState(() {}),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  children: [
+                    for (final f in widget.data.friendNames.take(8))
+                      ChoiceChip(
+                        label: Text(f.split(' ').first),
+                        selected: AppData.keyOf(_friendPaid.text) == AppData.keyOf(f),
+                        onSelected: (_) => setState(() => _friendPaid.text = f),
+                      ),
+                  ],
+                ),
+              ],
+              const SizedBox(height: 6),
+              Text(switch (_payer) {
+                'friend' =>
+                  'Your spending (pick what it was below), not from your bank or cash. You owe '
+                      '${_friendPaid.text.trim().isEmpty ? 'your friend' : _friendPaid.text.trim().split(' ').first} '
+                      'this amount: it shows in Friends until you pay them back. Enter only your part.',
+                'credit' =>
+                  'Ate or bought now, paying later (restaurant, shop khata). Counted as your spending now; you owe '
+                      '${_merchant.text.trim().isEmpty ? 'them' : _merchant.text.trim()} until you pay.',
+                _ => 'From your bank or cash below.',
+              }, style: Theme.of(context).textTheme.bodySmall),
+            ],
+            if (!_onCredit && !_byFriend) ...[
               const SizedBox(height: 20),
               Text(_isDebit ? 'Paid from' : 'Received in', style: Theme.of(context).textTheme.titleSmall),
               const SizedBox(height: 8),
@@ -503,7 +551,10 @@ class _TxnEditorState extends State<TxnEditor> {
                 hintText: 'What was it for? Who was with you? Bill no.…',
               ),
             ),
-            if (_isNew && _isDebit && !_isLoan && !_excluded) ...[const SizedBox(height: 16), _splitNew(context)],
+            if (_isNew && _isDebit && !_isLoan && !_excluded && !_byFriend) ...[
+              const SizedBox(height: 16),
+              _splitNew(context),
+            ],
             if (existing != null && existing.isDebit && !existing.isLoanTransfer && !_isLoan) ...[
               const SizedBox(height: 16),
               ListenableBuilder(
